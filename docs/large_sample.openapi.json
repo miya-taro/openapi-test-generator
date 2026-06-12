@@ -1,0 +1,180 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Large Test API", "version": "1.0.0" },
+  "paths": {
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "parameters": [
+          { "name": "page",     "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1000 } },
+          { "name": "per_page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } },
+          { "name": "status",   "in": "query", "required": false, "schema": { "type": "string", "enum": ["active","inactive","suspended"] } },
+          { "name": "sort",     "in": "query", "required": false, "schema": { "type": "string", "enum": ["asc","desc"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "array" } } },
+            "headers": {
+              "X-Total-Count": { "schema": { "type": "integer" } },
+              "X-Page":        { "schema": { "type": "integer" } },
+              "Link":          { "schema": { "type": "string" } }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "additionalProperties": false,
+                "properties": {
+                  "name":     { "type": "string", "minLength": 1, "maxLength": 50 },
+                  "email":    { "type": "string", "format": "email" },
+                  "age":      { "type": "integer", "minimum": 0, "maximum": 150 },
+                  "role":     { "type": "string", "enum": ["admin","editor","viewer"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "type": "object" } } },
+            "headers": {
+              "Location":     { "schema": { "type": "string" } },
+              "X-Request-Id": { "schema": { "type": "string" } }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "getUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 999999 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name":  { "type": "string", "minLength": 1, "maxLength": 50 },
+                  "email": { "type": "string", "format": "email" },
+                  "age":   { "type": "integer", "minimum": 0, "maximum": 150 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "204": { "description": "No Content" },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/users/{id}/avatar": {
+      "get": {
+        "operationId": "getUserAvatar",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "image/png": {} }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/reports/{id}/download": {
+      "get": {
+        "operationId": "downloadReport",
+        "parameters": [
+          { "name": "id",     "in": "path",  "required": true,  "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "format", "in": "query", "required": false, "schema": { "type": "string",  "enum": ["pdf","csv","xlsx"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf":  {},
+              "text/csv":         {},
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": {} }
+          }
+        }
+      }
+    }
+  }
+}

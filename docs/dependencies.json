@@ -1,0 +1,391 @@
+{
+  "files": [
+    {
+      "path": "pnpm-workspace.yaml",
+      "file_type": "yaml",
+      "layer": "config",
+      "direct_dependencies": [
+        { "path": "package.json", "type": "build-definition" }
+      ],
+      "reverse_dependencies": [],
+      "dependency_type": ["build-definition"]
+    },
+    {
+      "path": "package.json",
+      "file_type": "json",
+      "layer": "config",
+      "direct_dependencies": [
+        { "path": "tsconfig.json", "type": "build-definition" }
+      ],
+      "reverse_dependencies": ["pnpm-workspace.yaml"],
+      "dependency_type": ["build-definition"]
+    },
+    {
+      "path": "tsconfig.json",
+      "file_type": "json",
+      "layer": "config",
+      "direct_dependencies": [
+        { "path": "src/cli.ts",                        "type": "build-definition" },
+        { "path": "src/logger.ts",                     "type": "build-definition" },
+        { "path": "src/types.ts",                      "type": "build-definition" },
+        { "path": "src/parser/index.ts",               "type": "build-definition" },
+        { "path": "src/extractor/index.ts",            "type": "build-definition" },
+        { "path": "src/generator/index.ts",            "type": "build-definition" },
+        { "path": "src/generator/rules/common.ts",     "type": "build-definition" },
+        { "path": "src/generator/rules/integer.ts",    "type": "build-definition" },
+        { "path": "src/generator/rules/string.ts",     "type": "build-definition" },
+        { "path": "src/generator/rules/array.ts",      "type": "build-definition" },
+        { "path": "src/generator/rules/object.ts",     "type": "build-definition" },
+        { "path": "src/id-assigner/index.ts",          "type": "build-definition" },
+        { "path": "src/renderer/json.ts",              "type": "build-definition" },
+        { "path": "src/samples/format-samples.ts",     "type": "build-definition" }
+      ],
+      "reverse_dependencies": ["package.json"],
+      "dependency_type": ["build-definition"]
+    },
+    {
+      "path": "vitest.config.ts",
+      "file_type": "ts",
+      "layer": "config",
+      "direct_dependencies": [
+        { "path": "vitest",                            "type": "code-import" },
+        { "path": "tests/e2e/generate.test.ts",        "type": "config-reference" },
+        { "path": "tests/rules/common.test.ts",        "type": "config-reference" },
+        { "path": "tests/rules/integer.test.ts",       "type": "config-reference" },
+        { "path": "tests/rules/string.test.ts",        "type": "config-reference" },
+        { "path": "tests/rules/array.test.ts",         "type": "config-reference" }
+      ],
+      "reverse_dependencies": [],
+      "dependency_type": ["code-import", "config-reference"]
+    },
+    {
+      "path": "src/types.ts",
+      "file_type": "ts",
+      "layer": "shared",
+      "direct_dependencies": [],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "src/extractor/index.ts",
+        "src/generator/index.ts",
+        "src/generator/rules/common.ts",
+        "src/generator/rules/integer.ts",
+        "src/generator/rules/string.ts",
+        "src/generator/rules/array.ts",
+        "src/generator/rules/object.ts",
+        "src/id-assigner/index.ts",
+        "src/renderer/json.ts",
+        "tests/e2e/generate.test.ts",
+        "tests/rules/common.test.ts",
+        "tests/rules/integer.test.ts",
+        "tests/rules/string.test.ts",
+        "tests/rules/array.test.ts"
+      ],
+      "dependency_type": []
+    },
+    {
+      "path": "src/logger.ts",
+      "file_type": "ts",
+      "layer": "shared",
+      "direct_dependencies": [
+        { "path": "pino", "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "src/parser/index.ts",
+        "src/extractor/index.ts",
+        "src/generator/rules/string.ts",
+        "src/id-assigner/index.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/samples/format-samples.ts",
+      "file_type": "ts",
+      "layer": "shared",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["src/generator/rules/string.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "src/cli.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/logger.ts",            "type": "code-import" },
+        { "path": "src/parser/index.ts",      "type": "code-import" },
+        { "path": "src/extractor/index.ts",   "type": "code-import" },
+        { "path": "src/generator/index.ts",   "type": "code-import" },
+        { "path": "src/id-assigner/index.ts", "type": "code-import" },
+        { "path": "src/renderer/json.ts",     "type": "code-import" },
+        { "path": "src/types.ts",             "type": "code-import" },
+        { "path": "commander",                "type": "code-import" }
+      ],
+      "reverse_dependencies": ["tsconfig.json"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/parser/index.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/logger.ts",                   "type": "code-import" },
+        { "path": "@apidevtools/swagger-parser",     "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "src/extractor/index.ts",
+        "tests/e2e/generate.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/extractor/index.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/parser/index.ts", "type": "code-import" },
+        { "path": "src/types.ts",        "type": "code-import" },
+        { "path": "src/logger.ts",       "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "tests/e2e/generate.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/index.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/types.ts",                    "type": "code-import" },
+        { "path": "src/generator/rules/common.ts",   "type": "code-import" },
+        { "path": "src/generator/rules/integer.ts",  "type": "code-import" },
+        { "path": "src/generator/rules/string.ts",   "type": "code-import" },
+        { "path": "src/generator/rules/array.ts",    "type": "code-import" },
+        { "path": "src/generator/rules/object.ts",   "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "tests/e2e/generate.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/id-assigner/index.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/types.ts",  "type": "code-import" },
+        { "path": "src/logger.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/cli.ts",
+        "tests/e2e/generate.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/renderer/json.ts",
+      "file_type": "ts",
+      "layer": "pipeline",
+      "direct_dependencies": [
+        { "path": "src/types.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": ["src/cli.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/rules/common.ts",
+      "file_type": "ts",
+      "layer": "rules",
+      "direct_dependencies": [
+        { "path": "src/types.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/generator/index.ts",
+        "tests/rules/common.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/rules/integer.ts",
+      "file_type": "ts",
+      "layer": "rules",
+      "direct_dependencies": [
+        { "path": "src/types.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/generator/index.ts",
+        "tests/rules/integer.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/rules/string.ts",
+      "file_type": "ts",
+      "layer": "rules",
+      "direct_dependencies": [
+        { "path": "src/types.ts",                 "type": "code-import" },
+        { "path": "src/samples/format-samples.ts","type": "code-import" },
+        { "path": "src/logger.ts",                "type": "code-import" },
+        { "path": "randexp",                      "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/generator/index.ts",
+        "tests/rules/string.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/rules/array.ts",
+      "file_type": "ts",
+      "layer": "rules",
+      "direct_dependencies": [
+        { "path": "src/types.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": [
+        "src/generator/index.ts",
+        "tests/rules/array.test.ts"
+      ],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "src/generator/rules/object.ts",
+      "file_type": "ts",
+      "layer": "rules",
+      "direct_dependencies": [
+        { "path": "src/types.ts", "type": "code-import" }
+      ],
+      "reverse_dependencies": ["src/generator/index.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "tests/e2e/generate.test.ts",
+      "file_type": "ts",
+      "layer": "test",
+      "direct_dependencies": [
+        { "path": "src/parser/index.ts",                     "type": "code-import" },
+        { "path": "src/extractor/index.ts",                  "type": "code-import" },
+        { "path": "src/generator/index.ts",                  "type": "code-import" },
+        { "path": "src/id-assigner/index.ts",                "type": "code-import" },
+        { "path": "src/types.ts",                            "type": "code-import" },
+        { "path": "tests/e2e/fixtures/simple.openapi.json",  "type": "config-reference" },
+        { "path": "vitest",                                  "type": "code-import" }
+      ],
+      "reverse_dependencies": ["vitest.config.ts"],
+      "dependency_type": ["code-import", "config-reference"]
+    },
+    {
+      "path": "tests/rules/common.test.ts",
+      "file_type": "ts",
+      "layer": "test",
+      "direct_dependencies": [
+        { "path": "src/generator/rules/common.ts", "type": "code-import" },
+        { "path": "src/types.ts",                  "type": "code-import" },
+        { "path": "vitest",                        "type": "code-import" }
+      ],
+      "reverse_dependencies": ["vitest.config.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "tests/rules/integer.test.ts",
+      "file_type": "ts",
+      "layer": "test",
+      "direct_dependencies": [
+        { "path": "src/generator/rules/integer.ts", "type": "code-import" },
+        { "path": "src/types.ts",                   "type": "code-import" },
+        { "path": "vitest",                         "type": "code-import" }
+      ],
+      "reverse_dependencies": ["vitest.config.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "tests/rules/string.test.ts",
+      "file_type": "ts",
+      "layer": "test",
+      "direct_dependencies": [
+        { "path": "src/generator/rules/string.ts", "type": "code-import" },
+        { "path": "src/types.ts",                  "type": "code-import" },
+        { "path": "vitest",                        "type": "code-import" }
+      ],
+      "reverse_dependencies": ["vitest.config.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "tests/rules/array.test.ts",
+      "file_type": "ts",
+      "layer": "test",
+      "direct_dependencies": [
+        { "path": "src/generator/rules/array.ts", "type": "code-import" },
+        { "path": "src/types.ts",                 "type": "code-import" },
+        { "path": "vitest",                       "type": "code-import" }
+      ],
+      "reverse_dependencies": ["vitest.config.ts"],
+      "dependency_type": ["code-import"]
+    },
+    {
+      "path": "tests/e2e/fixtures/simple.openapi.json",
+      "file_type": "json",
+      "layer": "fixture",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["tests/e2e/generate.test.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "@apidevtools/swagger-parser",
+      "file_type": "external",
+      "layer": "external",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["src/parser/index.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "commander",
+      "file_type": "external",
+      "layer": "external",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["src/cli.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "pino",
+      "file_type": "external",
+      "layer": "external",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["src/logger.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "randexp",
+      "file_type": "external",
+      "layer": "external",
+      "direct_dependencies": [],
+      "reverse_dependencies": ["src/generator/rules/string.ts"],
+      "dependency_type": []
+    },
+    {
+      "path": "vitest",
+      "file_type": "external",
+      "layer": "external",
+      "direct_dependencies": [],
+      "reverse_dependencies": [
+        "vitest.config.ts",
+        "tests/e2e/generate.test.ts",
+        "tests/rules/common.test.ts",
+        "tests/rules/integer.test.ts",
+        "tests/rules/string.test.ts",
+        "tests/rules/array.test.ts"
+      ],
+      "dependency_type": []
+    }
+  ],
+  "summary": {
+    "file_count": 24,
+    "node_count": 29,
+    "dependency_count": 72,
+    "isolated_count": 0,
+    "cyclic_count": 0,
+    "unknown_count": 0
+  }
+}

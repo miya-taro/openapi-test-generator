@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>openapi-test-gen — 依存グラフ</title>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    #header {
+      background: #161b22;
+      padding: 10px 20px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    #header h1 { font-size: 15px; color: #f0f6fc; font-weight: 600; }
+    #header-stats { font-size: 12px; color: #8b949e; margin-left: auto; display: flex; gap: 16px; }
+    #header-stats span { display: flex; align-items: center; gap: 4px; }
+
+    /* ── Controls ── */
+    #controls {
+      background: #161b22;
+      padding: 8px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+    .ctrl-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ctrl-label {
+      font-size: 10px;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    #search {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      padding: 5px 10px;
+      font-size: 12px;
+      width: 180px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search:focus { border-color: #58a6ff; }
+    #search::placeholder { color: #484f58; }
+
+    .tag-btn {
+      padding: 3px 10px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+      user-select: none;
+    }
+    .tag-btn:active { transform: scale(0.95); }
+    .tag-btn.off { opacity: 0.3; }
+
+    .layer-config   { background: #1f4e79; border-color: #3498db; color: #74b9ff; }
+    .layer-shared   { background: #1a4731; border-color: #27ae60; color: #55efc4; }
+    .layer-pipeline { background: #4a2800; border-color: #e67e22; color: #fdcb6e; }
+    .layer-rules    { background: #3b1f5e; border-color: #9b59b6; color: #d6a3ff; }
+    .layer-test     { background: #4a1010; border-color: #e74c3c; color: #ff7675; }
+    .layer-fixture  { background: #2a2a2a; border-color: #636e72; color: #b2bec3; }
+    .layer-external { background: #1a1a1a; border-color: #484f58; color: #8b949e; }
+    .edge-code-import     { background: #1c1c28; border-color: #6e7681; color: #8b949e; }
+    .edge-build-def       { background: #2a2000; border-color: #e67e22; color: #fdcb6e; }
+    .edge-config-ref      { background: #001f3f; border-color: #3498db; color: #74b9ff; }
+
+    .ctrl-divider { width: 1px; height: 20px; background: #30363d; }
+    .ctrl-btn {
+      padding: 4px 12px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.15s;
+    }
+    .ctrl-btn:hover { background: #30363d; }
+
+    /* ── Main layout ── */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Key Files Panel (left) ── */
+    #keyfiles-panel {
+      width: 220px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    #keyfiles-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #keyfiles-header span:first-child {
+      font-size: 10px;
+      font-weight: 700;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .kf-badge-count {
+      background: #f1c40f22;
+      color: #f1c40f;
+      border: 1px solid #f1c40f44;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    #keyfiles-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    #keyfiles-list::-webkit-scrollbar { width: 4px; }
+    #keyfiles-list::-webkit-scrollbar-track { background: #0d1117; }
+    #keyfiles-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+    .kf-item {
+      padding: 8px 14px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .kf-item:hover { background: #21262d; border-left-color: #f1c40f; }
+    .kf-item.active { background: #21262d; border-left-color: #f1c40f; }
+    .kf-item-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #f0f6fc;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      margin-bottom: 3px;
+      word-break: break-all;
+    }
+    .kf-item-role {
+      font-size: 10px;
+      color: #8b949e;
+      margin-bottom: 3px;
+    }
+    .kf-item-reason {
+      font-size: 10px;
+      color: #484f58;
+      line-height: 1.3;
+    }
+    .kf-star {
+      color: #f1c40f;
+      font-size: 10px;
+      margin-right: 4px;
+    }
+
+    /* ── Network ── */
+    #network-wrap {
+      flex: 1;
+      position: relative;
+      background: #0d1117;
+      min-width: 0;
+    }
+    #network { width: 100%; height: 100%; }
+
+    /* ── Detail Panel (right) ── */
+    #detail {
+      width: 300px;
+      background: #161b22;
+      border-left: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    #detail-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid #30363d;
+      font-size: 10px;
+      font-weight: 700;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      flex-shrink: 0;
+    }
+    #detail-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+    }
+    #detail-body::-webkit-scrollbar { width: 4px; }
+    #detail-body::-webkit-scrollbar-track { background: #0d1117; }
+    #detail-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+    .detail-empty {
+      color: #484f58;
+      font-size: 12px;
+      text-align: center;
+      margin-top: 60px;
+      line-height: 1.8;
+    }
+
+    .detail-section { margin-bottom: 16px; }
+    .detail-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .detail-section-title .cnt { color: #58a6ff; font-weight: 700; }
+
+    .detail-path {
+      font-size: 11px;
+      color: #f0f6fc;
+      word-break: break-all;
+      background: #0d1117;
+      padding: 7px 9px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      line-height: 1.5;
+    }
+    .detail-text {
+      font-size: 12px;
+      color: #c9d1d9;
+      line-height: 1.65;
+    }
+    .detail-code {
+      font-size: 11px;
+      color: #adbac7;
+      background: #0d1117;
+      padding: 7px 9px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      line-height: 1.5;
+    }
+    .detail-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      margin: 2px 2px 2px 0;
+    }
+    .key-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #f1c40f18;
+      border: 1px solid #f1c40f44;
+      color: #f1c40f;
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .dep-list { list-style: none; }
+    .dep-item {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #8b949e;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      transition: background 0.1s, color 0.1s;
+      word-break: break-all;
+      line-height: 1.4;
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .dep-item:hover { background: #21262d; color: #58a6ff; }
+    .dep-type-tag {
+      font-size: 9px;
+      color: #484f58;
+      font-family: sans-serif;
+      flex-shrink: 0;
+      padding-top: 1px;
+    }
+    .no-deps { font-size: 11px; color: #484f58; font-style: italic; padding: 3px 8px; }
+
+    /* ── Footer ── */
+    #footer {
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      padding: 6px 20px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #6e7681; }
+    .legend-dot  { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .legend-line { width: 18px; height: 2px; flex-shrink: 0; }
+    .legend-dashed { background: repeating-linear-gradient(90deg,#3498db 0,#3498db 4px,transparent 4px,transparent 8px); height: 2px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div id="header">
+  <h1>openapi-test-gen — 依存グラフ</h1>
+  <div id="header-stats">
+    <span>ノード: <strong id="stat-nodes">—</strong></span>
+    <span>エッジ: <strong id="stat-edges">—</strong></span>
+    <span>表示中: <strong id="stat-visible">—</strong></span>
+  </div>
+</div>
+
+<!-- ── Controls ── -->
+<div id="controls">
+  <div class="ctrl-group">
+    <span class="ctrl-label">検索</span>
+    <input id="search" type="text" placeholder="ファイル名を入力...">
+  </div>
+  <div class="ctrl-divider"></div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">レイヤー</span>
+    <div id="layer-btns"></div>
+  </div>
+  <div class="ctrl-divider"></div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">依存種別</span>
+    <div id="edge-btns"></div>
+  </div>
+  <div class="ctrl-divider"></div>
+  <div class="ctrl-group">
+    <button class="ctrl-btn" id="fit-btn">全体表示</button>
+    <button class="ctrl-btn" id="physics-btn">物理演算 OFF</button>
+    <button class="ctrl-btn" id="reset-btn">フィルタ解除</button>
+  </div>
+</div>
+
+<!-- ── Main ── -->
+<div id="main">
+
+  <!-- Left: Key Files Panel -->
+  <div id="keyfiles-panel">
+    <div id="keyfiles-header">
+      <span>主要ファイル</span>
+      <span class="kf-badge-count" id="kf-count">—</span>
+    </div>
+    <div id="keyfiles-list"></div>
+  </div>
+
+  <!-- Center: Network -->
+  <div id="network-wrap">
+    <div id="network"></div>
+  </div>
+
+  <!-- Right: Detail Panel -->
+  <div id="detail">
+    <div id="detail-header">ノード詳細</div>
+    <div id="detail-body">
+      <div class="detail-empty">ノードをクリックするか<br>左の主要ファイル一覧を選択すると<br>詳細情報を表示します</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Footer ── -->
+<div id="footer">
+  <span style="font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:.5px;font-weight:600;">凡例</span>
+  <div class="legend-item"><div class="legend-dot" style="background:#3498db"></div>config</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div>shared</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div>pipeline</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#9b59b6"></div>rules</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div>test</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#636e72"></div>fixture</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#484f58"></div>external</div>
+  <span style="margin-left:6px;font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:.5px;font-weight:600;">エッジ</span>
+  <div class="legend-item"><div class="legend-line" style="background:#6e7681"></div>code-import</div>
+  <div class="legend-item"><div class="legend-line" style="background:#e67e22"></div>build-definition</div>
+  <div class="legend-item"><div class="legend-line legend-dashed"></div>config-reference</div>
+  <div class="legend-item" style="margin-left:8px;">
+    <div class="legend-dot" style="background:#f1c40f;border-radius:2px;"></div>
+    主要ファイル
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  DATA — generated from dependencies.json
+// ═══════════════════════════════════════════════════════════════════
+const DEPS_DATA = {"files":[{"path":"pnpm-workspace.yaml","file_type":"yaml","layer":"config","direct_dependencies":[{"path":"package.json","type":"build-definition"}],"reverse_dependencies":[],"dependency_type":["build-definition"]},{"path":"package.json","file_type":"json","layer":"config","direct_dependencies":[{"path":"tsconfig.json","type":"build-definition"}],"reverse_dependencies":["pnpm-workspace.yaml"],"dependency_type":["build-definition"]},{"path":"tsconfig.json","file_type":"json","layer":"config","direct_dependencies":[{"path":"src/cli.ts","type":"build-definition"},{"path":"src/logger.ts","type":"build-definition"},{"path":"src/types.ts","type":"build-definition"},{"path":"src/parser/index.ts","type":"build-definition"},{"path":"src/extractor/index.ts","type":"build-definition"},{"path":"src/generator/index.ts","type":"build-definition"},{"path":"src/generator/rules/common.ts","type":"build-definition"},{"path":"src/generator/rules/integer.ts","type":"build-definition"},{"path":"src/generator/rules/string.ts","type":"build-definition"},{"path":"src/generator/rules/array.ts","type":"build-definition"},{"path":"src/generator/rules/object.ts","type":"build-definition"},{"path":"src/id-assigner/index.ts","type":"build-definition"},{"path":"src/renderer/json.ts","type":"build-definition"},{"path":"src/samples/format-samples.ts","type":"build-definition"}],"reverse_dependencies":["package.json"],"dependency_type":["build-definition"]},{"path":"vitest.config.ts","file_type":"ts","layer":"config","direct_dependencies":[{"path":"vitest","type":"code-import"},{"path":"tests/e2e/generate.test.ts","type":"config-reference"},{"path":"tests/rules/common.test.ts","type":"config-reference"},{"path":"tests/rules/integer.test.ts","type":"config-reference"},{"path":"tests/rules/string.test.ts","type":"config-reference"},{"path":"tests/rules/array.test.ts","type":"config-reference"}],"reverse_dependencies":[],"dependency_type":["code-import","config-reference"]},{"path":"src/types.ts","file_type":"ts","layer":"shared","direct_dependencies":[],"reverse_dependencies":["src/cli.ts","src/extractor/index.ts","src/generator/index.ts","src/generator/rules/common.ts","src/generator/rules/integer.ts","src/generator/rules/string.ts","src/generator/rules/array.ts","src/generator/rules/object.ts","src/id-assigner/index.ts","src/renderer/json.ts","tests/e2e/generate.test.ts","tests/rules/common.test.ts","tests/rules/integer.test.ts","tests/rules/string.test.ts","tests/rules/array.test.ts"],"dependency_type":[]},{"path":"src/logger.ts","file_type":"ts","layer":"shared","direct_dependencies":[{"path":"pino","type":"code-import"}],"reverse_dependencies":["src/cli.ts","src/parser/index.ts","src/extractor/index.ts","src/generator/rules/string.ts","src/id-assigner/index.ts"],"dependency_type":["code-import"]},{"path":"src/samples/format-samples.ts","file_type":"ts","layer":"shared","direct_dependencies":[],"reverse_dependencies":["src/generator/rules/string.ts"],"dependency_type":[]},{"path":"src/cli.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/logger.ts","type":"code-import"},{"path":"src/parser/index.ts","type":"code-import"},{"path":"src/extractor/index.ts","type":"code-import"},{"path":"src/generator/index.ts","type":"code-import"},{"path":"src/id-assigner/index.ts","type":"code-import"},{"path":"src/renderer/json.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"commander","type":"code-import"}],"reverse_dependencies":["tsconfig.json"],"dependency_type":["code-import"]},{"path":"src/parser/index.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/logger.ts","type":"code-import"},{"path":"@apidevtools/swagger-parser","type":"code-import"}],"reverse_dependencies":["src/cli.ts","src/extractor/index.ts","tests/e2e/generate.test.ts"],"dependency_type":["code-import"]},{"path":"src/extractor/index.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/parser/index.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"src/logger.ts","type":"code-import"}],"reverse_dependencies":["src/cli.ts","tests/e2e/generate.test.ts"],"dependency_type":["code-import"]},{"path":"src/generator/index.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/types.ts","type":"code-import"},{"path":"src/generator/rules/common.ts","type":"code-import"},{"path":"src/generator/rules/integer.ts","type":"code-import"},{"path":"src/generator/rules/string.ts","type":"code-import"},{"path":"src/generator/rules/array.ts","type":"code-import"},{"path":"src/generator/rules/object.ts","type":"code-import"}],"reverse_dependencies":["src/cli.ts","tests/e2e/generate.test.ts"],"dependency_type":["code-import"]},{"path":"src/id-assigner/index.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/types.ts","type":"code-import"},{"path":"src/logger.ts","type":"code-import"}],"reverse_dependencies":["src/cli.ts","tests/e2e/generate.test.ts"],"dependency_type":["code-import"]},{"path":"src/renderer/json.ts","file_type":"ts","layer":"pipeline","direct_dependencies":[{"path":"src/types.ts","type":"code-import"}],"reverse_dependencies":["src/cli.ts"],"dependency_type":["code-import"]},{"path":"src/generator/rules/common.ts","file_type":"ts","layer":"rules","direct_dependencies":[{"path":"src/types.ts","type":"code-import"}],"reverse_dependencies":["src/generator/index.ts","tests/rules/common.test.ts"],"dependency_type":["code-import"]},{"path":"src/generator/rules/integer.ts","file_type":"ts","layer":"rules","direct_dependencies":[{"path":"src/types.ts","type":"code-import"}],"reverse_dependencies":["src/generator/index.ts","tests/rules/integer.test.ts"],"dependency_type":["code-import"]},{"path":"src/generator/rules/string.ts","file_type":"ts","layer":"rules","direct_dependencies":[{"path":"src/types.ts","type":"code-import"},{"path":"src/samples/format-samples.ts","type":"code-import"},{"path":"src/logger.ts","type":"code-import"},{"path":"randexp","type":"code-import"}],"reverse_dependencies":["src/generator/index.ts","tests/rules/string.test.ts"],"dependency_type":["code-import"]},{"path":"src/generator/rules/array.ts","file_type":"ts","layer":"rules","direct_dependencies":[{"path":"src/types.ts","type":"code-import"}],"reverse_dependencies":["src/generator/index.ts","tests/rules/array.test.ts"],"dependency_type":["code-import"]},{"path":"src/generator/rules/object.ts","file_type":"ts","layer":"rules","direct_dependencies":[{"path":"src/types.ts","type":"code-import"}],"reverse_dependencies":["src/generator/index.ts"],"dependency_type":["code-import"]},{"path":"tests/e2e/generate.test.ts","file_type":"ts","layer":"test","direct_dependencies":[{"path":"src/parser/index.ts","type":"code-import"},{"path":"src/extractor/index.ts","type":"code-import"},{"path":"src/generator/index.ts","type":"code-import"},{"path":"src/id-assigner/index.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"tests/e2e/fixtures/simple.openapi.json","type":"config-reference"},{"path":"vitest","type":"code-import"}],"reverse_dependencies":["vitest.config.ts"],"dependency_type":["code-import","config-reference"]},{"path":"tests/rules/common.test.ts","file_type":"ts","layer":"test","direct_dependencies":[{"path":"src/generator/rules/common.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"vitest","type":"code-import"}],"reverse_dependencies":["vitest.config.ts"],"dependency_type":["code-import"]},{"path":"tests/rules/integer.test.ts","file_type":"ts","layer":"test","direct_dependencies":[{"path":"src/generator/rules/integer.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"vitest","type":"code-import"}],"reverse_dependencies":["vitest.config.ts"],"dependency_type":["code-import"]},{"path":"tests/rules/string.test.ts","file_type":"ts","layer":"test","direct_dependencies":[{"path":"src/generator/rules/string.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"vitest","type":"code-import"}],"reverse_dependencies":["vitest.config.ts"],"dependency_type":["code-import"]},{"path":"tests/rules/array.test.ts","file_type":"ts","layer":"test","direct_dependencies":[{"path":"src/generator/rules/array.ts","type":"code-import"},{"path":"src/types.ts","type":"code-import"},{"path":"vitest","type":"code-import"}],"reverse_dependencies":["vitest.config.ts"],"dependency_type":["code-import"]},{"path":"tests/e2e/fixtures/simple.openapi.json","file_type":"json","layer":"fixture","direct_dependencies":[],"reverse_dependencies":["tests/e2e/generate.test.ts"],"dependency_type":[]},{"path":"@apidevtools/swagger-parser","file_type":"external","layer":"external","direct_dependencies":[],"reverse_dependencies":["src/parser/index.ts"],"dependency_type":[]},{"path":"commander","file_type":"external","layer":"external","direct_dependencies":[],"reverse_dependencies":["src/cli.ts"],"dependency_type":[]},{"path":"pino","file_type":"external","layer":"external","direct_dependencies":[],"reverse_dependencies":["src/logger.ts"],"dependency_type":[]},{"path":"randexp","file_type":"external","layer":"external","direct_dependencies":[],"reverse_dependencies":["src/generator/rules/string.ts"],"dependency_type":[]},{"path":"vitest","file_type":"external","layer":"external","direct_dependencies":[],"reverse_dependencies":["vitest.config.ts","tests/e2e/generate.test.ts","tests/rules/common.test.ts","tests/rules/integer.test.ts","tests/rules/string.test.ts","tests/rules/array.test.ts"],"dependency_type":[]}],"summary":{"file_count":24,"node_count":29,"dependency_count":72,"isolated_count":0,"cyclic_count":0,"unknown_count":0}};
+
+// ═══════════════════════════════════════════════════════════════════
+//  KEY FILES — 主要ファイル定義
+//  判定基準: reverse_deps 多数 / direct_deps 多数 / エントリポイント /
+//            設定中心 / レイヤ境界
+// ═══════════════════════════════════════════════════════════════════
+const KEY_FILES = {
+  'src/types.ts': {
+    summary: '全モジュールが共有する型定義ファイル。ParamSpec / BodyFieldSpec / TestCase / GenerateOptions など、プロジェクト全体のデータ構造を一元管理する。依存ゼロで安定した基盤として機能する。',
+    role: '共有型定義の基盤',
+    reason_important: 'reverse_dependencies が 15 件と最多。変更時の影響範囲がプロジェクト全体に及ぶ純粋な型定義モジュール。',
+    key_dependencies: [],
+    key_reverse_dependencies: ['src/cli.ts', 'src/generator/index.ts', 'src/generator/rules/string.ts', 'tests/e2e/generate.test.ts'],
+    notes: '依存ゼロ（pure type definitions）。このファイルへの型追加・変更は全モジュールの再コンパイルを引き起こす。',
+  },
+  'src/cli.ts': {
+    summary: 'CLI のエントリポイント。commander によるオプション解析を行い、Phase 1〜5 の全パイプラインフェーズを順番に呼び出してオーケストレートする。終了コード 0〜3 を定義し、CI 運用に対応する。',
+    role: 'エントリポイント / パイプラインオーケストレーター',
+    reason_important: 'アプリケーション唯一のエントリポイント。direct_dependencies 8 件で全パイプラインモジュールを結合する中枢。',
+    key_dependencies: ['src/parser/index.ts', 'src/generator/index.ts', 'src/id-assigner/index.ts', 'src/renderer/json.ts'],
+    key_reverse_dependencies: ['tsconfig.json'],
+    notes: '終了コード: 0=正常, 1=入力エラー, 2=$ref解決エラー, 3=出力エラー。--dry-run / --fail-if-exists など CI 向けオプションを提供。',
+  },
+  'tsconfig.json': {
+    summary: 'TypeScript コンパイラ設定ファイル。src/ 配下の全 14 ファイルをビルド対象として定義し、ESM (NodeNext) モジュール解決と outDir: ./dist を指定する。ビルドパイプライン全体の設定起点となる。',
+    role: 'ビルド定義の中心',
+    reason_important: 'direct_dependencies が 14 件（全プロジェクトファイル中最多）。src/ 全ファイルの build-definition の唯一の起点。',
+    key_dependencies: ['src/cli.ts', 'src/types.ts', 'src/generator/index.ts'],
+    key_reverse_dependencies: ['package.json'],
+    notes: 'module: NodeNext 設定により、import 文に .js 拡張子が必須。変更時は全ファイルの再ビルドが発生する。',
+  },
+  'src/generator/index.ts': {
+    summary: 'Phase 3 テストケース生成のオーケストレーター。ParamSpec と BodyFieldSpec を受け取り、型（integer / string / array / object）に応じたルールモジュールを呼び出してテストケース列を生成する。Pipeline レイヤと Rules レイヤの境界に位置する。',
+    role: 'ルールオーケストレーター / レイヤ境界（Pipeline ↔ Rules）',
+    reason_important: 'Pipeline と Rules の 2 レイヤにまたがる境界ノード。5 つのルールモジュールを統合し、生成ロジックの中枢を担う。',
+    key_dependencies: ['src/generator/rules/integer.ts', 'src/generator/rules/string.ts', 'src/types.ts'],
+    key_reverse_dependencies: ['src/cli.ts', 'tests/e2e/generate.test.ts'],
+    notes: 'generateFromSchema() が型ごとの分岐ロジックを持つ。新ルール追加時はこのファイルへの変更が必須。',
+  },
+  'src/logger.ts': {
+    summary: 'pino ベースのロガー。setLogLevel() でログレベルを動的変更でき、CLI の --log-level オプションと連動する。パイプライン全体の横断的関心事（cross-cutting concern）として機能する。',
+    role: '横断的関心事 / 共有ロガー',
+    reason_important: 'pipeline と rules の複数モジュールから参照される横断的関心事。reverse_dependencies が 5 件で shared レイヤ最多。',
+    key_dependencies: ['pino'],
+    key_reverse_dependencies: ['src/cli.ts', 'src/parser/index.ts', 'src/extractor/index.ts', 'src/id-assigner/index.ts'],
+    notes: 'setLogLevel() は CLI 初期化時に一度だけ呼ばれる。各モジュールは logger をシングルトンとしてインポートして使用する。',
+  },
+  'vitest.config.ts': {
+    summary: 'Vitest テストランナーの設定ファイル。tests/**/*.test.ts パターンで全テストファイルを自動検出し、Node.js 環境で実行する。テスト設定変更の影響が全テストファイルに及ぶ設定の中心。',
+    role: 'テスト設定の中心',
+    reason_important: '全テストファイル 5 件の config-reference 起点。テスト実行環境・対象ファイルの設定を一元管理する。',
+    key_dependencies: ['vitest'],
+    key_reverse_dependencies: [],
+    notes: 'include: ["tests/**/*.test.ts"] の glob により、テストファイルの追加に設定変更は不要。vitest.config.ts 自体は他のファイルに逆参照されない。',
+  },
+  'src/parser/index.ts': {
+    summary: 'openapi.json を読み込み、$ref を解決した中間表現（IR）を生成する Phase 1 モジュール。OAS 3.0/3.1 の exclusiveMinimum/Maximum 差異を正規化し、後続フェーズに統一した IR を提供する唯一の外部アダプター。',
+    role: '外部アダプター / Phase 1 パーサー / OAS バージョン正規化',
+    reason_important: '外部パッケージ（swagger-parser）と内部パイプラインの境界。OAS 3.0/3.1 差異を吸収する正規化責務を持つ唯一のモジュール。',
+    key_dependencies: ['@apidevtools/swagger-parser', 'src/logger.ts'],
+    key_reverse_dependencies: ['src/cli.ts', 'src/extractor/index.ts'],
+    notes: 'normalizeExclusiveKeywords() で 3.0 の boolean 型と 3.1 の数値型を _exclusiveMinimumValue / _exclusiveMaximumValue に統一。ローカルファイル参照のみ対応（リモート URL は非対応）。',
+  },
+  'src/extractor/index.ts': {
+    summary: 'Phase 2 抽出モジュール。OpenAPI IR から parameters と requestBody を走査し、ParamSpec[] と BodyFieldSpec[] に変換する。標準 HTTP ヘッダのスキップや binary フィールドの除外、ネストオブジェクトの再帰展開を担う。',
+    role: 'Phase 2 抽出器 / レイヤ境界（Parser ↔ Generator）',
+    reason_important: 'Parser 出力を Generator 入力形式に変換するレイヤ境界。requestBody の再帰展開ロジックを持つ複雑度の高いモジュール。',
+    key_dependencies: ['src/parser/index.ts', 'src/types.ts'],
+    key_reverse_dependencies: ['src/cli.ts', 'tests/e2e/generate.test.ts'],
+    notes: '標準ヘッダ（Authorization, Content-Type 等）は STANDARD_HEADERS で除外。fieldPath は "user.address.zipCode" 形式でネストを表現する。',
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════════
+const LAYER_CONFIG = {
+  config:   { color: '#3498db', border: '#2980b9', label: 'config',   shape: 'diamond' },
+  shared:   { color: '#27ae60', border: '#229954', label: 'shared',   shape: 'ellipse' },
+  pipeline: { color: '#e67e22', border: '#ca6f1e', label: 'pipeline', shape: 'box' },
+  rules:    { color: '#9b59b6', border: '#8e44ad', label: 'rules',    shape: 'box' },
+  test:     { color: '#e74c3c', border: '#c0392b', label: 'test',     shape: 'triangle' },
+  fixture:  { color: '#636e72', border: '#4a5568', label: 'fixture',  shape: 'database' },
+  external: { color: '#2d2d2d', border: '#484f58', label: 'external', shape: 'hexagon' },
+};
+
+const EDGE_CONFIG = {
+  'code-import':      { color: '#5a6270', dashes: false },
+  'build-definition': { color: '#e67e22', dashes: [6, 4] },
+  'config-reference': { color: '#3498db', dashes: [4, 4] },
+};
+
+const LAYER_BADGE_STYLE = {
+  config:   'background:#1f4e79;color:#74b9ff;',
+  shared:   'background:#1a4731;color:#55efc4;',
+  pipeline: 'background:#4a2800;color:#fdcb6e;',
+  rules:    'background:#3b1f5e;color:#d6a3ff;',
+  test:     'background:#4a1010;color:#ff7675;',
+  fixture:  'background:#2a2a2a;color:#b2bec3;',
+  external: 'background:#1a1a1a;color:#8b949e;',
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  BUILD VIS DATA
+// ═══════════════════════════════════════════════════════════════════
+const fileMap = new Map();
+DEPS_DATA.files.forEach(f => fileMap.set(f.path, f));
+
+function getLabel(path) {
+  return path.split('/').pop();
+}
+
+function getShortSummary(path) {
+  const kf = KEY_FILES[path];
+  if (!kf) return null;
+  return kf.summary.split('。')[0] + '。';
+}
+
+function buildTooltip(file) {
+  const short = getShortSummary(file.path);
+  const pathHtml = `<div style="font-family:monospace;font-size:11px;color:#f0f6fc;word-break:break-all;max-width:260px;">${file.path}</div>`;
+  if (short) {
+    return pathHtml + `<div style="font-size:11px;color:#8b949e;margin-top:5px;max-width:260px;line-height:1.4;">${short}</div>`;
+  }
+  return pathHtml;
+}
+
+const visNodes = DEPS_DATA.files.map(f => {
+  const lc = LAYER_CONFIG[f.layer] || LAYER_CONFIG.external;
+  const isKey = !!KEY_FILES[f.path];
+  const revCount = f.reverse_dependencies.length;
+  const size = Math.max(16, Math.min(36, 16 + revCount * 2));
+
+  return {
+    id: f.path,
+    label: getLabel(f.path),
+    title: buildTooltip(f),
+    group: f.layer,
+    shape: lc.shape,
+    size,
+    color: {
+      background: isKey ? '#2a2000' : lc.color,
+      border: isKey ? '#f1c40f' : lc.border,
+      highlight: { background: '#f1c40f', border: '#f39c12' },
+      hover: { background: isKey ? '#3a3000' : lc.color + 'cc', border: isKey ? '#f1c40f' : lc.border },
+    },
+    font: {
+      color: isKey ? '#f1c40f' : '#f0f6fc',
+      size: isKey ? 12 : 11,
+      face: 'SFMono-Regular, Consolas, monospace',
+      bold: isKey,
+    },
+    borderWidth: isKey ? 2 : 1,
+    borderDashes: isKey ? false : false,
+    shadow: { enabled: true, color: isKey ? '#f1c40f33' : lc.color + '44', size: isKey ? 12 : 8, x: 2, y: 2 },
+    _layer: f.layer,
+    _isKey: isKey,
+  };
+});
+
+let edgeIdCounter = 0;
+const allEdgesData = [];
+DEPS_DATA.files.forEach(f => {
+  f.direct_dependencies.forEach(dep => {
+    const ec = EDGE_CONFIG[dep.type] || EDGE_CONFIG['code-import'];
+    allEdgesData.push({
+      id: `e${edgeIdCounter++}`,
+      from: f.path,
+      to: dep.path,
+      _type: dep.type,
+      color: { color: ec.color, highlight: '#f1c40f', hover: ec.color },
+      dashes: ec.dashes,
+      arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+      width: dep.type === 'code-import' ? 1 : 2,
+      smooth: { type: 'curvedCW', roundness: 0.1 },
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  VIS-NETWORK INIT
+// ═══════════════════════════════════════════════════════════════════
+const nodesDS = new vis.DataSet(visNodes);
+const edgesDS = new vis.DataSet(allEdgesData);
+
+const container = document.getElementById('network');
+const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
+  physics: {
+    enabled: true,
+    forceAtlas2Based: {
+      gravitationalConstant: -80,
+      centralGravity: 0.01,
+      springLength: 130,
+      springConstant: 0.06,
+      damping: 0.4,
+    },
+    solver: 'forceAtlas2Based',
+    stabilization: { iterations: 150, fit: true },
+  },
+  interaction: { hover: true, tooltipDelay: 250, zoomView: true },
+  layout: { improvedLayout: false },
+});
+
+document.getElementById('stat-nodes').textContent = visNodes.length;
+document.getElementById('stat-edges').textContent = allEdgesData.length;
+
+function updateVisibleStat() {
+  const v = nodesDS.get({ filter: n => !n.hidden }).length;
+  document.getElementById('stat-visible').textContent = `${v} ノード`;
+}
+updateVisibleStat();
+
+// ═══════════════════════════════════════════════════════════════════
+//  KEY FILES LIST (left panel)
+// ═══════════════════════════════════════════════════════════════════
+const keyFilesList = document.getElementById('keyfiles-list');
+document.getElementById('kf-count').textContent = Object.keys(KEY_FILES).length;
+
+let activeKfItem = null;
+
+Object.entries(KEY_FILES).forEach(([path, meta]) => {
+  const item = document.createElement('div');
+  item.className = 'kf-item';
+  item.dataset.node = path;
+  item.innerHTML = `
+    <div class="kf-item-name"><span class="kf-star">★</span>${getLabel(path)}</div>
+    <div class="kf-item-role">${meta.role}</div>
+    <div class="kf-item-reason">${meta.reason_important.split('。')[0]}。</div>
+  `;
+  item.addEventListener('click', () => {
+    selectNode(path);
+    document.querySelectorAll('.kf-item').forEach(el => el.classList.remove('active'));
+    item.classList.add('active');
+    activeKfItem = item;
+  });
+  keyFilesList.appendChild(item);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  LAYER FILTER BUTTONS
+// ═══════════════════════════════════════════════════════════════════
+const hiddenLayers = new Set();
+const hiddenEdgeTypes = new Set();
+
+const layerBtnsEl = document.getElementById('layer-btns');
+Object.entries(LAYER_CONFIG).forEach(([layer, lc]) => {
+  const btn = document.createElement('button');
+  btn.className = `tag-btn layer-${layer}`;
+  btn.textContent = lc.label;
+  btn.dataset.layer = layer;
+  btn.addEventListener('click', () => {
+    hiddenLayers.has(layer) ? hiddenLayers.delete(layer) : hiddenLayers.add(layer);
+    btn.classList.toggle('off');
+    applyVisibility();
+  });
+  layerBtnsEl.appendChild(btn);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  EDGE TYPE FILTER BUTTONS
+// ═══════════════════════════════════════════════════════════════════
+const edgeBtnsEl = document.getElementById('edge-btns');
+[
+  { type: 'code-import',      cls: 'edge-code-import', label: 'code-import' },
+  { type: 'build-definition', cls: 'edge-build-def',   label: 'build-definition' },
+  { type: 'config-reference', cls: 'edge-config-ref',  label: 'config-reference' },
+].forEach(({ type, cls, label }) => {
+  const btn = document.createElement('button');
+  btn.className = `tag-btn ${cls}`;
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    hiddenEdgeTypes.has(type) ? hiddenEdgeTypes.delete(type) : hiddenEdgeTypes.add(type);
+    btn.classList.toggle('off');
+    applyVisibility();
+  });
+  edgeBtnsEl.appendChild(btn);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  VISIBILITY ENGINE
+// ═══════════════════════════════════════════════════════════════════
+function applyVisibility(searchQuery) {
+  const q = (searchQuery !== undefined ? searchQuery : document.getElementById('search').value).toLowerCase();
+
+  nodesDS.update(visNodes.map(n => {
+    const layerHidden = hiddenLayers.has(n._layer);
+    const searchFade  = q.length > 0 && !n.id.toLowerCase().includes(q) && !n.label.toLowerCase().includes(q);
+    return {
+      id: n.id,
+      hidden: layerHidden,
+      opacity: searchFade ? 0.07 : 1,
+      font: { ...n.font, color: searchFade ? '#333' : (n._isKey ? '#f1c40f' : '#f0f6fc') },
+    };
+  }));
+
+  edgesDS.update(allEdgesData.map(e => {
+    const sf = fileMap.get(e.from);
+    const st = fileMap.get(e.to);
+    return {
+      id: e.id,
+      hidden: (sf && hiddenLayers.has(sf.layer))
+           || (st && hiddenLayers.has(st.layer))
+           || hiddenEdgeTypes.has(e._type),
+    };
+  }));
+
+  updateVisibleStat();
+}
+
+document.getElementById('search').addEventListener('input', e => applyVisibility(e.target.value));
+
+// ═══════════════════════════════════════════════════════════════════
+//  CONTROL BUTTONS
+// ═══════════════════════════════════════════════════════════════════
+document.getElementById('fit-btn').addEventListener('click', () => network.fit({ animation: true }));
+
+let physicsOn = true;
+document.getElementById('physics-btn').addEventListener('click', function () {
+  physicsOn = !physicsOn;
+  network.setOptions({ physics: { enabled: physicsOn } });
+  this.textContent = physicsOn ? '物理演算 OFF' : '物理演算 ON';
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  hiddenLayers.clear();
+  hiddenEdgeTypes.clear();
+  document.getElementById('search').value = '';
+  document.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('off'));
+  applyVisibility('');
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  DETAIL PANEL
+// ═══════════════════════════════════════════════════════════════════
+network.on('click', params => {
+  if (!params.nodes.length) return;
+  const nodeId = params.nodes[0];
+  const file = fileMap.get(nodeId);
+  if (!file) return;
+  renderDetail(file);
+  // sync left panel highlight
+  document.querySelectorAll('.kf-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.node === nodeId);
+  });
+});
+
+network.on('doubleClick', params => {
+  if (params.nodes.length) network.focus(params.nodes[0], { scale: 1.5, animation: true });
+});
+
+function renderDetail(file) {
+  const kf = KEY_FILES[file.path];
+  const lc = LAYER_CONFIG[file.layer] || LAYER_CONFIG.external;
+  const bs = LAYER_BADGE_STYLE[file.layer] || LAYER_BADGE_STYLE.external;
+
+  let html = '';
+
+  // ★ Key file banner
+  if (kf) {
+    html += `<div class="key-badge">★ 主要ファイル</div>`;
+  }
+
+  // Path
+  html += `
+    <div class="detail-section">
+      <div class="detail-section-title">PATH</div>
+      <div class="detail-path">${file.path}</div>
+    </div>`;
+
+  // Attributes
+  html += `
+    <div class="detail-section">
+      <div class="detail-section-title">属性</div>
+      <span class="detail-badge" style="${bs}">${file.layer}</span>
+      <span class="detail-badge" style="background:#21262d;color:#8b949e;">${file.file_type}</span>
+      ${file.dependency_type.map(t => `<span class="detail-badge" style="background:#0d1117;color:#6e7681;border:1px solid #30363d;">${t}</span>`).join('')}
+    </div>`;
+
+  // Summary (key files only)
+  if (kf) {
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">SUMMARY</div>
+        <div class="detail-text">${kf.summary}</div>
+      </div>`;
+
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">ROLE</div>
+        <div class="detail-code">${kf.role}</div>
+      </div>`;
+
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">主要ファイル判定理由</div>
+        <div class="detail-text">${kf.reason_important}</div>
+      </div>`;
+  }
+
+  // Direct dependencies
+  html += `
+    <div class="detail-section">
+      <div class="detail-section-title">直接依存 <span class="cnt">${file.direct_dependencies.length}</span></div>
+      ${file.direct_dependencies.length === 0
+        ? '<div class="no-deps">なし</div>'
+        : `<ul class="dep-list">${file.direct_dependencies.map(d =>
+            `<li class="dep-item" onclick="selectNode('${esc(d.path)}')">
+              <span>${getLabel(d.path)}</span>
+              <span class="dep-type-tag">${d.type}</span>
+            </li>`).join('')}</ul>`}
+    </div>`;
+
+  // Reverse dependencies
+  html += `
+    <div class="detail-section">
+      <div class="detail-section-title">逆依存（参照元） <span class="cnt">${file.reverse_dependencies.length}</span></div>
+      ${file.reverse_dependencies.length === 0
+        ? '<div class="no-deps">なし</div>'
+        : `<ul class="dep-list">${file.reverse_dependencies.map(p =>
+            `<li class="dep-item" onclick="selectNode('${esc(p)}')">${getLabel(p)}</li>`
+          ).join('')}</ul>`}
+    </div>`;
+
+  // Key dependencies / key reverse (key files only)
+  if (kf) {
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">KEY DEPENDENCIES</div>
+        ${kf.key_dependencies.length === 0
+          ? '<div class="no-deps">なし</div>'
+          : `<ul class="dep-list">${kf.key_dependencies.map(p =>
+              `<li class="dep-item" onclick="selectNode('${esc(p)}')">${getLabel(p)}</li>`
+            ).join('')}</ul>`}
+      </div>`;
+
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">KEY REVERSE DEPENDENCIES</div>
+        ${kf.key_reverse_dependencies.length === 0
+          ? '<div class="no-deps">なし</div>'
+          : `<ul class="dep-list">${kf.key_reverse_dependencies.map(p =>
+              `<li class="dep-item" onclick="selectNode('${esc(p)}')">${getLabel(p)}</li>`
+            ).join('')}</ul>`}
+      </div>`;
+
+    html += `
+      <div class="detail-section">
+        <div class="detail-section-title">NOTES</div>
+        <div class="detail-text">${kf.notes}</div>
+      </div>`;
+  }
+
+  document.getElementById('detail-body').innerHTML = html;
+}
+
+function selectNode(nodeId) {
+  if (!fileMap.has(nodeId)) return;
+  network.selectNodes([nodeId]);
+  network.focus(nodeId, { scale: 1.4, animation: { duration: 400 } });
+  renderDetail(fileMap.get(nodeId));
+  document.querySelectorAll('.kf-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.node === nodeId);
+  });
+}
+
+function esc(s) { return s.replace(/'/g, "\\'"); }
+
+// ═══════════════════════════════════════════════════════════════════
+//  AUTO-FREEZE AFTER STABILIZATION
+// ═══════════════════════════════════════════════════════════════════
+network.on('stabilizationIterationsDone', () => {
+  network.setOptions({ physics: { enabled: false } });
+  physicsOn = false;
+  document.getElementById('physics-btn').textContent = '物理演算 ON';
+  network.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+});
+</script>
+</body>
+</html>

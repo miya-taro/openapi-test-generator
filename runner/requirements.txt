@@ -1,0 +1,4 @@
+openpyxl>=3.1.0
+psycopg2-binary>=2.9
+pytest>=8.0.0
+pytest-httpserver>=1.1.0
