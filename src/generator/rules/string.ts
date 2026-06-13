@@ -101,7 +101,7 @@ export function generateStringCases(schema: ResolvedSchema, ctx: Context): Parti
         summary: `${ctx.paramName} 最小長-1（異常）`,
         keyword: 'minLength',
         perspective: '異常系_最小長未満',
-        inputValue: invalidLen === 0 ? '""' : 'a'.repeat(invalidLen),
+        inputValue: invalidLen === 0 ? '（空文字）' : 'a'.repeat(invalidLen),
         expectedStatus: '400',
         expectedResult: 'バリデーションエラーが返ること',
         notes: '',

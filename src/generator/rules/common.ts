@@ -39,6 +39,24 @@ export function generateCommonCases(
     })
   }
 
+  // required かつ string → キーあり・空値（異常）
+  // minLength >= 1 の場合は string.ts 側で最小長-1 として "" を生成するが、
+  // それは境界値テストであり「空値」の観点とは別なので両立させる
+  if (required && ctx.opts.includeAbnormal) {
+    const t = Array.isArray(schema.type) ? schema.type[0] : schema.type
+    if (t === 'string') {
+      cases.push({
+        summary: `${ctx.paramName} キーあり・空値（異常）`,
+        keyword: 'required',
+        perspective: '異常系_空値',
+        inputValue: '（空文字）',
+        expectedStatus: '400',
+        expectedResult: 'バリデーションエラーが返ること',
+        notes: 'キーは存在するが値が空文字',
+      })
+    }
+  }
+
   // type — 型不正（異常）
   if (schema.type && ctx.opts.includeAbnormal) {
     const invalidValue = getInvalidValueForType(schema.type as string)

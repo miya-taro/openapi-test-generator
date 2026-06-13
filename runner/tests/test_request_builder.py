@@ -64,6 +64,19 @@ def test_path_omit_marker_keeps_placeholder():
     assert "{id}" in url
 
 
+def test_query_empty_value_marker_sends_empty_string():
+    case = make_case(param_in="query", param_name="q", input_value="（空文字）")
+    url = build_url("http://localhost:8080", case)
+    assert "q=" in url
+    assert url.endswith("q=")
+
+
+def test_path_empty_value_marker_sends_empty_string():
+    case = make_case(path="/users/{id}", param_in="path", param_name="id", input_value="（空文字）")
+    url = build_url("http://localhost:8080", case)
+    assert "/users/" in url
+
+
 def test_base_url_trailing_slash():
     case = make_case(param_in="query", param_name="page", input_value="1")
     url = build_url("http://localhost:8080/", case)
@@ -104,6 +117,20 @@ def test_field_omit_marker_excluded():
     args = build_body_args(case, None)
     body = json.loads(args[1])
     assert "name" not in body
+
+
+def test_body_empty_value_marker_sends_empty_string():
+    case = make_case(
+        operation_id="createUser",
+        path="/users",
+        method="POST",
+        param_in="body",
+        param_name="name",
+        input_value="（空文字）",
+    )
+    args = build_body_args(case, None)
+    body = json.loads(args[1])
+    assert body["name"] == ""
 
 
 # --- baseline generation tests ---

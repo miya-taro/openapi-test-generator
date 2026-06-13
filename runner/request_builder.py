@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from models import RunCase
 
 OMIT_MARKERS = {"（省略）", "（フィールドを省略）"}
+EMPTY_VALUE_MARKER = "（空文字）"
 
 FORMAT_SAMPLES: dict[str, str | int | bool] = {
     "email": "test@example.com",
@@ -20,12 +21,14 @@ FORMAT_SAMPLES: dict[str, str | int | bool] = {
 def build_url(base_url: str, case: RunCase) -> str:
     path = case.path
     if case.param_in == "path" and case.input_value not in OMIT_MARKERS:
-        path = path.replace("{" + case.param_name + "}", case.input_value)
+        val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+        path = path.replace("{" + case.param_name + "}", val)
 
     url = base_url.rstrip("/") + path
 
     if case.param_in == "query" and case.input_value not in OMIT_MARKERS:
-        url += "?" + urlencode({case.param_name: case.input_value})
+        val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+        url += "?" + urlencode({case.param_name: val})
 
     return url
 
@@ -46,7 +49,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
         body.update(baseline)
 
     if case.input_value not in OMIT_MARKERS:
-        body[case.param_name] = _coerce_value(case.param_name, case.input_value, openapi, case)
+        raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+        body[case.param_name] = _coerce_value(case.param_name, raw, openapi, case)
 
     return body
 

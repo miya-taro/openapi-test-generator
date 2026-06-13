@@ -32,7 +32,7 @@ def execute_with_openapi(case: RunCase, base_url: str, openapi: dict | None) -> 
 
 def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
     token = os.environ.get("TEST_AUTH_TOKEN")
-    cmd = ["curl.exe", "-s", "-X", case.method.upper(),
+    cmd = ["curl.exe", "-s", "-v", "-X", case.method.upper(),
            "-D", "-",
            "-w", "\n%{http_code}\n%{time_total}",
            "--max-time", str(CURL_TIMEOUT)]
