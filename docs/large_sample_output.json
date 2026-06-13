@@ -1,10 +1,10 @@
 {
   "meta": {
-    "generatedAt": "2026-06-12T22:30:51.648Z",
+    "generatedAt": "2026-06-13T12:30:58.463Z",
     "source": "/home/r-miyauchi/work/api test generator/docs/large_sample.openapi.json",
-    "totalCases": 87,
+    "totalCases": 90,
     "normalCases": 38,
-    "abnormalCases": 49
+    "abnormalCases": 52
   },
   "cases": [
     {
@@ -850,13 +850,13 @@
       "in": "body",
       "paramName": "name",
       "verdict": "",
-      "summary": "name 最大長+1（異常）",
-      "keyword": "maxLength",
-      "perspective": "異常系_最大長超過",
-      "inputValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "summary": "name キーあり・空値（異常）",
+      "keyword": "required",
+      "perspective": "異常系_空値",
+      "inputValue": "（空文字）",
       "expectedStatus": "400",
       "expectedResult": "バリデーションエラーが返ること",
-      "notes": "",
+      "notes": "キーは存在するが値が空文字",
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
@@ -869,10 +869,10 @@
       "in": "body",
       "paramName": "name",
       "verdict": "",
-      "summary": "name 最小長-1（異常）",
-      "keyword": "minLength",
-      "perspective": "異常系_最小長未満",
-      "inputValue": "\"\"",
+      "summary": "name 最大長+1（異常）",
+      "keyword": "maxLength",
+      "perspective": "異常系_最大長超過",
+      "inputValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "expectedStatus": "400",
       "expectedResult": "バリデーションエラーが返ること",
       "notes": "",
@@ -880,6 +880,25 @@
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
       "id": "TC-updateUser-019"
+    },
+    {
+      "operationId": "updateUser",
+      "path": "/users/{id}",
+      "method": "PUT",
+      "in": "body",
+      "paramName": "name",
+      "verdict": "",
+      "summary": "name 最小長-1（異常）",
+      "keyword": "minLength",
+      "perspective": "異常系_最小長未満",
+      "inputValue": "（空文字）",
+      "expectedStatus": "400",
+      "expectedResult": "バリデーションエラーが返ること",
+      "notes": "",
+      "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
+      "expectedResponseHeader": "Content-Type: application/json",
+      "expectedResponseTime": "3秒以内",
+      "id": "TC-updateUser-020"
     },
     {
       "operationId": "updateUser",
@@ -898,7 +917,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-updateUser-020"
+      "id": "TC-updateUser-021"
     },
     {
       "operationId": "updateUser",
@@ -917,7 +936,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-updateUser-021"
+      "id": "TC-updateUser-022"
     },
     {
       "operationId": "updateUser",
@@ -936,7 +955,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-updateUser-022"
+      "id": "TC-updateUser-023"
     },
     {
       "operationId": "updateUser",
@@ -955,7 +974,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-updateUser-023"
+      "id": "TC-updateUser-024"
     },
     {
       "operationId": "deleteUser",
@@ -1420,6 +1439,25 @@
       "in": "body",
       "paramName": "email",
       "verdict": "",
+      "summary": "email キーあり・空値（異常）",
+      "keyword": "required",
+      "perspective": "異常系_空値",
+      "inputValue": "（空文字）",
+      "expectedStatus": "400",
+      "expectedResult": "バリデーションエラーが返ること",
+      "notes": "キーは存在するが値が空文字",
+      "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
+      "expectedResponseHeader": "Content-Type: application/json",
+      "expectedResponseTime": "3秒以内",
+      "id": "TC-createUser-010"
+    },
+    {
+      "operationId": "createUser",
+      "path": "/users",
+      "method": "POST",
+      "in": "body",
+      "paramName": "email",
+      "verdict": "",
       "summary": "email format:email 不適合値（異常）",
       "keyword": "format",
       "perspective": "異常系_format_email",
@@ -1430,7 +1468,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-010"
+      "id": "TC-createUser-011"
     },
     {
       "operationId": "createUser",
@@ -1449,7 +1487,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json\nLocation: OpenAPI定義を確認\nX-Request-Id: OpenAPI定義を確認",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-011"
+      "id": "TC-createUser-012"
     },
     {
       "operationId": "createUser",
@@ -1468,7 +1506,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json\nLocation: OpenAPI定義を確認\nX-Request-Id: OpenAPI定義を確認",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-012"
+      "id": "TC-createUser-013"
     },
     {
       "operationId": "createUser",
@@ -1487,7 +1525,26 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-013"
+      "id": "TC-createUser-014"
+    },
+    {
+      "operationId": "createUser",
+      "path": "/users",
+      "method": "POST",
+      "in": "body",
+      "paramName": "name",
+      "verdict": "",
+      "summary": "name キーあり・空値（異常）",
+      "keyword": "required",
+      "perspective": "異常系_空値",
+      "inputValue": "（空文字）",
+      "expectedStatus": "400",
+      "expectedResult": "バリデーションエラーが返ること",
+      "notes": "キーは存在するが値が空文字",
+      "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
+      "expectedResponseHeader": "Content-Type: application/json",
+      "expectedResponseTime": "3秒以内",
+      "id": "TC-createUser-015"
     },
     {
       "operationId": "createUser",
@@ -1506,7 +1563,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-014"
+      "id": "TC-createUser-016"
     },
     {
       "operationId": "createUser",
@@ -1518,14 +1575,14 @@
       "summary": "name 最小長-1（異常）",
       "keyword": "minLength",
       "perspective": "異常系_最小長未満",
-      "inputValue": "\"\"",
+      "inputValue": "（空文字）",
       "expectedStatus": "400",
       "expectedResult": "バリデーションエラーが返ること",
       "notes": "",
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-015"
+      "id": "TC-createUser-017"
     },
     {
       "operationId": "createUser",
@@ -1544,7 +1601,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-016"
+      "id": "TC-createUser-018"
     },
     {
       "operationId": "createUser",
@@ -1563,7 +1620,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-017"
+      "id": "TC-createUser-019"
     },
     {
       "operationId": "createUser",
@@ -1582,7 +1639,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-018"
+      "id": "TC-createUser-020"
     },
     {
       "operationId": "createUser",
@@ -1601,7 +1658,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-019"
+      "id": "TC-createUser-021"
     },
     {
       "operationId": "createUser",
@@ -1620,7 +1677,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json\nLocation: OpenAPI定義を確認\nX-Request-Id: OpenAPI定義を確認",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-020"
+      "id": "TC-createUser-022"
     },
     {
       "operationId": "createUser",
@@ -1639,7 +1696,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json\nLocation: OpenAPI定義を確認\nX-Request-Id: OpenAPI定義を確認",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-021"
+      "id": "TC-createUser-023"
     },
     {
       "operationId": "createUser",
@@ -1658,7 +1715,7 @@
       "expectedResponseBody": "OpenAPI定義のJSON schemaに従うこと",
       "expectedResponseHeader": "Content-Type: application/json",
       "expectedResponseTime": "3秒以内",
-      "id": "TC-createUser-022"
+      "id": "TC-createUser-024"
     }
   ]
 }
