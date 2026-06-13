@@ -3,7 +3,11 @@ import type { TestCase } from '../types.js'
 import type { OutputJson } from './json.js'
 
 // ── 列定義 ─────────────────────────────────────────────────────────
-const COLUMNS: { header: string; key: keyof TestCase; width: number }[] = [
+type ColDef =
+  | { header: string; key: keyof TestCase; width: number; compute?: never }
+  | { header: string; key?: never; compute: (tc: TestCase) => string; width: number }
+
+const COLUMNS: ColDef[] = [
   { header: '試験ID',         key: 'id',             width: 18 },
   { header: 'operationId',   key: 'operationId',    width: 20 },
   { header: '概要',           key: 'summary',        width: 36 },
@@ -21,7 +25,48 @@ const COLUMNS: { header: string; key: keyof TestCase; width: number }[] = [
   { header: '期待結果',             key: 'expectedResult',         width: 30 },
   { header: '判定',           key: 'verdict',        width: 10 },
   { header: '備考',           key: 'notes',          width: 36 },
+  { header: 'curl コマンド',  compute: buildCurlCommand, width: 80 },
 ]
+
+const OMIT_MARKERS = new Set(['（省略）', '（フィールドを省略）'])
+const EMPTY_MARKER = '（空文字）'
+
+function buildCurlCommand(tc: TestCase): string {
+  const method = tc.method.toUpperCase()
+  const omit = OMIT_MARKERS.has(tc.inputValue)
+  const rawVal = tc.inputValue === EMPTY_MARKER ? '' : tc.inputValue
+
+  // query/path 用: "abc" → abc（JSON文字列リテラル表記を外す）
+  const urlVal = rawVal.startsWith('"') && rawVal.endsWith('"') && rawVal.length >= 2
+    ? rawVal.slice(1, -1)
+    : rawVal
+
+  let url = `{BASE_URL}${tc.path}`
+
+  if (tc.in === 'path' && !omit) {
+    url = url.replace(`{${tc.paramName}}`, encodeURIComponent(urlVal))
+  }
+
+  if (tc.in === 'query' && !omit) {
+    url += `?${tc.paramName}=${encodeURIComponent(urlVal)}`
+  }
+
+  let cmd = `curl.exe -s -v -X ${method} "${url}"`
+
+  if (tc.in === 'body' && !omit) {
+    // body 用: inputValue をそのまま JSON 値として扱う（文字列なら "abc" → "abc"）
+    let bodyVal: unknown
+    try {
+      bodyVal = rawVal === '' ? '' : JSON.parse(rawVal)
+    } catch {
+      bodyVal = rawVal
+    }
+    const body = JSON.stringify({ [tc.paramName]: bodyVal })
+    cmd += ` -H "Content-Type: application/json" -d '${body}'`
+  }
+
+  return cmd
+}
 
 // ── 色定数 ─────────────────────────────────────────────────────────
 const COLOR = {
@@ -125,7 +170,7 @@ function writeDataRows(
     const row = sheet.getRow(rowNum)
     COLUMNS.forEach((col, colIdx) => {
       const cell = row.getCell(colIdx + 1)
-      cell.value = tc[col.key] as string ?? ''
+      cell.value = typeof col.compute === 'function' ? col.compute(tc) : (tc[(col as { key: keyof TestCase }).key] as string ?? '')
       cell.font = { size: 10 }
       cell.alignment = { vertical: 'top', wrapText: true }
       applyBorder(cell)
