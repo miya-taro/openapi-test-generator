@@ -75,6 +75,16 @@ export interface TestCase {
   notes: string
 }
 
+export interface AuthSpec {
+  operationId: string
+  path: string
+  method: string
+  schemeType: 'bearer' | 'apiKey' | 'basic' | 'other'
+  headerName: string  // 'Authorization' or 'X-Api-Key' etc.
+  successStatus: string
+  responsesInfo: Record<string, ResponseInfo>
+}
+
 export interface GenerateOptions {
   includeNormal: boolean
   includeAbnormal: boolean

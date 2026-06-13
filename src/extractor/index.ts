@@ -1,6 +1,6 @@
 import type { OpenAPIV3, OpenAPIV3_1 } from 'openapi-types'
 import type { ParsedOpenAPI } from '../parser/index.js'
-import type { ParamSpec, BodyFieldSpec, ResolvedSchema, ResponseInfo } from '../types.js'
+import type { ParamSpec, BodyFieldSpec, AuthSpec, ResolvedSchema, ResponseInfo } from '../types.js'
 import { logger } from '../logger.js'
 
 const STANDARD_HEADERS = new Set([
@@ -14,6 +14,53 @@ const STANDARD_HEADERS = new Set([
   'host',
   'user-agent',
 ])
+
+export function extractAuthSpecs(api: ParsedOpenAPI): AuthSpec[] {
+  const specs: AuthSpec[] = []
+  const raw = api as unknown as Record<string, unknown>
+  const globalSecurity = raw['security'] as Array<Record<string, string[]>> | undefined
+  const securitySchemes = ((raw['components'] as Record<string, unknown> | undefined)?.['securitySchemes'] ?? {}) as Record<string, Record<string, string>>
+
+  const paths = api.paths ?? {}
+
+  for (const [path, pathItem] of Object.entries(paths)) {
+    if (!pathItem) continue
+    const methods = ['get', 'post', 'put', 'patch', 'delete'] as const
+
+    for (const method of methods) {
+      const operation = (pathItem as Record<string, unknown>)[method] as Record<string, unknown> | undefined
+      if (!operation) continue
+
+      const opSecurity = operation['security'] !== undefined
+        ? operation['security'] as Array<Record<string, string[]>>
+        : globalSecurity
+
+      if (!opSecurity || opSecurity.length === 0) continue
+
+      const firstSchemeName = Object.keys(opSecurity[0])[0]
+      if (!firstSchemeName) continue
+
+      const scheme = securitySchemes[firstSchemeName] ?? {}
+      let schemeType: AuthSpec['schemeType'] = 'other'
+      let headerName = 'Authorization'
+
+      if (scheme['type'] === 'http' && scheme['scheme'] === 'bearer') schemeType = 'bearer'
+      else if (scheme['type'] === 'http' && scheme['scheme'] === 'basic') schemeType = 'basic'
+      else if (scheme['type'] === 'apiKey') {
+        schemeType = 'apiKey'
+        headerName = scheme['name'] ?? 'X-Api-Key'
+      }
+
+      const operationId = resolveOperationId(operation as OpenAPIV3.OperationObject, method, path)
+      const successStatus = resolveSuccessStatus(operation['responses'] as Record<string, unknown> | undefined)
+      const responsesInfo = buildResponsesInfo(operation['responses'] as Record<string, unknown> | undefined)
+
+      specs.push({ operationId, path, method: method.toUpperCase(), schemeType, headerName, successStatus, responsesInfo })
+    }
+  }
+
+  return specs
+}
 
 export function extractSpecs(api: ParsedOpenAPI): {
   paramSpecs: ParamSpec[]

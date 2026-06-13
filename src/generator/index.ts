@@ -1,9 +1,10 @@
-import type { ParamSpec, BodyFieldSpec, TestCase, GenerateOptions, ResolvedSchema, ResponseInfo } from '../types.js'
+import type { ParamSpec, BodyFieldSpec, AuthSpec, TestCase, GenerateOptions, ResolvedSchema, ResponseInfo } from '../types.js'
 import { generateCommonCases } from './rules/common.js'
 import { generateIntegerCases } from './rules/integer.js'
 import { generateStringCases } from './rules/string.js'
 import { generateArrayCases } from './rules/array.js'
 import { generateObjectCases } from './rules/object.js'
+import { generateAuthCases } from './rules/auth.js'
 
 type PartialCase = Omit<TestCase, 'id' | 'operationId' | 'path' | 'method' | 'in' | 'paramName' | 'verdict' | 'expectedResponseBody' | 'expectedResponseHeader' | 'expectedResponseTime'>
 
@@ -46,7 +47,8 @@ export interface GeneratorContext {
 export function generateTestCases(
   paramSpecs: ParamSpec[],
   bodySpecs: BodyFieldSpec[],
-  opts: GenerateOptions
+  opts: GenerateOptions,
+  authSpecs: AuthSpec[] = []
 ): Omit<TestCase, 'id'>[] {
   const results: Omit<TestCase, 'id'>[] = []
 
@@ -85,6 +87,25 @@ export function generateTestCases(
         ...partial,
         expectedResponseBody: deriveResponseBody(spec.responsesInfo[partial.expectedStatus]),
         expectedResponseHeader: deriveResponseHeader(spec.responsesInfo[partial.expectedStatus]),
+        expectedResponseTime: '3秒以内',
+      })
+    }
+  }
+
+  for (const spec of authSpecs) {
+    if (!opts.includeAbnormal) continue
+    const partials = generateAuthCases(spec)
+    for (const partial of partials) {
+      results.push({
+        operationId: spec.operationId,
+        path: spec.path,
+        method: spec.method,
+        in: 'header',
+        paramName: spec.headerName,
+        verdict: '',
+        ...partial,
+        expectedResponseBody: '',
+        expectedResponseHeader: '',
         expectedResponseTime: '3秒以内',
       })
     }

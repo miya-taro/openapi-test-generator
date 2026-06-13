@@ -28,7 +28,7 @@ const COLUMNS: ColDef[] = [
   { header: 'curl コマンド',  compute: buildCurlCommand, width: 80 },
 ]
 
-const OMIT_MARKERS = new Set(['（省略）', '（フィールドを省略）'])
+const OMIT_MARKERS = new Set(['（省略）', '（フィールドを省略）', '（認証ヘッダなし）'])
 const EMPTY_MARKER = '（空文字）'
 
 function buildCurlCommand(tc: TestCase): string {
@@ -52,6 +52,10 @@ function buildCurlCommand(tc: TestCase): string {
   }
 
   let cmd = `curl.exe -s -v -X ${method} "${url}"`
+
+  if (tc.in === 'header' && !omit) {
+    cmd += ` -H "${tc.paramName}: ${rawVal}"`
+  }
 
   if (tc.in === 'body' && !omit) {
     // body 用: inputValue をそのまま JSON 値として扱う（文字列なら "abc" → "abc"）

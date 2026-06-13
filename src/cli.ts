@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { setLogLevel, logger } from './logger.js'
 import { parseOpenAPI } from './parser/index.js'
-import { extractSpecs } from './extractor/index.js'
+import { extractSpecs, extractAuthSpecs } from './extractor/index.js'
 import { generateTestCases } from './generator/index.js'
 import { assignIds } from './id-assigner/index.js'
 import { buildOutput, writeOutput } from './renderer/json.js'
@@ -77,24 +77,28 @@ program
       logger.info('Phase 2: 抽出開始')
       let { paramSpecs, bodySpecs } = extractSpecs(api)
 
+      let authSpecs = extractAuthSpecs(api)
+
       // フィルタリング
       if (filterOps) {
         paramSpecs = paramSpecs.filter(s => filterOps.has(s.operationId))
         bodySpecs = bodySpecs.filter(s => filterOps.has(s.operationId))
+        authSpecs = authSpecs.filter(s => filterOps.has(s.operationId))
       }
       if (excludeOps) {
         paramSpecs = paramSpecs.filter(s => !excludeOps.has(s.operationId))
         bodySpecs = bodySpecs.filter(s => !excludeOps.has(s.operationId))
+        authSpecs = authSpecs.filter(s => !excludeOps.has(s.operationId))
       }
 
       logger.info(
-        { params: paramSpecs.length, bodyFields: bodySpecs.length },
+        { params: paramSpecs.length, bodyFields: bodySpecs.length, authOps: authSpecs.length },
         'Phase 2: 抽出完了'
       )
 
       // Phase 3: Generate
       logger.info('Phase 3: ケース生成開始')
-      const rawCases = generateTestCases(paramSpecs, bodySpecs, genOpts)
+      const rawCases = generateTestCases(paramSpecs, bodySpecs, genOpts, authSpecs)
       logger.info({ count: rawCases.length }, 'Phase 3: ケース生成完了')
 
       // Phase 4: ID Assign

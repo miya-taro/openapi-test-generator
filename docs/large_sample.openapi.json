@@ -1,6 +1,12 @@
 {
   "openapi": "3.1.0",
   "info": { "title": "Large Test API", "version": "1.0.0" },
+  "security": [{ "BearerAuth": [] }],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer" }
+    }
+  },
   "paths": {
     "/users": {
       "get": {

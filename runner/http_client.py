@@ -37,7 +37,13 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
            "-w", "\n%{http_code}\n%{time_total}",
            "--max-time", str(CURL_TIMEOUT)]
 
-    if token:
+    # 認証ヘッダの処理
+    # param_in == "header" かつ Authorization 系フィールドが対象の場合は env var より優先
+    if case.param_in == "header":
+        if case.input_value != "（認証ヘッダなし）":
+            cmd += ["-H", f"{case.param_name}: {case.input_value}"]
+        # （認証ヘッダなし）の場合は何も追加しない（auth なしケース）
+    elif token:
         cmd += ["-H", f"Authorization: Bearer {token}"]
 
     if case.param_in == "body":
