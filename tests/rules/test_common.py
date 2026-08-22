@@ -32,3 +32,34 @@ def test_type_integer_invalid_value_is_abc():
     )
     type_case = next(c for c in cases if c["keyword"] == "type")
     assert type_case["inputValue"] == '"abc"'
+
+
+def test_nullable_true_generates_normal_null_case():
+    cases = generate_common_cases(
+        {"type": "string", "nullable": True}, False, {"paramIn": "query", "paramName": "note", "opts": ALL_OPTS}
+    )
+    null_case = next(c for c in cases if c["keyword"] == "nullable")
+    assert null_case["perspective"] == "正常系_null許容"
+    assert null_case["inputValue"] == "null"
+
+
+def test_oas31_null_in_type_array_generates_normal_null_case():
+    cases = generate_common_cases(
+        {"type": ["string", "null"]}, False, {"paramIn": "query", "paramName": "note", "opts": ALL_OPTS}
+    )
+    null_case = next(c for c in cases if c["keyword"] == "nullable")
+    assert null_case["perspective"] == "正常系_null許容"
+
+
+def test_not_nullable_generates_abnormal_null_case():
+    cases = generate_common_cases(
+        {"type": "string"}, False, {"paramIn": "query", "paramName": "note", "opts": ALL_OPTS}
+    )
+    null_case = next(c for c in cases if c["keyword"] == "nullable")
+    assert null_case["perspective"] == "異常系_null不可"
+    assert null_case["expectedStatus"] == "400"
+
+
+def test_no_nullable_case_when_type_missing():
+    cases = generate_common_cases({}, False, {"paramIn": "query", "paramName": "note", "opts": ALL_OPTS})
+    assert not any(c["keyword"] == "nullable" for c in cases)

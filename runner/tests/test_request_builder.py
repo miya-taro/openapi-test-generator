@@ -340,3 +340,17 @@ def test_root_body_additional_properties_marker_adds_extra_key_to_valid_body():
     assert body["__extra__"] == "value"
     assert body["amount"] == 1
     assert body["customer"]["name"]
+
+
+def test_null_marker_sends_actual_json_null_not_string():
+    case = _order_case(param_name="amount", input_value="null")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["amount"] is None
+
+
+def test_null_marker_on_nested_field():
+    case = _order_case(param_name="customer.address.zipCode", input_value="null")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["customer"]["address"]["zipCode"] is None

@@ -110,6 +110,50 @@ def test_all_of_inherits_additional_properties_false(tmp_path):
     assert merged["additionalProperties"] is False
 
 
+def test_one_of_reduces_to_first_variant(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+                        {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}},
+                    ]
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "oneOf" not in reduced
+    assert reduced["required"] == ["name"]
+    assert "name" in reduced["properties"]
+
+
+def test_any_of_reduces_to_first_variant(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "anyOf": [
+                        {"type": "string", "minLength": 1},
+                        {"type": "integer"},
+                    ]
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "anyOf" not in reduced
+    assert reduced["type"] == "string"
+    assert reduced["minLength"] == 1
+
+
 def test_exclusive_minimum_boolean_normalized(tmp_path):
     doc = {
         "openapi": "3.1.0",

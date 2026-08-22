@@ -66,6 +66,34 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "notes": "ルーティング失敗により 404 になる場合あり（実装依存）" if is_path else "",
             })
 
+    # nullable — null値の扱い
+    # OAS 3.0: `nullable: true`、OAS 3.1: `type` 配列に "null" を含める、の両方に対応。
+    if schema.get("type"):
+        type_ = schema["type"]
+        is_nullable = schema.get("nullable") is True or (
+            isinstance(type_, list) and "null" in type_
+        )
+        if is_nullable and opts["includeNormal"]:
+            cases.append({
+                "summary": f"{ctx['paramName']} null許容（正常）",
+                "keyword": "nullable",
+                "perspective": "正常系_null許容",
+                "inputValue": "null",
+                "expectedStatus": ctx.get("successStatus"),
+                "expectedResult": "正常に処理されること",
+                "notes": "",
+            })
+        elif not is_nullable and opts["includeAbnormal"]:
+            cases.append({
+                "summary": f"{ctx['paramName']} null不可（異常）",
+                "keyword": "nullable",
+                "perspective": "異常系_null不可",
+                "inputValue": "null",
+                "expectedStatus": "400",
+                "expectedResult": "バリデーションエラーが返ること",
+                "notes": "nullable が明示されていないため null は不正な値として扱う",
+            })
+
     return cases
 
 

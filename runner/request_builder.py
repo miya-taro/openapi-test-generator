@@ -5,6 +5,7 @@ from models import RunCase
 
 OMIT_MARKERS = {"（省略）", "（フィールドを省略）"}
 EMPTY_VALUE_MARKER = "（空文字）"
+NULL_VALUE_MARKER = "null"
 
 # ルートbody（paramName == "requestBody"）向けのプレースホルダ値。
 # openapi-test-gen の src/generator/rules/object.py が出力する値と対応させている。
@@ -63,6 +64,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
 
     if case.input_value in OMIT_MARKERS:
         _delete_nested(body, case.param_name, schema)
+    elif case.input_value == NULL_VALUE_MARKER:
+        _set_nested(body, case.param_name, None, schema)
     else:
         raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
         field_schema = _resolve_nested_schema(schema, case.param_name) if schema is not None else {}

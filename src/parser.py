@@ -64,8 +64,9 @@ def _lookup_ref(ref: str, root: dict) -> Any:
 
 
 def _normalize_schema(schema: dict) -> None:
-    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf のマージ）を行う。"""
+    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf/oneOf/anyOf の展開）を行う。"""
     _merge_all_of(schema)
+    _reduce_one_of_any_of(schema)
 
     ex_min = schema.get("exclusiveMinimum")
     ex_max = schema.get("exclusiveMaximum")
@@ -125,6 +126,28 @@ def _merge_all_of(schema: dict) -> None:
         schema["required"] = merged_required
     if additional_properties_false:
         schema["additionalProperties"] = False
+
+
+def _reduce_one_of_any_of(schema: dict) -> None:
+    """`oneOf` / `anyOf` を「代表バリアント（先頭要素）」に還元する（in-place）。
+
+    Layer 1 では全バリアントの組み合わせテストは対象外とし、生成ケースが
+    サイレントに0件になることを避けるため、ドキュメント上の代表バリアント
+    （先頭要素）に対して構造的な検証を行う。バリアント間の判別・排他性の
+    検証自体は対象外（Layer 2 相当）。
+    """
+    for key in ("oneOf", "anyOf"):
+        variants = schema.get(key)
+        if not isinstance(variants, list) or not variants:
+            continue
+        del schema[key]
+        first = variants[0]
+        if isinstance(first, dict):
+            _merge_all_of(first)
+            _reduce_one_of_any_of(first)  # 入れ子の oneOf/anyOf も先に展開しておく
+            for k, v in first.items():
+                schema.setdefault(k, v)
+        return
 
 
 def _walk_schemas(obj: Any, visitor, visited: set[int]) -> None:
