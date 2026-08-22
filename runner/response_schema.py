@@ -1,18 +1,25 @@
 from __future__ import annotations
 import re
 from models import RunCase, ResponseSchema
+from response_validator import resolve_response_schema
 
 _TIME_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*秒")
 
 
-def from_run_case(case: RunCase) -> ResponseSchema:
+def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
     status = _parse_status(case.expected_status)
     content_type = _parse_content_type(case.expected_response_header)
     response_time_ms = _parse_time_ms(case.expected_response_time)
+    body_schema = (
+        resolve_response_schema(case.operation_id, case.path, case.method, case.expected_status, openapi)
+        if openapi is not None
+        else None
+    )
     return ResponseSchema(
         expected_status=status,
         expected_content_type=content_type,
         expected_response_time_ms=response_time_ms,
+        expected_body_schema=body_schema,
     )
 
 

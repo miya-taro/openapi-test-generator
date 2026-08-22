@@ -2,10 +2,12 @@
 """Automated API test runner."""
 from __future__ import annotations
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
+
+# openapi-test-gen 側（src/）の $ref / allOf / oneOf / anyOf 解決済みパーサーを
+# 再利用するため、リポジトリルートを sys.path に追加する。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config_loader import load_config
 from excel_reader import read_excel
@@ -15,6 +17,7 @@ from http_client import execute_with_openapi, health_check, check_curl_available
 from models import RunResult
 from response_schema import from_run_case
 from verifier import verify, PASS, WARN, FAIL
+from src.parser import parse_openapi, OpenAPIParseError
 
 
 def main() -> int:
@@ -51,8 +54,10 @@ def main() -> int:
     openapi: dict | None = None
     if openapi_path.exists():
         try:
-            openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
-        except Exception as e:
+            # $ref / allOf / oneOf / anyOf 解決済み・exclusiveMinimum/Maximum 正規化済みの
+            # openapi ドキュメントを取得する（openapi-test-gen と同じパーサーを再利用）。
+            openapi = parse_openapi(str(openapi_path))
+        except OpenAPIParseError as e:
             print(f"[WARN] openapi.json の読み込みに失敗しました: {e}", file=sys.stderr)
     else:
         print(f"[WARN] openapi.json が見つかりません: {openapi_path}", file=sys.stderr)
@@ -105,7 +110,7 @@ def main() -> int:
     has_warn = False
 
     for case in cases:
-        schema = from_run_case(case)
+        schema = from_run_case(case, openapi)
         result = execute_with_openapi(case, args.base_url, openapi)
         verdict, detail = verify(result, schema)
 

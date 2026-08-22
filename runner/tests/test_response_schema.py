@@ -61,3 +61,36 @@ def test_response_time_1s():
 def test_response_time_default_when_empty():
     schema = from_run_case(make_case(expected_response_time=""))
     assert schema.expected_response_time_ms == pytest.approx(3000.0)
+
+
+# --- expected_body_schema ---
+
+OPENAPI = {
+    "paths": {
+        "/": {
+            "get": {
+                "operationId": "op",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}}
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def test_body_schema_none_when_openapi_not_provided():
+    schema = from_run_case(make_case())
+    assert schema.expected_body_schema is None
+
+
+def test_body_schema_resolved_when_openapi_provided():
+    schema = from_run_case(make_case(expected_status="200"), OPENAPI)
+    assert schema.expected_body_schema is not None
+    assert schema.expected_body_schema["required"] == ["id"]

@@ -149,8 +149,11 @@ python runner.py 試験項目.xlsx openapi.json \
 - **Level 1（必須）**: HTTP ステータスコードが期待値と一致するか
 - **Level 2**: 応答時間が期待値（`期待応答時間` 列）以内か（超過は Warning）
 - **Level 3**: Content-Type ヘッダが期待値と前方一致するか（不一致は NG）
+- **Level 4**: レスポンスボディが `openapi.json` の該当ステータスのレスポンススキーマ
+  （`responses.{status}.content.application/json.schema`）に適合するか（`jsonschema` で検証。不一致は NG）
+  該当ステータスにスキーマが定義されていない場合は検証をスキップする。
 
-Level 1 が NG の場合、Level 2/3 は評価しない。
+Level 1 が NG の場合、Level 2〜4 は評価しない。
 
 ## テスト
 
@@ -168,7 +171,8 @@ runner/
 ├── request_builder.py  # RunCase → curl 引数・URL
 ├── http_client.py      # subprocess + curl.exe 実行
 ├── response_schema.py  # RunCase → ResponseSchema 変換
-├── verifier.py         # Level 1〜3 検証
+├── verifier.py         # Level 1〜4 検証
+├── response_validator.py  # Level 4: レスポンスボディの JSON Schema 検証
 ├── excel_writer.py     # 結果 Excel 書き込み（P〜U 列）
 └── tests/
     ├── fixtures/

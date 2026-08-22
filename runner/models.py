@@ -35,3 +35,4 @@ class ResponseSchema:
     expected_status: int
     expected_content_type: str | None
     expected_response_time_ms: float
+    expected_body_schema: dict | None = None

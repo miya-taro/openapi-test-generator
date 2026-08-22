@@ -23,11 +23,12 @@ def make_result(
     headers: dict | None = None,
     curl_exit_code: int = 0,
     error: str | None = None,
+    body: str = "",
 ) -> RunResult:
     return RunResult(
         case=make_case(),
         actual_status=status,
-        actual_body="",
+        actual_body=body,
         actual_headers=headers or {},
         elapsed_ms=elapsed_ms,
         curl_exit_code=curl_exit_code,
@@ -39,11 +40,13 @@ def make_schema(
     expected_status: int = 200,
     expected_content_type: str | None = None,
     expected_response_time_ms: float = 3000.0,
+    expected_body_schema: dict | None = None,
 ) -> ResponseSchema:
     return ResponseSchema(
         expected_status=expected_status,
         expected_content_type=expected_content_type,
         expected_response_time_ms=expected_response_time_ms,
+        expected_body_schema=expected_body_schema,
     )
 
 
@@ -141,6 +144,41 @@ def test_fail_when_both_slow_and_ct_mismatch():
     assert verdict == FAIL
     assert "Content-Type" in detail
     assert "応答時間超過" not in detail
+
+
+# Level 4: レスポンスボディの JSON Schema 適合
+
+BODY_SCHEMA = {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}}
+
+
+def test_level4_pass_when_body_matches_schema():
+    result = make_result(status=200, body='{"id": 1}')
+    schema = make_schema(200, expected_body_schema=BODY_SCHEMA)
+    verdict, detail = verify(result, schema)
+    assert verdict == PASS
+
+
+def test_level4_fail_when_body_missing_required_field():
+    result = make_result(status=200, body="{}")
+    schema = make_schema(200, expected_body_schema=BODY_SCHEMA)
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "ボディ不適合" in detail
+
+
+def test_level4_skipped_when_no_expected_body_schema():
+    result = make_result(status=200, body="not json at all")
+    schema = make_schema(200, expected_body_schema=None)
+    verdict, _ = verify(result, schema)
+    assert verdict == PASS
+
+
+def test_level4_fail_takes_priority_over_warn():
+    result = make_result(status=200, elapsed_ms=4000.0, body="{}")
+    schema = make_schema(200, expected_response_time_ms=3000.0, expected_body_schema=BODY_SCHEMA)
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "ボディ不適合" in detail
 
 
 # Level 1 takes priority over Level 2/3

@@ -24,7 +24,23 @@ SAMPLE_OPENAPI = {
             "get": {
                 "operationId": "getUsers",
                 "parameters": [{"name": "page", "in": "query", "schema": {"type": "integer"}}],
-                "responses": {"200": {"description": "OK"}},
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["items"],
+                                    "additionalProperties": False,
+                                    "properties": {
+                                        "items": {"type": "array", "items": {"type": "string"}}
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
             },
             "post": {
                 "operationId": "createUser",
@@ -114,3 +130,28 @@ def test_status_mismatch_exits_1(httpserver, tmp_path, write_openapi):
         ["--output", str(out_path), "--health-path", "/health"]
     )
     assert proc.returncode == 1
+
+
+def test_response_body_schema_mismatch_exits_1(httpserver, tmp_path, write_openapi):
+    # ステータスは期待通り(200/400/201)だが、正常系のレスポンスボディが
+    # OpenAPI のスキーマに違反している（items が数値配列で、かつ余分な
+    # 未定義キーがある）ケース。ボディの中身までは status/time/content-type
+    # だけでは検出できないため、Level 4（JSON Schema 検証）が効いているかを確認する。
+    httpserver.expect_request("/users", query_string="page=1").respond_with_data(
+        '{"items": [1, 2, 3], "unexpected": true}', content_type="application/json"
+    )
+    httpserver.expect_request("/users", query_string="page=0").respond_with_data(
+        '{"error":"bad"}', status=400, content_type="application/json"
+    )
+    httpserver.expect_request("/users", method="POST").respond_with_data(
+        '{"id":1}', status=201, content_type="application/json"
+    )
+    httpserver.expect_request("/health").respond_with_data("ok")
+
+    out_path = tmp_path / "result.xlsx"
+    proc = run_runner(
+        httpserver, FIXTURE, write_openapi,
+        ["--output", str(out_path), "--health-path", "/health"]
+    )
+    assert proc.returncode == 1
+    assert "ボディ不適合" in proc.stdout

@@ -44,12 +44,20 @@ def test_normal_only():
 
 def test_exclusive_minimum_value():
     cases = generate_integer_cases(
-        {"type": "integer", "_exclusiveMinimumValue": 10}, {"paramName": "n", "opts": ALL_OPTS}
+        {"type": "integer", "exclusiveMinimum": 10}, {"paramName": "n", "opts": ALL_OPTS}
     )
     abnormal = next(c for c in cases if "exclusiveMinimum境界値" in c["perspective"])
     normal = next(c for c in cases if "exclusiveMinimum超過値" in c["perspective"])
     assert abnormal["inputValue"] == "10"
     assert normal["inputValue"] == "11"
+
+
+def test_exclusive_minimum_boolean_form_is_ignored_unnormalized():
+    # parser.py を経由していない生スキーマ（bool形式）は正規化前提のため無視される
+    cases = generate_integer_cases(
+        {"type": "integer", "minimum": 10, "exclusiveMinimum": True}, {"paramName": "n", "opts": ALL_OPTS}
+    )
+    assert not any(c["keyword"] == "exclusiveMinimum" for c in cases)
 
 
 def test_multiple_of():

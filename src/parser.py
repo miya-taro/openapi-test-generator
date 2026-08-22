@@ -64,28 +64,30 @@ def _lookup_ref(ref: str, root: dict) -> Any:
 
 
 def _normalize_schema(schema: dict) -> None:
-    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf/oneOf/anyOf の展開）を行う。"""
+    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf/oneOf/anyOf の展開）を行う。
+
+    正規化後のスキーマは標準の JSON Schema (2020-12) として妥当な形になる
+    （$ref 済み・allOf/oneOf/anyOf 展開済み・exclusiveMinimum/Maximum は常に数値）。
+    これにより、生成ロジックだけでなく `jsonschema` 等の汎用バリデータにも
+    そのまま渡せる（ランナー側のレスポンスボディ検証で利用）。
+    """
     _merge_all_of(schema)
     _reduce_one_of_any_of(schema)
+    _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
+    _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
 
-    ex_min = schema.get("exclusiveMinimum")
-    ex_max = schema.get("exclusiveMaximum")
 
-    if isinstance(ex_min, bool):
-        if ex_min and isinstance(schema.get("minimum"), (int, float)):
-            schema["_exclusiveMinimumValue"] = schema["minimum"]
-        schema.pop("exclusiveMinimum", None)
-    elif isinstance(ex_min, (int, float)):
-        schema["_exclusiveMinimumValue"] = ex_min
-        schema.pop("exclusiveMinimum", None)
-
-    if isinstance(ex_max, bool):
-        if ex_max and isinstance(schema.get("maximum"), (int, float)):
-            schema["_exclusiveMaximumValue"] = schema["maximum"]
-        schema.pop("exclusiveMaximum", None)
-    elif isinstance(ex_max, (int, float)):
-        schema["_exclusiveMaximumValue"] = ex_max
-        schema.pop("exclusiveMaximum", None)
+def _normalize_exclusive_bound(schema: dict, bound_key: str, exclusive_key: str) -> None:
+    """OAS 3.0 形式（`exclusiveMinimum: true` + `minimum: N`）を
+    OAS 3.1 / JSON Schema 2020-12 形式（`exclusiveMinimum: N`）に統一する。
+    """
+    ex = schema.get(exclusive_key)
+    if isinstance(ex, bool):
+        if ex and isinstance(schema.get(bound_key), (int, float)):
+            schema[exclusive_key] = schema.pop(bound_key)
+        else:
+            schema.pop(exclusive_key, None)
+    # 既に数値（3.1形式）または未指定の場合はそのまま
 
 
 def _merge_all_of(schema: dict) -> None:

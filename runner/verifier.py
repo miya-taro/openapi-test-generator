@@ -1,5 +1,6 @@
 from __future__ import annotations
 from models import RunResult, ResponseSchema
+from response_validator import validate_body
 
 # Verdict constants
 PASS = "OK"
@@ -40,6 +41,12 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
                 f"Content-Type不一致: 期待={schema.expected_content_type}, "
                 f"実測={actual_ct!r}"
             )
+
+    # Level 4: レスポンスボディの JSON Schema 適合
+    if schema.expected_body_schema:
+        body_errors = validate_body(result.actual_body, schema.expected_body_schema)
+        if body_errors:
+            fail_details.append("ボディ不適合: " + " / ".join(body_errors))
 
     if fail_details:
         return FAIL, "; ".join(fail_details)

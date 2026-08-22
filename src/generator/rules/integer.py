@@ -10,8 +10,10 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
 
     minimum = schema.get("minimum")
     maximum = schema.get("maximum")
-    ex_min_val = schema.get("_exclusiveMinimumValue")
-    ex_max_val = schema.get("_exclusiveMaximumValue")
+    # exclusiveMinimum/Maximum は parser.py で OAS バージョンによらず数値形式に正規化済みの前提
+    # （bool は int のサブクラスのため isinstance チェックで明示的に除外する）
+    ex_min_val = _as_number(schema.get("exclusiveMinimum"))
+    ex_max_val = _as_number(schema.get("exclusiveMaximum"))
 
     # minimum
     if minimum is not None:
@@ -150,3 +152,12 @@ def _num_str(value: float) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def _as_number(value: object) -> float | int | None:
+    """bool を除く int/float のみを数値として受け付ける（bool は int のサブクラスのため）。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    return None

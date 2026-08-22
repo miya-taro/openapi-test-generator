@@ -164,5 +164,28 @@ def test_exclusive_minimum_boolean_normalized(tmp_path):
     }
     api = parse_openapi(_write(tmp_path, doc))
     schema = api["components"]["schemas"]["N"]
-    assert schema["_exclusiveMinimumValue"] == 5
+    assert schema["exclusiveMinimum"] == 5
+    assert "minimum" not in schema
+
+
+def test_exclusive_minimum_already_numeric_oas31_passthrough(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": "integer", "exclusiveMinimum": 5}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
+    assert schema["exclusiveMinimum"] == 5
+
+
+def test_exclusive_minimum_false_is_removed(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": "integer", "minimum": 5, "exclusiveMinimum": False}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
     assert "exclusiveMinimum" not in schema
+    assert schema["minimum"] == 5

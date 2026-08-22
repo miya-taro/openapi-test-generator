@@ -158,7 +158,9 @@ def health_check(base_url: str, health_path: str = "/health") -> bool:
     url = base_url.rstrip("/") + health_path
     try:
         result = subprocess.run(
-            ["curl.exe", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+            # "/dev/null" は Windows のネイティブ curl.exe では有効な出力先として扱われない
+            # ことがあるため、os.devnull（Windows では "nul"）を使う。
+            ["curl.exe", "-s", "-o", os.devnull, "-w", "%{http_code}",
              "--max-time", "5", url],
             capture_output=True,
             text=True,

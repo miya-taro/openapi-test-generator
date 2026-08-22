@@ -34,9 +34,8 @@ class ResolvedSchema(TypedDict, total=False):
     additionalProperties: bool | "ResolvedSchema"
     items: "ResolvedSchema"
     nullable: bool
-    # OAS 3.1 正規化後に使うフィールド
-    _exclusiveMinimumValue: float
-    _exclusiveMaximumValue: float
+    # parser.py の正規化後は exclusiveMinimum/Maximum は常に float
+    # （OAS 3.0 の bool 形式は minimum/maximum を吸収した数値形式に変換される）
 
 
 class ParamSpec(TypedDict):
