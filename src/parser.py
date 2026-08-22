@@ -1,0 +1,149 @@
+"""OpenAPI 3.x のパース。
+
+TypeScript版は `@apidevtools/swagger-parser` の `dereference()` を使用していたが、
+このプロジェクトで使われる `$ref` は `#/components/...` 形式の内部参照のみのため、
+軽量な自前実装で置き換える。
+"""
+from __future__ import annotations
+import json
+from pathlib import Path
+from typing import Any
+
+from . import logger as log
+
+
+class OpenAPIParseError(Exception):
+    pass
+
+
+def parse_openapi(input_path: str) -> dict:
+    path = Path(input_path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise OpenAPIParseError(f"openapi.json の解析に失敗しました: {e}") from e
+
+    version = raw.get("openapi", "") if isinstance(raw, dict) else ""
+    if not version.startswith("3."):
+        raise OpenAPIParseError(
+            f"OpenAPI 3.x のみ対応しています（検出バージョン: {version or '不明'}）"
+        )
+
+    api = _resolve_refs(raw, raw, ())
+    _walk_schemas(api, _normalize_schema, set())
+
+    log.info({"version": version}, "OpenAPI パース完了")
+    return api
+
+
+def _resolve_refs(node: Any, root: dict, stack: tuple[str, ...]) -> Any:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            if ref in stack:
+                # 循環参照: これ以上展開せず空スキーマとして扱う
+                return {}
+            target = _lookup_ref(ref, root)
+            return _resolve_refs(target, root, stack + (ref,))
+        return {k: _resolve_refs(v, root, stack) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_resolve_refs(v, root, stack) for v in node]
+    return node
+
+
+def _lookup_ref(ref: str, root: dict) -> Any:
+    if not ref.startswith("#/"):
+        raise OpenAPIParseError(f"$ref の解決に失敗しました（外部参照は未対応）: {ref}")
+    node: Any = root
+    for part in ref[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or part not in node:
+            raise OpenAPIParseError(f"$ref を解決できませんでした: {ref}")
+        node = node[part]
+    return node
+
+
+def _normalize_schema(schema: dict) -> None:
+    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf のマージ）を行う。"""
+    _merge_all_of(schema)
+
+    ex_min = schema.get("exclusiveMinimum")
+    ex_max = schema.get("exclusiveMaximum")
+
+    if isinstance(ex_min, bool):
+        if ex_min and isinstance(schema.get("minimum"), (int, float)):
+            schema["_exclusiveMinimumValue"] = schema["minimum"]
+        schema.pop("exclusiveMinimum", None)
+    elif isinstance(ex_min, (int, float)):
+        schema["_exclusiveMinimumValue"] = ex_min
+        schema.pop("exclusiveMinimum", None)
+
+    if isinstance(ex_max, bool):
+        if ex_max and isinstance(schema.get("maximum"), (int, float)):
+            schema["_exclusiveMaximumValue"] = schema["maximum"]
+        schema.pop("exclusiveMaximum", None)
+    elif isinstance(ex_max, (int, float)):
+        schema["_exclusiveMaximumValue"] = ex_max
+        schema.pop("exclusiveMaximum", None)
+
+
+def _merge_all_of(schema: dict) -> None:
+    """`allOf` で合成されたスキーマを1つのオブジェクトスキーマにマージする（in-place）。
+
+    このツールが対象とする「ベーススキーマ + 拡張」パターンに限定した簡易マージであり、
+    JSON Schema の厳密な合成意味論（矛盾検出等）は扱わない。
+    - properties: 全 allOf 要素を単純結合（先勝ち）
+    - required: 全 allOf 要素の required を和集合
+    - additionalProperties: いずれかが false なら false を継承（安全側に倒す）
+    """
+    all_of = schema.get("allOf")
+    if not isinstance(all_of, list):
+        return
+    del schema["allOf"]
+
+    merged_properties: dict = dict(schema.get("properties", {}))
+    merged_required: list[str] = list(schema.get("required", []))
+    additional_properties_false = schema.get("additionalProperties") is False
+
+    for sub in all_of:
+        if not isinstance(sub, dict):
+            continue
+        _merge_all_of(sub)  # ネストした allOf も先に展開しておく
+
+        for k, v in sub.get("properties", {}).items():
+            merged_properties.setdefault(k, v)
+        for r in sub.get("required", []):
+            if r not in merged_required:
+                merged_required.append(r)
+        if sub.get("additionalProperties") is False:
+            additional_properties_false = True
+
+    schema.setdefault("type", "object")
+    if merged_properties:
+        schema["properties"] = merged_properties
+    if merged_required:
+        schema["required"] = merged_required
+    if additional_properties_false:
+        schema["additionalProperties"] = False
+
+
+def _walk_schemas(obj: Any, visitor, visited: set[int]) -> None:
+    if not isinstance(obj, (dict, list)):
+        return
+    oid = id(obj)
+    if oid in visited:
+        return
+    visited.add(oid)
+
+    if isinstance(obj, dict):
+        if _is_schema_object(obj):
+            visitor(obj)
+        for v in obj.values():
+            _walk_schemas(v, visitor, visited)
+    else:
+        for v in obj:
+            _walk_schemas(v, visitor, visited)
+
+
+def _is_schema_object(obj: dict) -> bool:
+    return any(k in obj for k in ("type", "properties", "items", "allOf", "anyOf", "oneOf"))

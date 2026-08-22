@@ -227,3 +227,116 @@ def test_baseline_minlength_string():
     body = json.loads(args[1])
     assert body["code"] == "aaaaa"  # minLength: 5
     assert body["name"] == "Widget"
+
+
+# --- ネストしたオブジェクト・配列要素・ルートbody（object.py 由来）のテスト ---
+
+NESTED_OPENAPI = {
+    "paths": {
+        "/orders": {
+            "post": {
+                "operationId": "createOrder",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["amount", "customer"],
+                                "additionalProperties": False,
+                                "properties": {
+                                    "amount": {"type": "integer", "minimum": 1},
+                                    "customer": {
+                                        "type": "object",
+                                        "required": ["name", "address"],
+                                        "properties": {
+                                            "name": {"type": "string", "minLength": 1},
+                                            "address": {
+                                                "type": "object",
+                                                "required": ["zipCode"],
+                                                "properties": {
+                                                    "zipCode": {"type": "string", "minLength": 7, "maxLength": 7},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    "lines": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["sku", "qty"],
+                                            "properties": {
+                                                "sku": {"type": "string", "minLength": 3},
+                                                "qty": {"type": "integer", "minimum": 1},
+                                            },
+                                        },
+                                    },
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def _order_case(**kwargs) -> RunCase:
+    defaults = dict(
+        operation_id="createOrder",
+        path="/orders",
+        method="POST",
+        param_in="body",
+    )
+    defaults.update(kwargs)
+    return make_case(**defaults)
+
+
+def test_nested_field_is_set_at_correct_path_not_as_flat_key():
+    case = _order_case(param_name="customer.address.zipCode", input_value="1234567")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["customer"]["address"]["zipCode"] == "1234567"
+    assert "customer.address.zipCode" not in body
+
+
+def test_nested_field_omit_removes_only_that_key():
+    case = _order_case(param_name="customer.address.zipCode", input_value="（フィールドを省略）")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert "zipCode" not in body["customer"]["address"]
+    assert "name" in body["customer"]
+
+
+def test_array_item_field_is_set_inside_array_element():
+    case = _order_case(param_name="lines[].sku", input_value="ABC123")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["lines"][0]["sku"] == "ABC123"
+    assert body["lines"][0]["qty"] == 1  # baseline (minimum)
+
+
+def test_array_item_field_omit_removes_only_that_key():
+    case = _order_case(param_name="lines[].qty", input_value="（フィールドを省略）")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert "qty" not in body["lines"][0]
+    assert body["lines"][0]["sku"]
+
+
+def test_root_body_empty_marker_sends_actual_empty_object():
+    case = _order_case(param_name="requestBody", input_value="{}")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body == {}
+
+
+def test_root_body_additional_properties_marker_adds_extra_key_to_valid_body():
+    case = _order_case(
+        param_name="requestBody", input_value='{ ...validBody, "__extra__": "value" }'
+    )
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["__extra__"] == "value"
+    assert body["amount"] == 1
+    assert body["customer"]["name"]

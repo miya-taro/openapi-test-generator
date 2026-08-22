@@ -5,12 +5,14 @@ OpenAPI 3.x 定義ファイルから **インターフェース観点のテス�
 ```
 openapi.json
     │
-    ▼  openapi-test-gen (TypeScript)
+    ▼  openapi-test-gen (Python / src/)
 試験仕様 Excel（test_spec シート）
     │
     ▼  openapi-test-run (Python / runner/)
 結果 Excel（実測値・判定・実行コマンドを追記）
 ```
+
+このツールセットは全体を通して Python で実装されている。
 
 ---
 
@@ -19,15 +21,16 @@ openapi.json
 ```
 api test generator/
 ├── src/                  # openapi-test-gen（試験仕様ジェネレーター）
-│   ├── cli.ts            # CLI エントリーポイント
-│   ├── parser/           # OpenAPI パース
-│   ├── extractor/        # パラメータ・ボディフィールド抽出
+│   ├── cli.py            # CLI エントリーポイント
+│   ├── parser.py         # OpenAPI パース（$ref 解決）
+│   ├── extractor.py      # パラメータ・ボディフィールド抽出
 │   ├── generator/        # テストケース生成ルール
-│   │   └── rules/        # common / string / integer / array / object
-│   ├── id-assigner/      # 試験 ID 採番
+│   │   └── rules/        # common / string / integer / array / object / auth
+│   ├── id_assigner.py    # 試験 ID 採番
 │   └── renderer/         # JSON / Excel 出力
 ├── runner/               # openapi-test-run（試験実行ランナー）
 │   └── README.md         # ランナー詳細ドキュメント
+├── requirements.txt      # ジェネレーター・ランナー共通の依存関係
 └── docs/                 # サンプル OpenAPI・出力ファイル
 ```
 
@@ -37,19 +40,18 @@ api test generator/
 
 ### 前提
 
-- Node.js 18+
-- pnpm
+- Python 3.10+
 
 ### セットアップ
 
 ```sh
-pnpm install
+pip install -r requirements.txt
 ```
 
 ### 使い方
 
 ```sh
-pnpm exec tsx src/cli.ts <openapi.json> [オプション]
+python src/cli.py <openapi.json> [オプション]
 ```
 
 ### 引数・オプション
@@ -72,17 +74,17 @@ pnpm exec tsx src/cli.ts <openapi.json> [オプション]
 
 ```sh
 # JSON + Excel を両方出力
-pnpm exec tsx src/cli.ts openapi.json \
+python src/cli.py openapi.json \
   --output test_cases.json \
   --excel-output 試験仕様.xlsx
 
 # 特定 operation のみ対象
-pnpm exec tsx src/cli.ts openapi.json \
+python src/cli.py openapi.json \
   --excel-output 試験仕様.xlsx \
   --operations createUser,getUser
 
 # ケース数の確認のみ（ファイル出力なし）
-pnpm exec tsx src/cli.ts openapi.json --dry-run
+python src/cli.py openapi.json --dry-run
 ```
 
 ### 生成されるテストケースの種類
@@ -148,9 +150,9 @@ pnpm exec tsx src/cli.ts openapi.json --dry-run
 ### 基本的な使い方
 
 ```sh
-cd runner
 pip install -r requirements.txt
 
+cd runner
 python runner.py 試験仕様.xlsx openapi.json \
   --base-url http://192.168.1.100:8080
 ```
@@ -173,15 +175,14 @@ python runner.py 試験仕様.xlsx openapi.json \
 
 ## テスト
 
-**ジェネレーター（TypeScript）**
+**ジェネレーター**
 
 ```sh
-pnpm test
+python -m pytest tests/ -q
 ```
 
-**ランナー（Python）**
+**ランナー**
 
 ```sh
-cd runner
-python -m pytest tests/ -q
+python -m pytest runner/tests/ -q
 ```

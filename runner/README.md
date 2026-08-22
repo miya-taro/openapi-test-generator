@@ -10,7 +10,10 @@ OpenAPI テスト仕様 Excel を読み込み、実際の API サーバーに対
 
 ## セットアップ
 
+依存関係はリポジトリルートの `requirements.txt` に統合されている（`openapi-test-gen` と共通）。
+
 ```sh
+# リポジトリルートで実行
 pip install -r requirements.txt
 ```
 
@@ -167,7 +170,6 @@ runner/
 ├── response_schema.py  # RunCase → ResponseSchema 変換
 ├── verifier.py         # Level 1〜3 検証
 ├── excel_writer.py     # 結果 Excel 書き込み（P〜U 列）
-├── requirements.txt
 └── tests/
     ├── fixtures/
     │   └── sample.xlsx

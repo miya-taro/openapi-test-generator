@@ -6,6 +6,11 @@ from models import RunCase
 OMIT_MARKERS = {"（省略）", "（フィールドを省略）"}
 EMPTY_VALUE_MARKER = "（空文字）"
 
+# ルートbody（paramName == "requestBody"）向けのプレースホルダ値。
+# openapi-test-gen の src/generator/rules/object.py が出力する値と対応させている。
+_ROOT_BODY_EMPTY_MARKER = "{}"
+_ROOT_BODY_EXTRA_PROP_MARKER = '{ ...validBody, "__extra__": "value" }'
+
 FORMAT_SAMPLES: dict[str, str | int | bool] = {
     "email": "test@example.com",
     "date": "2024-01-01",
@@ -42,32 +47,98 @@ def build_body_args(case: RunCase, openapi: dict | None) -> list[str]:
 
 
 def _build_body(case: RunCase, openapi: dict | None) -> dict:
-    body: dict = {}
+    schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi) if openapi else None
 
-    if openapi is not None:
-        baseline = _generate_baseline(case, openapi)
-        body.update(baseline)
+    # ベースライン: required フィールドを（ネスト・配列要素も含めて）全階層分、有効な値で埋めた body
+    baseline = _expand_value(schema) if schema is not None else {}
+    body: dict = baseline if isinstance(baseline, dict) else {}
 
-    if case.input_value not in OMIT_MARKERS:
+    # ルートbody全体を対象とするケース（空body / additionalProperties）は body 全体を差し替える
+    if case.param_name == "requestBody":
+        if case.input_value == _ROOT_BODY_EMPTY_MARKER:
+            return {}
+        if case.input_value == _ROOT_BODY_EXTRA_PROP_MARKER:
+            return {**body, "__extra__": "value"}
+        return body
+
+    if case.input_value in OMIT_MARKERS:
+        _delete_nested(body, case.param_name, schema)
+    else:
         raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
-        body[case.param_name] = _coerce_value(case.param_name, raw, openapi, case)
+        field_schema = _resolve_nested_schema(schema, case.param_name) if schema is not None else {}
+        _set_nested(body, case.param_name, _coerce_value(raw, field_schema), schema)
 
     return body
 
 
-def _generate_baseline(case: RunCase, openapi: dict) -> dict:
-    schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi)
-    if schema is None:
+def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) -> tuple[dict, str]:
+    """ドット区切りパスの最終セグメント手前まで辿り、(親コンテナ, 最終キー) を返す。
+
+    セグメントが "lines[]" のように "[]" で終わる場合は配列として扱い、
+    先頭要素（存在しなければ新規作成した空dict）に読み替える。
+    途中のコンテナが存在しない場合（親フィールドが required でない等）は、
+    スキーマから有効なベースライン値を生成して埋める
+    （そうしないと、そのコンテナの他の required フィールドが欠けたリクエストになってしまう）。
+    """
+    parts = dotted_path.split(".")
+    container = body
+    schema_node: dict | None = root_schema
+    for part in parts[:-1]:
+        is_array = part.endswith("[]")
+        key = part[:-2] if is_array else part
+
+        props = schema_node.get("properties", {}) if isinstance(schema_node, dict) else {}
+        field_schema = props.get(key) if isinstance(props, dict) else None
+
+        if is_array:
+            item_schema = field_schema.get("items") if isinstance(field_schema, dict) else None
+            lst = container.get(key)
+            if not isinstance(lst, list) or not lst or not isinstance(lst[0], dict):
+                seed = _expand_value(item_schema) if isinstance(item_schema, dict) else {}
+                lst = [seed if isinstance(seed, dict) else {}]
+                container[key] = lst
+            container = lst[0]
+            schema_node = item_schema
+        else:
+            nxt = container.get(key)
+            if not isinstance(nxt, dict):
+                seed = _expand_value(field_schema) if isinstance(field_schema, dict) else {}
+                nxt = seed if isinstance(seed, dict) else {}
+                container[key] = nxt
+            container = nxt
+            schema_node = field_schema
+    last = parts[-1]
+    last_key = last[:-2] if last.endswith("[]") else last
+    return container, last_key
+
+
+def _set_nested(body: dict, dotted_path: str, value: object, root_schema: dict | None) -> None:
+    container, key = _navigate_to_parent(body, dotted_path, root_schema)
+    container[key] = value
+
+
+def _delete_nested(body: dict, dotted_path: str, root_schema: dict | None) -> None:
+    container, key = _navigate_to_parent(body, dotted_path, root_schema)
+    container.pop(key, None)
+
+
+def _resolve_nested_schema(root_schema: dict | None, dotted_path: str) -> dict:
+    """ドット区切りパス（配列要素を表す "[]" 区切りを含む）からフィールドのスキーマを解決する。"""
+    if root_schema is None:
         return {}
-    required = schema.get("required", [])
-    props = schema.get("properties", {})
-    result: dict = {}
-    for field_name in required:
-        if field_name == case.param_name:
-            continue
-        field_schema = props.get(field_name, {})
-        result[field_name] = _expand_value(field_schema)
-    return result
+    node: dict = root_schema
+    for part in dotted_path.split("."):
+        is_array = part.endswith("[]")
+        key = part[:-2] if is_array else part
+        props = node.get("properties", {}) if isinstance(node, dict) else {}
+        node = props.get(key)
+        if not isinstance(node, dict):
+            return {}
+        if is_array:
+            node = node.get("items", {})
+            if not isinstance(node, dict):
+                return {}
+    return node
 
 
 def _resolve_request_body_schema(operation_id: str, path: str, method: str, openapi: dict) -> dict | None:
@@ -129,7 +200,7 @@ def _expand_value(schema: dict) -> object:
 
     if t == "object":
         props = schema.get("properties", {})
-        required = schema.get("required", list(props.keys()))
+        required = schema.get("required", [])
         return {k: _expand_value(props[k]) for k in required if k in props}
 
     # string
@@ -143,18 +214,13 @@ def _expand_value(schema: dict) -> object:
     return "test"
 
 
-def _coerce_value(field_name: str, raw_value: str, openapi: dict | None, case: RunCase) -> object:
-    if openapi is not None:
-        schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi)
-        if schema:
-            props = schema.get("properties", {})
-            field_schema = props.get(field_name, {})
-            t = field_schema.get("type", "string")
-            if t in ("integer", "number"):
-                try:
-                    return int(raw_value) if t == "integer" else float(raw_value)
-                except ValueError:
-                    pass
-            if t == "boolean":
-                return raw_value.lower() in ("true", "1", "yes")
+def _coerce_value(raw_value: str, field_schema: dict) -> object:
+    t = field_schema.get("type", "string")
+    if t in ("integer", "number"):
+        try:
+            return int(raw_value) if t == "integer" else float(raw_value)
+        except ValueError:
+            pass
+    if t == "boolean":
+        return raw_value.lower() in ("true", "1", "yes")
     return raw_value
