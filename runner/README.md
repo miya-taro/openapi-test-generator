@@ -364,6 +364,44 @@ python generate_db_scenarios.py openapi.json mapping.yaml -o scenarios.generated
   対象データを作成する `create` 系シナリオを先に置き、そのレスポンスから値を引き継ぐ想定で
   シナリオの順序を調整する必要がある
 
+### setup.sql / mapping.yaml の叩き台を実DBから自動生成する
+
+上記の `mapping.yaml`（operationId→テーブル名の対応表）や、`--setup`/`--teardown` で使う
+setup.sql/teardown.sqlを手書きするのは手間がかかるため、実DB（PostgreSQLのみ対応）に接続して
+雛形を自動生成する2つのスクリプトがある。どちらも生成物はあくまで叩き台であり、必ず内容を
+確認・修正すること。
+
+**setup.sql/teardown.sqlの雛形生成**（`generate_setup_sql.py`）
+
+外部キー制約を満たすINSERT順序（親→子）とTRUNCATE順序（子→親）を自動計算し、
+NOT NULL列には型・enum・単純なCHECK制約（`IN (...)`相当）を踏まえた仮値を入れる。
+PRIMARY KEY/外部キー列は全テーブル共通の仮値（`id=1`）で紐付け、1テーブルにつき1行を生成する。
+
+```sh
+python generate_setup_sql.py --config config.json --setup-output setup.sql.generated --teardown-output teardown.sql.generated
+# 対象を絞る場合: --tables users,orders,order_lines（FK先の親テーブルは自動で追加される）
+```
+
+自動生成できるのは「実行してエラーにならない雛形」までで、値の意味（実際にテストで使いたい
+データかどうか）は自動化の対象外。単純な `IN (...)` 以外のCHECK制約（範囲制約など）は
+自動で満たせないため、該当箇所には `WARNING` コメントが出力される。
+
+**mapping.yamlの叩き台生成**（`generate_mapping.py`）
+
+各operationのリクエストボディのフィールド名と、実DBの各テーブルのカラム名を突き合わせて
+（完全一致・スネークケース/キャメルケース変換後の一致・あいまい一致）、最も一致するテーブルを
+推定する。名前ベースのヒューリスティックであり精度は100%ではないため、各行に確信度
+（高/中/低）を必ずコメントで出力する。「低」は特に人間の判断で修正が必要。
+
+```sh
+python generate_mapping.py openapi.json --config config.json -o mapping.yaml.generated
+```
+
+リクエストボディを持たない操作（DELETE等）は、同一リソースの他operationの推定結果から
+補完を試みる（例: `POST /orders` の推定結果を `DELETE /orders/{id}` にも適用）。ただし
+ネストしたリソース（例: `/orders/{id}/lines` は`orders`ではなく別リソース`lines`）は
+区別されるため、補完対象は同じリソースの操作に限られる。
+
 ## テスト
 
 ```sh
