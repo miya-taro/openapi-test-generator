@@ -1,13 +1,15 @@
 """array 型のルール（minItems / maxItems / uniqueItems）。"""
 from __future__ import annotations
+import json
 
 
 def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
     cases: list[dict] = []
     opts = ctx["opts"]
 
-    item_type = (schema.get("items") or {}).get("type") or "string"
-    sample_item = _get_sample_item(item_type)
+    item_schema = schema.get("items") or {}
+    item_type = item_schema.get("type") or "string"
+    sample_item = _get_sample_item(item_type, item_schema)
 
     # minItems
     min_items = schema.get("minItems")
@@ -74,12 +76,41 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
     return cases
 
 
-def _get_sample_item(item_type: str) -> str:
+def _get_sample_item(item_type: str, item_schema: dict) -> str:
+    """minItems/maxItems 境界値テスト用の要素1個分のJSONリテラル（文字列）を返す。
+
+    要素が object 型の場合、単純に文字列プレースホルダ（"a"）を使うと構造的に不正な
+    要素になり、境界値以外の理由（型不正）で失敗する誤ったテストケースになってしまう
+    ため、items スキーマの required プロパティを埋めた最小限のオブジェクトを生成する。
+    """
     if item_type in ("integer", "number"):
         return "1"
     if item_type == "boolean":
         return "true"
+    if item_type == "object":
+        return json.dumps(_build_sample_object(item_schema), ensure_ascii=False)
+    if item_type == "array":
+        return "[]"
     return '"a"'
+
+
+def _build_sample_object(item_schema: dict) -> dict:
+    properties = item_schema.get("properties") or {}
+    required = item_schema.get("required") or list(properties.keys())
+    return {name: _sample_scalar(properties.get(name) or {}) for name in required}
+
+
+def _sample_scalar(prop_schema: dict):
+    prop_type = prop_schema.get("type")
+    if prop_type in ("integer", "number"):
+        return 1
+    if prop_type == "boolean":
+        return True
+    if prop_type == "array":
+        return []
+    if prop_type == "object":
+        return _build_sample_object(prop_schema)
+    return "a"
 
 
 def _build_array_value(item: str, count: int) -> str:
