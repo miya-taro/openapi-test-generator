@@ -27,6 +27,7 @@ from auth_login import load_auth_config, perform_login, build_auth_header, AuthL
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
 from db_backends import postgres_backend, influx_backend
+import response_check as response_check_module
 from http_client import check_curl_available, health_check, _resolve_auth_header
 from src.parser import parse_openapi, OpenAPIParseError
 
@@ -153,22 +154,33 @@ def _run_scenario(
     if error:
         return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
 
-    try:
-        resolved_check = resolve_db_check(scenario.db_check, response_json)
-    except ScenarioError as e:
-        return False, f"APIレスポンスからの値解決に失敗しました: {e}", str(status), response_json
+    failures: list[str] = []
 
-    try:
-        if resolved_check.engine == "postgres":
-            pg_config = get_postgres_config(db_config)
-            ok, detail = postgres_backend.check(resolved_check, pg_config)
-        else:
-            influx_config = get_influxdb_config(db_config)
-            ok, detail = influx_backend.check(resolved_check, influx_config)
-    except (ValueError, KeyError) as e:
-        return False, f"DB検証でエラーが発生しました: {e}", str(status), response_json
+    if scenario.response_check is not None:
+        ok, detail = response_check_module.check(scenario.response_check, status, response_json)
+        if not ok:
+            failures.append(detail)
 
-    return ok, detail, str(status), response_json
+    if scenario.db_check is not None:
+        try:
+            resolved_check = resolve_db_check(scenario.db_check, response_json)
+        except ScenarioError as e:
+            return False, f"APIレスポンスからの値解決に失敗しました: {e}", str(status), response_json
+
+        try:
+            if resolved_check.engine == "postgres":
+                pg_config = get_postgres_config(db_config)
+                ok, detail = postgres_backend.check(resolved_check, pg_config)
+            else:
+                influx_config = get_influxdb_config(db_config)
+                ok, detail = influx_backend.check(resolved_check, influx_config)
+        except (ValueError, KeyError) as e:
+            return False, f"DB検証でエラーが発生しました: {e}", str(status), response_json
+
+        if not ok:
+            failures.append(detail)
+
+    return not failures, "; ".join(failures), str(status), response_json
 
 
 def _resolve_operation(openapi: dict, operation_id: str) -> tuple[str, str]:

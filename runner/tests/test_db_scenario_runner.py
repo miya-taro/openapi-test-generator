@@ -519,6 +519,145 @@ def test_influxdb_scenario_dispatches_to_influx_backend(monkeypatch, tmp_path):
     assert code == 0
 
 
+# ---------- main(): response_check（APIレスポンス自体の検証） ----------
+
+
+def _one_response_check_scenario():
+    return {
+        "scenarios": [
+            {
+                "name": "最大値のユーザーを取得できる",
+                "request": {"operationId": "createUser", "body": {}},
+                "response_check": {"expect": {"status": 201, "body": {"price": 99999999.99}}},
+            }
+        ]
+    }
+
+
+def test_response_check_only_scenario_passes(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_response_check_scenario())
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"price": 99999999.99}\n201'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+
+
+def test_response_check_only_scenario_fails_with_detail(monkeypatch, tmp_path, capsys):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_response_check_scenario())
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"price": 1}\n201'  # 期待値(99999999.99)と異なる
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "[NG]" in out
+    assert "price" in out
+
+
+def test_response_check_status_mismatch_marks_ng(monkeypatch, tmp_path, capsys):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_response_check_scenario())
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"price": 99999999.99}\n404'  # statusが期待(201)と異なる
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 1
+    assert "[NG]" in capsys.readouterr().out
+
+
+def test_response_check_and_db_check_combined_both_must_pass(monkeypatch, tmp_path, capsys):
+    data = {
+        "scenarios": [
+            {
+                "name": "作成もDBもレスポンスも確認",
+                "request": {"operationId": "createUser", "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+                "response_check": {"expect": {"status": 201}},
+            }
+        ]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = "{}\n201"
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    # db_check側はNG、response_check側はOKにする → 全体としてNGになるはず
+    monkeypatch.setattr(
+        dsr_module.postgres_backend, "check", lambda check, config: (False, "該当する行が見つかりません")
+    )
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "[NG]" in out
+    assert "該当する行が見つかりません" in out
+
+
+def test_response_check_and_db_check_both_pass_marks_ok(monkeypatch, tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "作成もDBもレスポンスも確認",
+                "request": {"operationId": "createUser", "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+                "response_check": {"expect": {"status": 201}},
+            }
+        ]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = "{}\n201"
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+
+
 # ---------- main(): --auth-config ----------
 
 

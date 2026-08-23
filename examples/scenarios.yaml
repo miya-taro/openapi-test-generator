@@ -92,6 +92,22 @@ scenarios:
             quantity: 3
             price: 750
 
+    - name: DBに仕込んだ高額な注文を取得すると正しい金額が返る（response_checkの例）
+      # GET /orders/{id}
+      # db_checkはAPI呼び出し「後」のDB変化を確認する仕組みなので、この逆
+      # （DBに事前に仕込んだ極端な値をAPI経由で正しく読み出せるか）は確認できない。
+      # そのためresponse_checkを使う。examples/setup.sqlで id=999 に高額商品(99999999.99)を
+      # あらかじめ仕込んである。ドット区切りで配列要素にも辿れる（items.0.price）。
+      request:
+        operationId: getOrder
+        path_params: { id: 999 }
+      response_check:
+        expect:
+          status: 200
+          body:
+            id: 999
+            items.0.price: 99999999.99
+
     - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
       # POST /sensor-data
       request:

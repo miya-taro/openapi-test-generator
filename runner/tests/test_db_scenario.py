@@ -197,6 +197,95 @@ def test_old_list_format_still_works_without_defaults_key(tmp_path):
     assert scenarios[0].db_check.engine == "postgres"
 
 
+# ---------- load_scenarios: response_check（APIレスポンス自体の検証） ----------
+
+
+def test_load_scenario_with_response_check_only(tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "最大値の注文を取得できる",
+                "request": {"operationId": "getOrder", "path_params": {"id": 999}},
+                "response_check": {
+                    "expect": {"status": 200, "body": {"price": 99999999.99}}
+                },
+            }
+        ]
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    assert len(scenarios) == 1
+    s = scenarios[0]
+    assert s.db_check is None
+    assert s.response_check.expect_status == 200
+    assert s.response_check.expect_body == {"price": 99999999.99}
+
+
+def test_load_scenario_with_both_db_check_and_response_check(tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "作成もDBもレスポンスも確認",
+                "request": {"operationId": "createUser", "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "expect": {}},
+                "response_check": {"expect": {"status": 201}},
+            }
+        ]
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    s = scenarios[0]
+    assert s.db_check is not None
+    assert s.db_check.engine == "postgres"
+    assert s.response_check is not None
+    assert s.response_check.expect_status == 201
+
+
+def test_scenario_without_db_check_or_response_check_raises(tmp_path):
+    data = {
+        "scenarios": [
+            {"name": "何も確認しない", "request": {"operationId": "getOrder", "path_params": {"id": 1}}}
+        ]
+    }
+    path = _write_yaml(tmp_path, data)
+    with pytest.raises(ScenarioError, match="db_check.*response_check|response_check.*db_check"):
+        load_scenarios(path)
+
+
+def test_response_check_without_expect_key_defaults_to_empty(tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "expectなし",
+                "request": {"operationId": "getOrder", "path_params": {"id": 1}},
+                "response_check": {},
+            }
+        ]
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    s = scenarios[0]
+    assert s.response_check.expect_status is None
+    assert s.response_check.expect_body == {}
+
+
+def test_response_check_body_only_no_status(tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "bodyだけ確認",
+                "request": {"operationId": "getOrder", "path_params": {"id": 1}},
+                "response_check": {"expect": {"body": {"status": "pending"}}},
+            }
+        ]
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    s = scenarios[0]
+    assert s.response_check.expect_status is None
+    assert s.response_check.expect_body == {"status": "pending"}
+
+
 # ---------- load_scenarios: 異常系 ----------
 
 

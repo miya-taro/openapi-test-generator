@@ -106,7 +106,7 @@ python runner/generate_db_scenarios.py examples/openapi.json examples/mapping.ya
 ## scenarios.yaml
 
 DB検証（Layer 2）のシナリオ定義。手書きするか、`mapping.yaml`から自動生成した叩き台を
-修正して作る。全6シナリオで、以下を実例として示している：
+修正して作る。全7シナリオで、以下を実例として示している：
 
 - **複数カラムの確認**: `createUser`（name+email）、`createOrder`（user_id+status）— `columns`は
   辞書なので何個でも列挙できる
@@ -118,6 +118,11 @@ DB検証（Layer 2）のシナリオ定義。手書きするか、`mapping.yaml`
   **直前の1シナリオ**のレスポンスを参照する点に注意（2つ前より前は参照できない）
 - **削除の確認**: `deleteUser`後に`expect.exists: false`で行が消えたことを確認
 - **InfluxDBの確認**: `postSensorData`は`defaults`のpostgresを`db_check.engine`で明示的に上書き
+- **response_check（APIレスポンス自体の確認）**: `db_check`は「API呼び出し**後**のDB変化」しか
+  見られないため、「DBに事前に仕込んだ値をGET系APIが正しく返すか」という逆方向の確認には使えない。
+  `examples/setup.sql`で`id=999`に高額商品（99999999.99）をあらかじめ仕込んでおき、
+  `getOrder`シナリオで`response_check`を使ってレスポンスの中身（`items.0.price`のような
+  配列要素も含む）を直接検証している
 
 ```sh
 python runner/db_scenario_runner.py examples/scenarios.yaml examples/openapi.json \

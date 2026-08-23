@@ -274,6 +274,35 @@ scenarios:
   `raw_sql` を直接指定するエスケープハッチがある
 - `expect.exists: false` で「行/ポイントが存在しないこと」も検証できる（削除シナリオ用）
 
+### response_check（APIレスポンス自体の検証）
+
+`db_check`が「APIを呼んだ**後**にDBがどう変化したか」を見るのに対し、`response_check`は
+「APIレスポンスの中身そのもの」を期待値と突き合わせる。典型的な用途は逆方向のテスト：
+**DBに事前に仕込んだ値（極端な最大値・最小値など）を、GET系APIが正しく返してくるか**の確認。
+`db_check`ではこれができない（API呼び出し後のDB変化を見る仕組みなので、呼び出し前から
+DBに存在するデータの読み出し確認には使えない）。
+
+```yaml
+scenarios:
+  list:
+    - name: DBに仕込んだ高額な注文を取得すると正しい金額が返る
+      request:
+        operationId: getOrder
+        path_params: { id: 999 }   # --setup で事前に仕込んでおいたID
+      response_check:
+        expect:
+          status: 200
+          body:
+            id: 999
+            items.0.price: 99999999.99   # ドット区切りで配列要素にも辿れる（items[0].price）
+```
+
+- `db_check`・`response_check`は片方だけでも両方でも指定できる（両方指定した場合、両方が
+  合格して初めてそのシナリオはOKになる）。どちらも指定しない場合はエラーになる
+- `expect.status`: 期待するHTTPステータスコード（省略可）
+- `expect.body`: レスポンスJSON内のフィールドと期待値（辞書なので複数指定できる）。
+  ネストしたパスはドット区切り（`user.name`）、配列要素は数字（`items.0.price`）で辿れる
+
 ### 使用例
 
 ```sh

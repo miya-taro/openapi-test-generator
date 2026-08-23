@@ -37,10 +37,24 @@ class DBCheck:
 
 
 @dataclass
+class ResponseCheck:
+    """APIレスポンス自体の内容を検証する（db_checkがDB側の状態を見るのに対し、
+    こちらはAPI呼び出しの結果そのものを見る）。
+
+    典型的な用途: DBに事前に極端な値（最大値・最小値等）を仕込んだ状態でGET系APIを呼び、
+    レスポンスに正しい値が返ってくることを確認する（db_checkはAPI呼び出し後のDB変化を
+    見る仕組みなので、こちらの用途には向かない）。
+    """
+    expect_status: int | None = None
+    expect_body: dict = field(default_factory=dict)
+
+
+@dataclass
 class DBScenario:
     name: str
     request: ScenarioRequest
-    db_check: DBCheck
+    db_check: DBCheck | None = None
+    response_check: ResponseCheck | None = None
 
 
 def load_scenarios(yaml_path: str | Path) -> list[DBScenario]:
@@ -91,29 +105,42 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         path_params=req_raw.get("path_params") or {},
     )
 
-    check_raw = raw["db_check"]
-    engine = check_raw.get("engine") or defaults.get("engine")
-    if not engine:
-        raise ScenarioError(
-            "engine が指定されていません（db_check.engine か scenarios.defaults.engine のどちらかで指定してください）"
-        )
-    if engine not in SUPPORTED_ENGINES:
-        raise ScenarioError(
-            f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"
+    if "db_check" not in raw and "response_check" not in raw:
+        raise ScenarioError("db_check か response_check のどちらか一方は必須です")
+
+    db_check = None
+    if "db_check" in raw:
+        check_raw = raw["db_check"]
+        engine = check_raw.get("engine") or defaults.get("engine")
+        if not engine:
+            raise ScenarioError(
+                "engine が指定されていません（db_check.engine か scenarios.defaults.engine のどちらかで指定してください）"
+            )
+        if engine not in SUPPORTED_ENGINES:
+            raise ScenarioError(
+                f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"
+            )
+        db_check = DBCheck(
+            engine=engine,
+            expect=check_raw.get("expect") or {},
+            table=check_raw.get("table"),
+            where=check_raw.get("where"),
+            raw_sql=check_raw.get("raw_sql"),
+            measurement=check_raw.get("measurement"),
+            tags=check_raw.get("tags"),
+            time_range=check_raw.get("time_range"),
         )
 
-    db_check = DBCheck(
-        engine=engine,
-        expect=check_raw.get("expect") or {},
-        table=check_raw.get("table"),
-        where=check_raw.get("where"),
-        raw_sql=check_raw.get("raw_sql"),
-        measurement=check_raw.get("measurement"),
-        tags=check_raw.get("tags"),
-        time_range=check_raw.get("time_range"),
-    )
+    response_check = None
+    if "response_check" in raw:
+        resp_raw = raw["response_check"] or {}
+        expect_raw = resp_raw.get("expect") or {}
+        response_check = ResponseCheck(
+            expect_status=expect_raw.get("status"),
+            expect_body=expect_raw.get("body") or {},
+        )
 
-    return DBScenario(name=name, request=request, db_check=db_check)
+    return DBScenario(name=name, request=request, db_check=db_check, response_check=response_check)
 
 
 def resolve_placeholders(value: Any, response: dict) -> Any:

@@ -22,6 +22,13 @@ INSERT INTO orders (id, user_id, status) VALUES
 INSERT INTO order_lines (id, order_id, product_name, quantity, price) VALUES
   (1, 1, 'ダミー商品', 1, 1000);
 
+-- response_check（DBに極端な値を仕込んでおいて、GET系APIが正しく返すかの確認）用に、
+-- 高額商品の明細行をあらかじめ仕込んでおく。examples/scenarios.yamlの該当シナリオ参照。
+INSERT INTO orders (id, user_id, status) VALUES
+  (999, 1, 'pending');
+INSERT INTO order_lines (id, order_id, product_name, quantity, price) VALUES
+  (999, 999, '高額商品', 1, 99999999.99);
+
 -- 【重要な制限】この --setup/--teardown の仕組みはPostgreSQLにのみ対応している。
 -- InfluxDBはSQLではなくLine Protocolでデータを書き込むため、この仕組みでは
 -- 初期データを仕込めない。InfluxDB側の試験データ準備は、別途スクリプトを
