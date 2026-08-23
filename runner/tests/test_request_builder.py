@@ -354,3 +354,47 @@ def test_null_marker_on_nested_field():
     args = build_body_args(case, NESTED_OPENAPI)
     body = json.loads(args[1])
     assert body["customer"]["address"]["zipCode"] is None
+
+
+# --- フィールド自体が array/object 型のケース（境界値・型不正テスト） ---
+# generator（array.py の minItems/maxItems、common.py の型不正）はこの種のフィールドに
+# JSON リテラル文字列を inputValue として出力するため、そのまま body に埋め込むと
+# 「配列/オブジェクトのはずが JSON 文字列になる」という誤ったリクエストになってしまう。
+
+def test_array_field_json_literal_is_parsed_not_sent_as_string():
+    case = _order_case(param_name="lines", input_value='[{"sku": "abc", "qty": 1}]')
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["lines"] == [{"sku": "abc", "qty": 1}]
+    assert isinstance(body["lines"], list)
+
+
+def test_array_field_empty_array_literal_is_parsed():
+    case = _order_case(param_name="lines", input_value="[]")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["lines"] == []
+
+
+def test_array_field_type_mismatch_literal_stays_a_string():
+    # common.py の型不正テスト由来: '"not-an-array"' というJSON文字列リテラル
+    # → パース後は python の str "not-an-array" になる（意図通り、配列ではなく文字列を送る）
+    case = _order_case(param_name="lines", input_value='"not-an-array"')
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["lines"] == "not-an-array"
+
+
+def test_object_field_json_literal_is_parsed_not_sent_as_string():
+    case = _order_case(param_name="customer", input_value='{"name": "a", "address": {"zipCode": "1234567"}}')
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["customer"] == {"name": "a", "address": {"zipCode": "1234567"}}
+
+
+def test_array_field_malformed_json_falls_back_to_raw_string():
+    # 万一パースできない文字列が来ても、例外にせず生の文字列にフォールバックする
+    case = _order_case(param_name="lines", input_value="not valid json at all")
+    args = build_body_args(case, NESTED_OPENAPI)
+    body = json.loads(args[1])
+    assert body["lines"] == "not valid json at all"

@@ -226,4 +226,14 @@ def _coerce_value(raw_value: str, field_schema: dict) -> object:
             pass
     if t == "boolean":
         return raw_value.lower() in ("true", "1", "yes")
+    if t in ("array", "object"):
+        # generator（array.py/object.py/common.py）はこのフィールド自体が array/object 型の
+        # 場合、inputValue に JSON リテラル文字列（例: '[{"a": 1}]' や '"not-an-array"'）を
+        # 出力する。json.loads せずそのまま埋め込むと、リクエストボディの当該フィールドが
+        # 「JSON配列/オブジェクト」ではなく「JSON文字列」になってしまい、意図と異なるテストに
+        # なってしまう（境界値テストなのに型不正テストとして扱われる等）。
+        try:
+            return json.loads(raw_value)
+        except json.JSONDecodeError:
+            pass
     return raw_value
