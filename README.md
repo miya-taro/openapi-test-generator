@@ -30,9 +30,28 @@ api test generator/
 │   └── renderer/         # JSON / Excel 出力
 ├── runner/               # openapi-test-run（試験実行ランナー）
 │   └── README.md         # ランナー詳細ドキュメント
+├── gui/                  # デスクトップアプリ（上記CLI群のGUIラッパー）
 ├── requirements.txt      # ジェネレーター・ランナー共通の依存関係
 └── docs/                 # サンプル OpenAPI・出力ファイル
 ```
+
+---
+
+## GUIアプリ（コマンドライン操作なしで使いたい場合）
+
+`gui/起動.bat` をダブルクリックするか、以下で起動する。
+
+```sh
+python gui/app.py
+```
+
+- 「テスト生成・実行」タブ：`openapi.json` と Base URL を指定して「生成して実行」を押すだけで、
+  試験仕様の生成 → API実行 → 結果Excel出力までを1クリックで行う
+- 「DBシナリオ」タブ：`runner/db_scenario_runner.py` をGUIから実行する
+- 入力した値は次回起動時に自動で復元される
+
+内部では既存のCLIツール（`src/cli.py` / `runner/runner.py` / `runner/db_scenario_runner.py`）を
+そのままサブプロセスとして呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。
 
 ---
 
