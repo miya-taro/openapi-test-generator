@@ -49,6 +49,7 @@ python gui/app.py
   試験仕様の生成 → API実行 → 結果Excel出力までを1クリックで行う
 - 「DBシナリオ」タブ：`runner/db_scenario_runner.py` をGUIから実行する
 - 入力した値は次回起動時に自動で復元される
+- 実行中は進捗バーで完了件数がリアルタイムに分かる（PySide6製）
 
 内部では既存のCLIツール（`src/cli.py` / `runner/runner.py` / `runner/db_scenario_runner.py`）を
 そのままサブプロセスとして呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。

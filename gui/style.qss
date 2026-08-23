@@ -1,0 +1,143 @@
+* {
+    font-family: "Yu Gothic UI", "Segoe UI", sans-serif;
+    font-size: 10.5pt;
+}
+
+QMainWindow, QWidget {
+    background-color: #f7f8fa;
+    color: #1f2430;
+}
+
+QTabWidget::pane {
+    border: 1px solid #e0e3e8;
+    border-radius: 8px;
+    background: #ffffff;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background: transparent;
+    color: #6b7280;
+    padding: 8px 18px;
+    margin-right: 4px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    font-weight: 600;
+}
+
+QTabBar::tab:selected {
+    background: #ffffff;
+    color: #2563eb;
+    border: 1px solid #e0e3e8;
+    border-bottom: 1px solid #ffffff;
+}
+
+QTabBar::tab:hover:!selected {
+    color: #374151;
+}
+
+QLabel {
+    color: #374151;
+}
+
+QLineEdit {
+    background: #ffffff;
+    border: 1px solid #d7dbe1;
+    border-radius: 6px;
+    padding: 6px 8px;
+    selection-background-color: #2563eb;
+}
+
+QLineEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QLineEdit:read-only {
+    background: #f1f2f5;
+    color: #6b7280;
+}
+
+QPushButton {
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #1d4ed8;
+}
+
+QPushButton:pressed {
+    background-color: #1e40af;
+}
+
+QPushButton:disabled {
+    background-color: #c7d2fe;
+    color: #eef2ff;
+}
+
+QPushButton#secondaryButton {
+    background-color: #ffffff;
+    color: #374151;
+    border: 1px solid #d7dbe1;
+    padding: 6px 14px;
+    font-weight: 500;
+}
+
+QPushButton#secondaryButton:hover {
+    background-color: #f1f2f5;
+}
+
+QPushButton#secondaryButton:disabled {
+    color: #a8adb6;
+    background-color: #f7f8fa;
+}
+
+QProgressBar {
+    border: none;
+    border-radius: 6px;
+    background-color: #e5e7eb;
+    height: 14px;
+    text-align: center;
+    color: #374151;
+    font-weight: 600;
+}
+
+QProgressBar::chunk {
+    border-radius: 6px;
+    background-color: #2563eb;
+}
+
+QPlainTextEdit {
+    background-color: #0f172a;
+    color: #d1d5db;
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    font-family: "Consolas", "Cascadia Mono", monospace;
+    font-size: 9.5pt;
+}
+
+QLabel#statusLabel {
+    font-weight: 600;
+    padding: 2px 0;
+}
+
+QLabel#statusLabel[state="ok"] {
+    color: #16a34a;
+}
+
+QLabel#statusLabel[state="ng"] {
+    color: #dc2626;
+}
+
+QLabel#statusLabel[state="warn"] {
+    color: #d97706;
+}
+
+QLabel#statusLabel[state="running"] {
+    color: #2563eb;
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""openapi-test-gen / openapi-test-run / db_scenario_runner をGUIから操作するデスクトップアプリ。
+"""openapi-test-gen / openapi-test-run / db_scenario_runner をGUIから操作するデスクトップアプリ（PySide6版）。
 
 既存のCLIツール群をそのままサブプロセスとして呼び出す薄いラッパー。
 CLI自体はこれまで通り単独でも使用できる。
@@ -9,127 +9,149 @@ import os
 import queue
 import sys
 import threading
-import tkinter as tk
 from pathlib import Path
-from tkinter import ttk, messagebox, scrolledtext
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox,
+)
+
 from settings import load_settings, save_settings
 from widgets import PathField, TextField
 from process_runner import run_streamed, exit_code_meaning
+from progress_parser import ProgressTracker
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CLI_PY = REPO_ROOT / "src" / "cli.py"
 RUNNER_PY = REPO_ROOT / "runner" / "runner.py"
 DB_SCENARIO_RUNNER_PY = REPO_ROOT / "runner" / "db_scenario_runner.py"
 
-JSON_FILETYPES = [("JSON", "*.json"), ("すべてのファイル", "*.*")]
-YAML_FILETYPES = [("YAML", "*.yaml;*.yml"), ("すべてのファイル", "*.*")]
+JSON_FILTER = "JSON (*.json)"
+YAML_FILTER = "YAML (*.yaml *.yml)"
+
+STATE_BY_CODE = {0: "ok", 1: "ng", 2: "warn"}
 
 
-class LogPanel(ttk.Frame):
-    """ログ表示 + ステータス行 + 実行ボタン群を持つ共通の下部パネル。"""
+class LogPanel(QWidget):
+    """進捗バー・ステータス表示・ログ表示・実行ボタン群を持つ共通の下部パネル。"""
 
-    def __init__(self, parent, run_label: str, on_run):
+    def __init__(self, run_label: str, on_run, show_open_result: bool = True, parent=None):
         super().__init__(parent)
         self.on_run = on_run
         self.log_queue: "queue.Queue[tuple]" = queue.Queue()
-
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill="x", pady=(6, 2))
-        self.run_button = ttk.Button(btn_frame, text=run_label, command=self._on_run_clicked)
-        self.run_button.pack(side="left")
-        self.open_result_button = ttk.Button(
-            btn_frame, text="結果Excelを開く", command=self._open_result, state="disabled"
-        )
-        self.open_result_button.pack(side="left", padx=(6, 0))
-
-        self.status_var = tk.StringVar(value="")
-        ttk.Label(self, textvariable=self.status_var).pack(fill="x")
-
-        self.log_widget = scrolledtext.ScrolledText(self, height=24, state="disabled")
-        self.log_widget.pack(fill="both", expand=True, pady=(4, 0))
-
+        self.progress = ProgressTracker()
         self.result_path: Path | None = None
-        self._after_id: str | None = None
-        self._poll_queue()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        btn_row = QHBoxLayout()
+        self.run_button = QPushButton(run_label)
+        self.run_button.clicked.connect(lambda: self.on_run())
+        btn_row.addWidget(self.run_button)
+
+        self.open_result_button = QPushButton("結果Excelを開く")
+        self.open_result_button.setObjectName("secondaryButton")
+        self.open_result_button.setEnabled(False)
+        self.open_result_button.clicked.connect(self._open_result)
+        if show_open_result:
+            btn_row.addWidget(self.open_result_button)
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
+
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("statusLabel")
+        layout.addWidget(self.status_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        layout.addWidget(self.progress_bar)
+
+        self.log_widget = QPlainTextEdit()
+        self.log_widget.setReadOnly(True)
+        layout.addWidget(self.log_widget, stretch=1)
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll_queue)
+        self._timer.start(100)
 
     def stop(self) -> None:
-        """ウィンドウを閉じる前に呼び、スケジュール済みの after コールバックを止める。"""
-        if self._after_id is not None:
-            self.after_cancel(self._after_id)
-            self._after_id = None
-
-    def _on_run_clicked(self) -> None:
-        self.on_run()
+        self._timer.stop()
 
     def start(self, worker) -> None:
-        self._clear_log()
-        self.run_button.configure(state="disabled")
-        self.open_result_button.configure(state="disabled")
+        self.log_widget.clear()
+        self.progress.reset()
+        self.progress_bar.setValue(0)
+        self.run_button.setEnabled(False)
+        self.open_result_button.setEnabled(False)
         self.result_path = None
-        self.status_var.set("実行中...")
+        self._set_status("実行中...", "running")
         threading.Thread(target=worker, daemon=True).start()
 
     def finish(self, code: int, result_path: Path | None) -> None:
         self.log_queue.put(("final", code, result_path))
 
-    def _append_log(self, text: str) -> None:
-        self.log_widget.configure(state="normal")
-        self.log_widget.insert("end", text + "\n")
-        self.log_widget.see("end")
-        self.log_widget.configure(state="disabled")
-
-    def _clear_log(self) -> None:
-        self.log_widget.configure(state="normal")
-        self.log_widget.delete("1.0", "end")
-        self.log_widget.configure(state="disabled")
+    def _set_status(self, text: str, state: str) -> None:
+        self.status_label.setText(text)
+        self.status_label.setProperty("state", state)
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
 
     def _poll_queue(self) -> None:
         try:
             while True:
                 item = self.log_queue.get_nowait()
                 if item[0] == "line":
-                    self._append_log(item[1])
+                    line = item[1]
+                    self.log_widget.appendPlainText(line)
+                    self.progress.feed_line(line)
+                    self.progress_bar.setValue(self.progress.percent)
                 elif item[0] == "final":
                     code, result_path = item[1], item[2]
-                    self.status_var.set(exit_code_meaning(code))
-                    self.run_button.configure(state="normal")
+                    self._set_status(exit_code_meaning(code), STATE_BY_CODE.get(code, "ng"))
+                    self.run_button.setEnabled(True)
                     self.result_path = result_path
                     if result_path and Path(result_path).exists():
-                        self.open_result_button.configure(state="normal")
+                        self.open_result_button.setEnabled(True)
+                    if code == 0:
+                        self.progress_bar.setValue(100)
         except queue.Empty:
             pass
-        self._after_id = self.after(100, self._poll_queue)
 
     def _open_result(self) -> None:
         if self.result_path and self.result_path.exists():
             os.startfile(str(self.result_path))  # noqa: S606 - Windows専用ツールのため
 
 
-class GenerateRunTab(ttk.Frame):
+class GenerateRunTab(QWidget):
     """openapi-test-gen で生成 → openapi-test-run で実行、を1クリックで行うタブ。"""
 
-    def __init__(self, parent, settings: dict):
+    def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.settings = settings
 
-        self.openapi_field = PathField(self, "openapi.json", filetypes=JSON_FILETYPES)
+        layout = QVBoxLayout(self)
+
+        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
         self.openapi_field.set(settings["gen_openapi_path"])
-        self.openapi_field.pack(fill="x", padx=8, pady=2)
+        layout.addWidget(self.openapi_field)
 
-        self.output_dir_field = PathField(self, "出力先フォルダ", is_dir=True)
+        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
         self.output_dir_field.set(settings["gen_output_dir"])
-        self.output_dir_field.pack(fill="x", padx=8, pady=2)
+        layout.addWidget(self.output_dir_field)
 
-        self.base_url_field = TextField(self, "Base URL", settings["gen_base_url"])
-        self.base_url_field.pack(fill="x", padx=8, pady=2)
+        self.base_url_field = TextField("Base URL", settings["gen_base_url"])
+        layout.addWidget(self.base_url_field)
 
-        self.health_path_field = TextField(self, "Health Path", settings["gen_health_path"])
-        self.health_path_field.pack(fill="x", padx=8, pady=2)
+        self.health_path_field = TextField("Health Path", settings["gen_health_path"])
+        layout.addWidget(self.health_path_field)
 
-        self.panel = LogPanel(self, "生成して実行", self.on_run)
-        self.panel.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+        self.panel = LogPanel("生成して実行", self.on_run)
+        layout.addWidget(self.panel, stretch=1)
 
     def save_fields(self) -> None:
         self.settings["gen_openapi_path"] = self.openapi_field.get()
@@ -141,10 +163,10 @@ class GenerateRunTab(ttk.Frame):
         openapi_path = self.openapi_field.get()
         base_url = self.base_url_field.get()
         if not openapi_path:
-            messagebox.showerror("入力エラー", "openapi.json を選択してください")
+            QMessageBox.critical(self, "入力エラー", "openapi.json を選択してください")
             return
         if not base_url:
-            messagebox.showerror("入力エラー", "Base URL を入力してください")
+            QMessageBox.critical(self, "入力エラー", "Base URL を入力してください")
             return
 
         output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
@@ -158,7 +180,7 @@ class GenerateRunTab(ttk.Frame):
 
         def worker() -> None:
             gen_cmd = [
-                sys.executable, str(CLI_PY), openapi_path,
+                sys.executable, "-u", str(CLI_PY), openapi_path,
                 "-o", str(cases_path), "--excel-output", str(spec_path),
             ]
             code = run_streamed(gen_cmd, self.panel.log_queue)
@@ -169,7 +191,7 @@ class GenerateRunTab(ttk.Frame):
 
             self.panel.log_queue.put(("line", ""))
             run_cmd = [
-                sys.executable, str(RUNNER_PY), str(spec_path), openapi_path,
+                sys.executable, "-u", str(RUNNER_PY), str(spec_path), openapi_path,
                 "--base-url", base_url, "--health-path", health_path,
                 "--output", str(result_path),
             ]
@@ -179,34 +201,35 @@ class GenerateRunTab(ttk.Frame):
         self.panel.start(worker)
 
 
-class DBScenarioTab(ttk.Frame):
+class DBScenarioTab(QWidget):
     """db_scenario_runner.py を実行するタブ。"""
 
-    def __init__(self, parent, settings: dict):
+    def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.settings = settings
 
-        self.scenario_field = PathField(self, "シナリオYAML", filetypes=YAML_FILETYPES)
+        layout = QVBoxLayout(self)
+
+        self.scenario_field = PathField("シナリオYAML", name_filter=YAML_FILTER)
         self.scenario_field.set(settings["db_scenario_path"])
-        self.scenario_field.pack(fill="x", padx=8, pady=2)
+        layout.addWidget(self.scenario_field)
 
-        self.openapi_field = PathField(self, "openapi.json", filetypes=JSON_FILETYPES)
+        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
         self.openapi_field.set(settings["db_openapi_path"])
-        self.openapi_field.pack(fill="x", padx=8, pady=2)
+        layout.addWidget(self.openapi_field)
 
-        self.config_field = PathField(self, "config.json", filetypes=JSON_FILETYPES)
+        self.config_field = PathField("config.json", name_filter=JSON_FILTER)
         self.config_field.set(settings["db_config_path"])
-        self.config_field.pack(fill="x", padx=8, pady=2)
+        layout.addWidget(self.config_field)
 
-        self.base_url_field = TextField(self, "Base URL", settings["db_base_url"])
-        self.base_url_field.pack(fill="x", padx=8, pady=2)
+        self.base_url_field = TextField("Base URL", settings["db_base_url"])
+        layout.addWidget(self.base_url_field)
 
-        self.health_path_field = TextField(self, "Health Path", settings["db_health_path"])
-        self.health_path_field.pack(fill="x", padx=8, pady=2)
+        self.health_path_field = TextField("Health Path", settings["db_health_path"])
+        layout.addWidget(self.health_path_field)
 
-        self.panel = LogPanel(self, "実行", self.on_run)
-        self.panel.open_result_button.pack_forget()  # DBシナリオは結果Excelを出力しないため非表示
-        self.panel.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+        self.panel = LogPanel("実行", self.on_run, show_open_result=False)
+        layout.addWidget(self.panel, stretch=1)
 
     def save_fields(self) -> None:
         self.settings["db_scenario_path"] = self.scenario_field.get()
@@ -221,10 +244,10 @@ class DBScenarioTab(ttk.Frame):
         config_path = self.config_field.get()
         base_url = self.base_url_field.get()
         if not scenario_path or not openapi_path or not config_path:
-            messagebox.showerror("入力エラー", "シナリオYAML・openapi.json・config.json をすべて選択してください")
+            QMessageBox.critical(self, "入力エラー", "シナリオYAML・openapi.json・config.json をすべて選択してください")
             return
         if not base_url:
-            messagebox.showerror("入力エラー", "Base URL を入力してください")
+            QMessageBox.critical(self, "入力エラー", "Base URL を入力してください")
             return
 
         health_path = self.health_path_field.get() or "/health"
@@ -232,7 +255,7 @@ class DBScenarioTab(ttk.Frame):
 
         def worker() -> None:
             cmd = [
-                sys.executable, str(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
+                sys.executable, "-u", str(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
                 "--base-url", base_url, "--config", config_path, "--health-path", health_path,
             ]
             code = run_streamed(cmd, self.panel.log_queue)
@@ -241,37 +264,44 @@ class DBScenarioTab(ttk.Frame):
         self.panel.start(worker)
 
 
-class App(tk.Tk):
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title("openapi-test-gen / openapi-test-run")
-        self.geometry("900x700")
-        self.minsize(700, 500)
+        self.setWindowTitle("openapi-test-gen / openapi-test-run")
+        self.resize(960, 720)
 
         self.settings = load_settings()
 
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True, padx=8, pady=8)
+        tabs = QTabWidget()
+        self.gen_tab = GenerateRunTab(self.settings)
+        self.db_tab = DBScenarioTab(self.settings)
+        tabs.addTab(self.gen_tab, "テスト生成・実行")
+        tabs.addTab(self.db_tab, "DBシナリオ")
 
-        self.gen_tab = GenerateRunTab(notebook, self.settings)
-        self.db_tab = DBScenarioTab(notebook, self.settings)
-        notebook.add(self.gen_tab, text="テスト生成・実行")
-        notebook.add(self.db_tab, text="DBシナリオ")
+        container = QWidget()
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.addWidget(tabs)
+        self.setCentralWidget(container)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-
-    def _on_close(self) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qtのオーバーライド規約
         self.gen_tab.save_fields()
         self.db_tab.save_fields()
         save_settings(self.settings)
         self.gen_tab.panel.stop()
         self.db_tab.panel.stop()
-        self.destroy()
+        super().closeEvent(event)
 
 
 def main() -> None:
-    app = App()
-    app.mainloop()
+    app = QApplication(sys.argv)
+    qss_path = Path(__file__).resolve().parent / "style.qss"
+    if qss_path.exists():
+        app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
+
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

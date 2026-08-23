@@ -1,45 +1,63 @@
-"""共通で使う入力フィールド部品。"""
+"""共通で使う入力フィールド部品（PySide6）。"""
 from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk, filedialog
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
 
 
-class PathField(ttk.Frame):
+class PathField(QWidget):
     """ファイル/フォルダ選択付きの入力欄。"""
 
-    def __init__(self, parent, label: str, is_dir: bool = False, filetypes=None, width: int = 16):
+    def __init__(self, label: str, is_dir: bool = False, name_filter: str = "すべてのファイル (*.*)", parent=None):
         super().__init__(parent)
         self.is_dir = is_dir
-        self.filetypes = filetypes or [("すべてのファイル", "*.*")]
-        self.var = tk.StringVar()
+        self.name_filter = name_filter
 
-        ttk.Label(self, text=label, width=width, anchor="w").pack(side="left")
-        ttk.Entry(self, textvariable=self.var).pack(side="left", fill="x", expand=True, padx=(4, 4))
-        ttk.Button(self, text="参照...", command=self._browse).pack(side="left")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        label_widget = QLabel(label)
+        label_widget.setFixedWidth(120)
+        layout.addWidget(label_widget)
+
+        self.line_edit = QLineEdit()
+        layout.addWidget(self.line_edit, stretch=1)
+
+        browse_button = QPushButton("参照...")
+        browse_button.setObjectName("secondaryButton")
+        browse_button.clicked.connect(self._browse)
+        layout.addWidget(browse_button)
 
     def _browse(self) -> None:
-        path = filedialog.askdirectory() if self.is_dir else filedialog.askopenfilename(filetypes=self.filetypes)
+        if self.is_dir:
+            path = QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "ファイルを選択", filter=self.name_filter)
         if path:
-            self.var.set(path)
+            self.line_edit.setText(path)
 
     def get(self) -> str:
-        return self.var.get().strip()
+        return self.line_edit.text().strip()
 
     def set(self, value: str) -> None:
-        self.var.set(value or "")
+        self.line_edit.setText(value or "")
 
 
-class TextField(ttk.Frame):
+class TextField(QWidget):
     """単純なテキスト入力欄。"""
 
-    def __init__(self, parent, label: str, default: str = "", width: int = 16):
+    def __init__(self, label: str, default: str = "", parent=None):
         super().__init__(parent)
-        self.var = tk.StringVar(value=default)
-        ttk.Label(self, text=label, width=width, anchor="w").pack(side="left")
-        ttk.Entry(self, textvariable=self.var).pack(side="left", fill="x", expand=True, padx=(4, 4))
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        label_widget = QLabel(label)
+        label_widget.setFixedWidth(120)
+        layout.addWidget(label_widget)
+
+        self.line_edit = QLineEdit(default)
+        layout.addWidget(self.line_edit, stretch=1)
 
     def get(self) -> str:
-        return self.var.get().strip()
+        return self.line_edit.text().strip()
 
     def set(self, value: str) -> None:
-        self.var.set(value or "")
+        self.line_edit.setText(value or "")
