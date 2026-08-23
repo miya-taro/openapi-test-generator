@@ -79,6 +79,9 @@ class LogPanel(QWidget):
         self.progress = ProgressTracker()
         self.result_path: Path | None = None
         self.exit_code_meanings = exit_code_meanings
+        # 完了時(mainスレッド上、_poll_queue経由)に呼ばれる任意のフック。
+        # 生成結果のプレビュー表示や、他タブへのパス連携に使う。
+        self.on_finish = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -160,6 +163,8 @@ class LogPanel(QWidget):
                         self.open_result_button.setEnabled(True)
                     if code == 0:
                         self.progress_bar.setValue(100)
+                    if self.on_finish:
+                        self.on_finish(code, result_path)
         except queue.Empty:
             pass
 
@@ -327,6 +332,8 @@ class ConfigBuilderTab(QWidget):
     def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.settings = settings
+        # 保存成功時に呼ばれる任意のフック（他タブへのパス連携用）。MainWindowが設定する。
+        self.on_saved = None
 
         layout = QVBoxLayout(self)
 
@@ -447,6 +454,8 @@ class ConfigBuilderTab(QWidget):
         Path(output_path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         result = validators.validate_db_config(output_path)
         self.status_label.setText(f"保存しました: {output_path}\n{result}")
+        if self.on_saved:
+            self.on_saved(Path(output_path))
 
     def on_load(self) -> None:
         path = self.output_path_field.get()
@@ -488,6 +497,8 @@ class AuthConfigBuilderTab(QWidget):
     def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.settings = settings
+        # 保存成功時に呼ばれる任意のフック（他タブへのパス連携用）。MainWindowが設定する。
+        self.on_saved = None
 
         layout = QVBoxLayout(self)
 
@@ -584,6 +595,8 @@ class AuthConfigBuilderTab(QWidget):
         )
         result = validators.validate_auth_config(output_path)
         self.status_label.setText(f"保存しました: {output_path}\n{result}")
+        if self.on_saved:
+            self.on_saved(Path(output_path))
 
     def on_load(self) -> None:
         path = self.output_path_field.get()
@@ -655,6 +668,21 @@ class MappingGenTab(QWidget):
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
+
+        preview_label = QLabel("生成結果プレビュー（確信度コメントはここで確認できます）")
+        layout.addWidget(preview_label)
+        self.preview_edit = QPlainTextEdit()
+        self.preview_edit.setReadOnly(True)
+        self.preview_edit.setFixedHeight(160)
+        layout.addWidget(self.preview_edit)
+
+        self.panel.on_finish = self._on_generated
+
+    def _on_generated(self, code: int, path: "Path | None") -> None:
+        if code == 0 and path and Path(path).exists():
+            self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+        else:
+            self.preview_edit.clear()
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -742,6 +770,21 @@ class SetupSqlGenTab(QWidget):
         )
         layout.addWidget(self.panel, stretch=1)
 
+        preview_label = QLabel("生成結果プレビュー（setup.sql。WARNINGコメントはここで確認できます）")
+        layout.addWidget(preview_label)
+        self.preview_edit = QPlainTextEdit()
+        self.preview_edit.setReadOnly(True)
+        self.preview_edit.setFixedHeight(160)
+        layout.addWidget(self.preview_edit)
+
+        self.panel.on_finish = self._on_generated
+
+    def _on_generated(self, code: int, path: "Path | None") -> None:
+        if code == 0 and path and Path(path).exists():
+            self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+        else:
+            self.preview_edit.clear()
+
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("DB接続設定", validators.validate_db_config(self.config_field.get())),
@@ -828,6 +871,21 @@ class ScenarioGenTab(QWidget):
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
+
+        preview_label = QLabel("生成結果プレビュー")
+        layout.addWidget(preview_label)
+        self.preview_edit = QPlainTextEdit()
+        self.preview_edit.setReadOnly(True)
+        self.preview_edit.setFixedHeight(160)
+        layout.addWidget(self.preview_edit)
+
+        self.panel.on_finish = self._on_generated
+
+    def _on_generated(self, code: int, path: "Path | None") -> None:
+        if code == 0 and path and Path(path).exists():
+            self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+        else:
+            self.preview_edit.clear()
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -993,26 +1051,86 @@ class MainWindow(QMainWindow):
         self.db_tab = DBScenarioTab(self.settings)
 
         db_prep_tabs = QTabWidget()
-        db_prep_tabs.addTab(self.config_builder_tab, "DB接続設定")
-        db_prep_tabs.addTab(self.auth_builder_tab, "認証設定")
-        db_prep_tabs.addTab(self.mapping_gen_tab, "mapping.yaml")
-        db_prep_tabs.addTab(self.sql_gen_tab, "setup.sql/teardown.sql")
-        db_prep_tabs.addTab(self.scenario_gen_tab, "シナリオ雛形")
+        db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定")
+        db_prep_tabs.addTab(self.auth_builder_tab, "②認証設定(任意)")
+        db_prep_tabs.addTab(self.mapping_gen_tab, "③mapping.yaml")
+        db_prep_tabs.addTab(self.sql_gen_tab, "④setup.sql/teardown.sql")
+        db_prep_tabs.addTab(self.scenario_gen_tab, "⑤シナリオ雛形")
+
+        db_prep_container = QWidget()
+        db_prep_layout = QVBoxLayout(db_prep_container)
+        db_prep_layout.setContentsMargins(0, 0, 0, 0)
+        intro_label = QLabel(
+            "DB検証（Layer2）の準備はこの順番で進めます: "
+            "①DB接続設定 → ②認証設定(任意) → ③mapping.yaml → ④setup.sql/teardown.sql → ⑤シナリオ雛形。"
+            "各ステップで生成・保存したファイルは、次のステップの入力欄に自動で反映されます。"
+            "完了したら「DBシナリオ」タブで実行してください。"
+        )
+        intro_label.setWordWrap(True)
+        intro_label.setObjectName("introLabel")
+        db_prep_layout.addWidget(intro_label)
+        db_prep_layout.addWidget(db_prep_tabs)
 
         tabs.addTab(self.gen_tab, "テスト生成・実行")
-        tabs.addTab(db_prep_tabs, "DB準備")
+        tabs.addTab(db_prep_container, "DB準備")
         tabs.addTab(self.db_tab, "DBシナリオ")
 
         self._all_tabs = (
             self.gen_tab, self.config_builder_tab, self.auth_builder_tab,
             self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab,
         )
+        self._wire_cross_tab_propagation()
 
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.addWidget(tabs)
         self.setCentralWidget(container)
+
+    def _wire_cross_tab_propagation(self) -> None:
+        """あるタブで生成・保存したファイルのパスを、次のステップのタブへ自動反映する。"""
+
+        def propagate_config(path: Path) -> None:
+            for tab in (self.mapping_gen_tab, self.sql_gen_tab, self.db_tab, self.gen_tab):
+                tab.config_field.set(str(path))
+
+        def propagate_auth(path: Path) -> None:
+            for tab in (self.gen_tab, self.db_tab):
+                tab.auth_config_field.set(str(path))
+
+        def propagate_mapping(code: int, path: "Path | None") -> None:
+            if code == 0 and path:
+                self.scenario_gen_tab.mapping_field.set(str(path))
+
+        def propagate_setup_sql(code: int, path: "Path | None") -> None:
+            if code == 0 and path:
+                self.gen_tab.setup_field.set(str(path))
+                teardown_path = Path(path).parent / "teardown.sql.generated"
+                if teardown_path.exists():
+                    self.gen_tab.teardown_field.set(str(teardown_path))
+
+        def propagate_scenario(code: int, path: "Path | None") -> None:
+            if code == 0 and path:
+                self.db_tab.scenario_field.set(str(path))
+
+        self.config_builder_tab.on_saved = propagate_config
+        self.auth_builder_tab.on_saved = propagate_auth
+
+        self._chain_on_finish(self.mapping_gen_tab.panel, propagate_mapping)
+        self._chain_on_finish(self.sql_gen_tab.panel, propagate_setup_sql)
+        self._chain_on_finish(self.scenario_gen_tab.panel, propagate_scenario)
+
+    @staticmethod
+    def _chain_on_finish(panel: "LogPanel", extra_callback) -> None:
+        """panel.on_finish に既存のハンドラ（プレビュー更新等）を残したまま、追加のコールバックを連結する。"""
+        original = panel.on_finish
+
+        def combined(code: int, path: "Path | None") -> None:
+            if original:
+                original(code, path)
+            extra_callback(code, path)
+
+        panel.on_finish = combined
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qtのオーバーライド規約
         for tab in self._all_tabs:

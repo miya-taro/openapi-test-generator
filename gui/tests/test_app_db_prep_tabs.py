@@ -109,6 +109,65 @@ def test_mapping_gen_result_path_set_only_on_success(window, tmp_path, monkeypat
     assert window.mapping_gen_tab.panel.result_path is None
 
 
+def test_mapping_gen_preview_populated_on_success(window, tmp_path, monkeypatch):
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q):
+        (tmp_path / "mapping.yaml.generated").write_text(
+            "operations:\n  createUser:\n    table: users  # 確信度: 高\n", encoding="utf-8"
+        )
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.mapping_gen_tab.on_run()
+    assert _wait_for(lambda: window.mapping_gen_tab.preview_edit.toPlainText() != "")
+    assert "確信度: 高" in window.mapping_gen_tab.preview_edit.toPlainText()
+
+
+def test_mapping_gen_preview_cleared_on_failure(window, tmp_path, monkeypatch):
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+    window.mapping_gen_tab.preview_edit.setPlainText("stale content")
+
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 1)
+    window.mapping_gen_tab.on_run()
+    assert _wait_for(lambda: window.mapping_gen_tab.panel.status_label.text() != "実行中...")
+    assert window.mapping_gen_tab.preview_edit.toPlainText() == ""
+
+
+def test_sqlgen_preview_populated_on_success(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q):
+        (tmp_path / "setup.sql.generated").write_text("INSERT INTO users (id) VALUES (1);\n", encoding="utf-8")
+        (tmp_path / "teardown.sql.generated").write_text("TRUNCATE TABLE users;\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.sql_gen_tab.on_run()
+    assert _wait_for(lambda: window.sql_gen_tab.preview_edit.toPlainText() != "")
+    assert "INSERT INTO users" in window.sql_gen_tab.preview_edit.toPlainText()
+
+
+def test_scengen_preview_populated_on_success(window, tmp_path, monkeypatch):
+    window.scenario_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.scenario_gen_tab.mapping_field.set(str(tmp_path / "mapping.yaml"))
+    window.scenario_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q):
+        (tmp_path / "scenarios.generated.yaml").write_text("scenarios:\n  list: []\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.scenario_gen_tab.on_run()
+    assert _wait_for(lambda: window.scenario_gen_tab.preview_edit.toPlainText() != "")
+    assert "scenarios" in window.scenario_gen_tab.preview_edit.toPlainText()
+
+
 def test_mapping_gen_prompts_before_overwriting_existing_output(window, captured_cmds, tmp_path, monkeypatch):
     (tmp_path / "mapping.yaml.generated").write_text("existing", encoding="utf-8")
     window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
