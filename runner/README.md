@@ -38,12 +38,16 @@ python runner.py <excel_path> <openapi_path> --base-url <url> [オプション]
 | `--setup` | | 試験実行前に実行する SQL ファイルのパス |
 | `--teardown` | | 試験実行後に実行する SQL ファイルのパス（失敗しても続行）|
 | `--config` | | DB 接続情報の設定ファイル（`--setup` / `--teardown` 指定時は必須）|
+| `--auth-config` | | ログインして認証トークンを取得するための設定ファイル（下記「ログインして認証する API」参照）|
 
 ### 環境変数
 
 | 変数名 | 説明 |
 |---|---|
-| `TEST_AUTH_TOKEN` | Bearer トークン（設定時は `Authorization: Bearer {TOKEN}` ヘッダを付与）|
+| `TEST_AUTH_TOKEN` | Bearer トークン（設定時は `Authorization: Bearer {TOKEN}` ヘッダを付与）。固定トークンをそのまま使える場合はこちら |
+| `TEST_AUTH_HEADER_NAME` / `TEST_AUTH_HEADER_VALUE` | 付与するヘッダ名・ヘッダ値を直接指定する（`--auth-config` 指定時は実行時に自動設定される）|
+
+`case.param_in == "header"` の試験ケース（Authorization ヘッダ自体を試験対象とするケース）では、この自動付与は行われない（試験ケース側の値が優先される）。
 
 ## 使用例
 
@@ -63,10 +67,45 @@ python runner.py 試験項目.xlsx openapi.json --base-url http://192.168.1.100:
 
 ### 認証が必要な API
 
+固定トークンがあらかじめ分かっている場合:
+
 ```sh
 $env:TEST_AUTH_TOKEN = "your-token-here"
 python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080
 ```
+
+### ログインして認証する API
+
+ログインAPIを叩いてトークンを発行する方式の場合は `--auth-config` を使う。ヘルスチェックの直後・試験実行前に
+1回だけログインを行い、取得したトークンを以降の全リクエストに自動で付与する。
+
+`auth.json` の例:
+
+```json
+{
+  "login_url": "/login",
+  "method": "POST",
+  "body": { "username": "test-user", "password": "test-pass" },
+  "token_path": "access_token",
+  "header_name": "Authorization",
+  "header_format": "Bearer {token}"
+}
+```
+
+| キー | 必須 | 説明 |
+|---|---|---|
+| `login_url` | ✓ | ログインAPIのパス（`--base-url` からの相対パス）|
+| `method` | ✓ | HTTPメソッド（通常 `POST`）|
+| `body` | | ログインリクエストのJSONボディ |
+| `token_path` | | レスポンスJSON内のトークンの場所。ドット区切り（例: `data.token`）。省略時 `access_token` |
+| `header_name` | | 付与するヘッダ名。省略時 `Authorization` |
+| `header_format` | | トークンの埋め込み方。`{token}` がトークン文字列に置換される。省略時 `Bearer {token}` |
+
+```sh
+python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080 --auth-config auth.json
+```
+
+DBシナリオランナー（`db_scenario_runner.py`）でも同じ `--auth-config` オプションが使える。
 
 ### 出力先を指定する
 
@@ -229,11 +268,15 @@ scenarios:
 ```sh
 python db_scenario_runner.py scenarios.yaml openapi.json \
   --base-url http://192.168.1.100:8080 \
-  --config config.json
+  --config config.json \
+  --auth-config auth.json
 ```
 
 `config.json` は `--setup`/`--teardown` と同じファイルを使う。`postgres` シナリオのみなら
 `influxdb` セクションは不要、逆も同様（実際に使うエンジンのセクションのみ検証される）。
+
+`--auth-config` はオプションで、フォーマットは `runner.py` と共通（「ログインして認証する API」参照）。
+指定するとログインして取得したトークンが、シナリオ実行時の全APIリクエストに自動で付与される。
 
 ### 終了コード
 

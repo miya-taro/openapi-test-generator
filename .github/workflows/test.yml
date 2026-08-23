@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    # curl.exe / os.startfile / os.devnull など、このツールセットはWindows専用の
+    # 前提で作られているため windows-latest で実行する。
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate runner test fixtures
+        # sample.xlsx は *.xlsx として gitignore されているため、テスト前に生成する
+        run: python runner/tests/make_fixture.py
+
+      - name: Run generator tests (src/)
+        run: python -m pytest tests/ -v
+
+      - name: Run runner tests
+        run: python -m pytest runner/tests/ -v
+
+      - name: Run GUI logic tests
+        run: python -m pytest gui/tests/ -v

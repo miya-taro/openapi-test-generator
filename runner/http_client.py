@@ -8,6 +8,26 @@ from request_builder import build_url, build_body_args
 CURL_TIMEOUT = 10
 
 
+def _resolve_auth_header() -> str | None:
+    """全リクエストに付与する認証ヘッダ文字列（"Name: Value"）を解決する。
+
+    優先順位:
+    1. TEST_AUTH_HEADER_NAME / TEST_AUTH_HEADER_VALUE
+       （--auth-config でログインして取得したトークンを runner.py が設定する）
+    2. TEST_AUTH_TOKEN（従来の固定Bearerトークン方式。後方互換のため維持）
+    """
+    header_name = os.environ.get("TEST_AUTH_HEADER_NAME")
+    header_value = os.environ.get("TEST_AUTH_HEADER_VALUE")
+    if header_name and header_value:
+        return f"{header_name}: {header_value}"
+
+    token = os.environ.get("TEST_AUTH_TOKEN")
+    if token:
+        return f"Authorization: Bearer {token}"
+
+    return None
+
+
 def check_curl_available() -> None:
     if shutil.which("curl.exe") is None:
         raise RuntimeError(
@@ -31,7 +51,6 @@ def execute_with_openapi(case: RunCase, base_url: str, openapi: dict | None) -> 
 
 
 def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
-    token = os.environ.get("TEST_AUTH_TOKEN")
     cmd = ["curl.exe", "-s", "-v", "-X", case.method.upper(),
            "-D", "-",
            "-w", "\n%{http_code}\n%{time_total}",
@@ -43,8 +62,10 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
         if case.input_value != "（認証ヘッダなし）":
             cmd += ["-H", f"{case.param_name}: {case.input_value}"]
         # （認証ヘッダなし）の場合は何も追加しない（auth なしケース）
-    elif token:
-        cmd += ["-H", f"Authorization: Bearer {token}"]
+    else:
+        auth_header = _resolve_auth_header()
+        if auth_header:
+            cmd += ["-H", auth_header]
 
     if case.param_in == "body":
         cmd += ["-H", "Content-Type: application/json; charset=utf-8"]

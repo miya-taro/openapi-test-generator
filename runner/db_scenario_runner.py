@@ -8,16 +8,26 @@ Layer 1（openapi-test-gen/runner.py によるフィールド単位の検証）�
 from __future__ import annotations
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Windows のコンソール既定コードページ(cp932等)では日本語出力が文字化け・デコードエラーの
+# 原因になるため、標準出力/標準エラーを UTF-8 に固定する。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
+from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 from db_scenario import load_scenarios, resolve_db_check, ScenarioError, DBScenario
 from db_backends import postgres_backend, influx_backend
-from http_client import check_curl_available, health_check
+from http_client import check_curl_available, health_check, _resolve_auth_header
 from src.parser import parse_openapi, OpenAPIParseError
 
 CURL_TIMEOUT = 10
@@ -32,6 +42,10 @@ def main() -> int:
     parser.add_argument("--base-url", required=True, help="API サーバーのベース URL")
     parser.add_argument("--config", required=True, metavar="JSON", help="DB 接続情報の設定ファイル")
     parser.add_argument("--health-path", default="/health", help="ヘルスチェック用パス（省略時: /health）")
+    parser.add_argument(
+        "--auth-config", metavar="JSON",
+        help="ログインして認証トークンを取得するための設定ファイル（固定トークンの TEST_AUTH_TOKEN の代わり）",
+    )
     args = parser.parse_args()
 
     scenario_path = Path(args.scenario_path)
@@ -71,6 +85,21 @@ def main() -> int:
     if not health_check(args.base_url, args.health_path):
         print(f"[ERROR] ヘルスチェック失敗: {args.base_url}{args.health_path}", file=sys.stderr)
         return 3
+
+    # ログインしてトークンを取得（--auth-config 指定時のみ）
+    # http_client.py の _resolve_auth_header() が読む環境変数に設定することで、
+    # 以降の _call_api() の全リクエストに自動で付与される。
+    if args.auth_config:
+        try:
+            auth_cfg = load_auth_config(args.auth_config)
+            token = perform_login(args.base_url, auth_cfg)
+            header_name, header_value = build_auth_header(token, auth_cfg)
+            os.environ["TEST_AUTH_HEADER_NAME"] = header_name
+            os.environ["TEST_AUTH_HEADER_VALUE"] = header_value
+            print(f"[INFO] ログインに成功しました（ヘッダ: {header_name}）")
+        except AuthLoginError as e:
+            print(f"[ERROR] ログインに失敗しました: {e}", file=sys.stderr)
+            return 3
 
     print(f"[INFO] シナリオ数: {len(scenarios)} 件")
 
@@ -144,6 +173,11 @@ def _call_api(
         "--max-time", str(CURL_TIMEOUT),
         url,
     ]
+
+    auth_header = _resolve_auth_header()
+    if auth_header:
+        cmd += ["-H", auth_header]
+
     if body:
         cmd += ["-H", "Content-Type: application/json; charset=utf-8", "-d", json.dumps(body, ensure_ascii=False)]
 

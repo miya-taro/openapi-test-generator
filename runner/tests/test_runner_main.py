@@ -370,3 +370,62 @@ def test_warn_only_returns_2(monkeypatch, tmp_path):
 
     code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
     assert code == 2
+
+
+# --- --auth-config ---
+
+
+def test_auth_config_login_failure_returns_3(monkeypatch, tmp_path):
+    # main() は os.environ を直接書き換える。setenv でダミー値を挟むことで
+    # 「元は未設定だった」ことを monkeypatch に記録させ、テスト終了時に確実に削除させる
+    # （delenv(raising=False) はキーが元々存在しない場合は何も記録しないため不十分）。
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "__placeholder__")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "__placeholder__")
+    excel_path, openapi_path = _write_files(tmp_path)
+    _patch_happy_path(monkeypatch)
+
+    def raise_auth_error(base_url, auth_cfg):
+        raise runner_module.AuthLoginError("ログイン失敗")
+
+    monkeypatch.setattr(runner_module, "load_auth_config", lambda path: {"login_url": "/login", "method": "POST"})
+    monkeypatch.setattr(runner_module, "perform_login", raise_auth_error)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--auth-config", "auth.json"],
+    )
+    assert code == 3
+
+
+def test_auth_config_success_sets_env_before_execution(monkeypatch, tmp_path):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "__placeholder__")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "__placeholder__")
+    excel_path, openapi_path = _write_files(tmp_path)
+    calls = []
+    seen_env = {}
+
+    def fake_execute(case, base_url, openapi):
+        import os
+        seen_env["name"] = os.environ.get("TEST_AUTH_HEADER_NAME")
+        seen_env["value"] = os.environ.get("TEST_AUTH_HEADER_VALUE")
+        calls.append(("execute", case.id))
+        return RunResult(
+            case=case, actual_status=200, actual_body="{}",
+            actual_headers={}, elapsed_ms=10.0, curl_exit_code=0,
+        )
+
+    monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
+    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
+    monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
+    monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
+    monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
+    monkeypatch.setattr(runner_module, "load_auth_config", lambda path: {"login_url": "/login", "method": "POST"})
+    monkeypatch.setattr(runner_module, "perform_login", lambda base_url, auth_cfg: "tok123")
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--auth-config", "auth.json"],
+    )
+    assert code == 0
+    assert seen_env["name"] == "Authorization"
+    assert seen_env["value"] == "Bearer tok123"

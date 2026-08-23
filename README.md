@@ -1,5 +1,7 @@
 # openapi-test-gen / openapi-test-run
 
+[![Tests](https://github.com/miya-taro/openapi-test-generator/actions/workflows/test.yml/badge.svg)](https://github.com/miya-taro/openapi-test-generator/actions/workflows/test.yml)
+
 OpenAPI 3.x 定義ファイルから **インターフェース観点のテスト仕様を自動生成**し、実際の API サーバーに対して **自動試験を実行**するツールセット。
 
 ```

@@ -2,6 +2,7 @@
 """Automated API test runner."""
 from __future__ import annotations
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,15 @@ from pathlib import Path
 # 再利用するため、リポジトリルートを sys.path に追加する。
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Windows のコンソール既定コードページ(cp932等)では日本語出力が文字化け・デコードエラーの
+# 原因になるため、標準出力/標準エラーを UTF-8 に固定する。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
+from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
 from config_loader import load_config, get_postgres_config
 from excel_reader import read_excel
 from excel_writer import write_results
@@ -35,6 +45,10 @@ def main() -> int:
     parser.add_argument("--setup", metavar="SQL", help="試験実行前に実行する SQL ファイルのパス")
     parser.add_argument("--teardown", metavar="SQL", help="試験実行後に実行する SQL ファイルのパス（失敗しても続行）")
     parser.add_argument("--config", metavar="JSON", help="DB 接続情報の設定ファイル（--setup / --teardown 指定時は必須）")
+    parser.add_argument(
+        "--auth-config", metavar="JSON",
+        help="ログインして認証トークンを取得するための設定ファイル（固定トークンの TEST_AUTH_TOKEN の代わり）",
+    )
     args = parser.parse_args()
 
     # --setup / --teardown があるのに --config がない場合
@@ -99,6 +113,21 @@ def main() -> int:
             file=sys.stderr,
         )
         return 3
+
+    # 3.5. ログインしてトークンを取得（--auth-config 指定時のみ）
+    # http_client.py の _resolve_auth_header() が読む環境変数に設定することで、
+    # 以降の全リクエストに自動で付与される。
+    if args.auth_config:
+        try:
+            auth_cfg = load_auth_config(args.auth_config)
+            token = perform_login(args.base_url, auth_cfg)
+            header_name, header_value = build_auth_header(token, auth_cfg)
+            os.environ["TEST_AUTH_HEADER_NAME"] = header_name
+            os.environ["TEST_AUTH_HEADER_VALUE"] = header_value
+            print(f"[INFO] ログインに成功しました（ヘッダ: {header_name}）")
+        except AuthLoginError as e:
+            print(f"[ERROR] ログインに失敗しました: {e}", file=sys.stderr)
+            return 3
 
     # 4. setup 実行（指定時のみ）
     if args.setup:

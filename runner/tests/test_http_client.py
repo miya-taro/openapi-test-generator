@@ -181,3 +181,43 @@ def test_check_curl_available_raises_when_not_found():
 def test_check_curl_available_ok_when_found():
     with patch("shutil.which", return_value="/usr/bin/curl.exe"):
         check_curl_available()  # should not raise
+
+
+# --- _resolve_auth_header priority tests ---
+
+def test_header_env_takes_priority_over_legacy_token(monkeypatch):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "X-Api-Key")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "abc123")
+    monkeypatch.setenv("TEST_AUTH_TOKEN", "legacytoken")
+    case = make_case()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_curl('ok\n200\n0.010')
+        execute_with_openapi(case, "http://localhost:8080", None)
+        cmd = mock_run.call_args[0][0]
+    joined = " ".join(cmd)
+    assert "X-Api-Key: abc123" in joined
+    assert "Authorization: Bearer legacytoken" not in joined
+
+
+def test_falls_back_to_legacy_token_when_header_env_unset(monkeypatch):
+    monkeypatch.delenv("TEST_AUTH_HEADER_NAME", raising=False)
+    monkeypatch.delenv("TEST_AUTH_HEADER_VALUE", raising=False)
+    monkeypatch.setenv("TEST_AUTH_TOKEN", "legacytoken")
+    case = make_case()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_curl('ok\n200\n0.010')
+        execute_with_openapi(case, "http://localhost:8080", None)
+        cmd = mock_run.call_args[0][0]
+    assert "Authorization: Bearer legacytoken" in " ".join(cmd)
+
+
+def test_no_header_when_only_name_set(monkeypatch):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "X-Api-Key")
+    monkeypatch.delenv("TEST_AUTH_HEADER_VALUE", raising=False)
+    monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
+    case = make_case()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_curl('ok\n200\n0.010')
+        execute_with_openapi(case, "http://localhost:8080", None)
+        cmd = mock_run.call_args[0][0]
+    assert "X-Api-Key" not in " ".join(cmd)

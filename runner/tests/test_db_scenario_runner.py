@@ -347,3 +347,69 @@ def test_influxdb_scenario_dispatches_to_influx_backend(monkeypatch, tmp_path):
     )
     assert called.get("hit") is True
     assert code == 0
+
+
+# ---------- main(): --auth-config ----------
+
+
+def test_auth_config_login_failure_returns_3(monkeypatch, tmp_path):
+    # main() は os.environ を直接書き換える。monkeypatch.delenv(raising=False) は
+    # キーが元々存在しない場合は何も記録しないため、テスト終了後に main() が新規
+    # 設定した値が残ってしまう。setenv で一旦触れておくことで「元は未設定だった」
+    # ことを monkeypatch に記録させ、テスト終了時に確実に削除させる。
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "__placeholder__")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "__placeholder__")
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, {"scenarios": []})
+    _patch_common(monkeypatch)
+    auth_config_path = tmp_path / "auth.json"
+    auth_config_path.write_text(
+        json.dumps({"login_url": "/login", "method": "POST"}), encoding="utf-8"
+    )
+
+    def fake_perform_login(base_url, auth_cfg):
+        raise dsr_module.AuthLoginError("ログイン失敗")
+
+    monkeypatch.setattr(dsr_module, "perform_login", fake_perform_login)
+    code = run_main(
+        monkeypatch,
+        [
+            str(scenario_path), str(openapi_path), "--base-url", "http://x",
+            "--config", str(config_path), "--auth-config", str(auth_config_path),
+        ],
+    )
+    assert code == 3
+
+
+def test_auth_config_success_sets_env_and_call_api_sends_header(monkeypatch, tmp_path):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "__placeholder__")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "__placeholder__")
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
+    _patch_common(monkeypatch)
+    auth_config_path = tmp_path / "auth.json"
+    auth_config_path.write_text(
+        json.dumps({"login_url": "/login", "method": "POST"}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(dsr_module, "perform_login", lambda base_url, auth_cfg: "tok123")
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    captured_cmd = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd["cmd"] = cmd
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"id": 5}\n201'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+
+    code = run_main(
+        monkeypatch,
+        [
+            str(scenario_path), str(openapi_path), "--base-url", "http://x",
+            "--config", str(config_path), "--auth-config", str(auth_config_path),
+        ],
+    )
+    assert code == 0
+    assert "Authorization: Bearer tok123" in " ".join(captured_cmd["cmd"])
