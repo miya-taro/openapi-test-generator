@@ -19,7 +19,7 @@ class PathField(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         label_widget = QLabel(label)
-        label_widget.setFixedWidth(120)
+        label_widget.setMinimumWidth(120)
         layout.addWidget(label_widget)
 
         self.line_edit = QLineEdit()
@@ -56,7 +56,7 @@ class TextField(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         label_widget = QLabel(label)
-        label_widget.setFixedWidth(120)
+        label_widget.setMinimumWidth(120)
         layout.addWidget(label_widget)
 
         self.line_edit = QLineEdit(default)
