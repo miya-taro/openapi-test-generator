@@ -264,8 +264,11 @@ scenarios:
   抑えられる。`db_check` 側で明示すれば上書きできる
 - 旧形式（`scenarios:` の直下にシナリオのリストを書き、`db_check.engine` を毎回明示する形）も
   後方互換で引き続き動作する
-- `where`/`tags`/`columns`/`fields` の値に `{{response.xxx}}` と書くと、直前のAPIレスポンスJSONの値
-  （作成されたIDなど）に置き換わる（ネストしたパスは `{{response.user.id}}` のようにドット区切り）
+- `where`/`tags`/`columns`/`fields`（DB検証側）に加え、`request.path_params`/`request.body`
+  （APIリクエスト側）にも `{{response.xxx}}` と書ける。どちらも**直前のシナリオ**のAPIレスポンス
+  JSONの値（作成されたIDなど）に置き換わる（ネストしたパスは `{{response.user.id}}` のように
+  ドット区切り）。`request`側は文字通り「直前」（1つ前のシナリオ）のレスポンスを参照する点に注意
+  （2つ前より前のレスポンスは参照できない）。1件目のシナリオで参照した場合は解決できずNGになる
 - `table`/`where`/`columns`（PostgreSQL）、`measurement`/`tags`/`fields`（InfluxDB）を指定するだけで
   SQL/InfluxQLを書かずに検証できる。JOINや集計など複雑な検証が必要な場合のみ、PostgreSQL側で
   `raw_sql` を直接指定するエスケープハッチがある

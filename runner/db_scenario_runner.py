@@ -25,7 +25,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
 from config_loader import load_config, get_postgres_config, get_influxdb_config
-from db_scenario import load_scenarios, resolve_db_check, ScenarioError, DBScenario
+from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
 from db_backends import postgres_backend, influx_backend
 from http_client import check_curl_available, health_check, _resolve_auth_header
 from src.parser import parse_openapi, OpenAPIParseError
@@ -112,8 +112,14 @@ def main() -> int:
             return 3
 
     has_fail = False
+    # 直前のシナリオのAPIレスポンス。次のシナリオの path_params/body 内の
+    # {{response.xxx}} を解決するのに使う（例: create シナリオで作ったIDを
+    # 次の update/delete シナリオの path_params に引き継ぐ）。
+    previous_response: dict = {}
     for scenario in scenarios:
-        ok, detail, api_status = _run_scenario(scenario, openapi, args.base_url, db_config)
+        ok, detail, api_status, previous_response = _run_scenario(
+            scenario, openapi, args.base_url, db_config, previous_response
+        )
         verdict = "OK" if ok else "NG"
         print(f"  [{verdict}] {scenario.name} (API: {api_status})")
         if not ok:
@@ -124,24 +130,33 @@ def main() -> int:
 
 
 def _run_scenario(
-    scenario: DBScenario, openapi: dict, base_url: str, db_config: dict
-) -> tuple[bool, str, str]:
-    """1シナリオを実行する。戻り値: (適合したか, 詳細メッセージ, APIステータス表示用文字列)"""
+    scenario: DBScenario, openapi: dict, base_url: str, db_config: dict, previous_response: dict
+) -> tuple[bool, str, str, dict]:
+    """1シナリオを実行する。
+
+    戻り値: (適合したか, 詳細メッセージ, APIステータス表示用文字列, このシナリオのレスポンス)
+    最後の要素は次のシナリオへ引き継ぐ previous_response になる。解決に失敗した場合や
+    API呼び出しに失敗した場合は、引き継ぎ用のレスポンスは変化させず previous_response をそのまま返す。
+    """
     try:
         path, method = _resolve_operation(openapi, scenario.request.operation_id)
     except ScenarioError as e:
-        return False, str(e), "ERR"
+        return False, str(e), "ERR", previous_response
 
-    status, response_json, error = _call_api(
-        base_url, path, method, scenario.request.path_params, scenario.request.body
-    )
+    try:
+        resolved_path_params = resolve_placeholders(scenario.request.path_params, previous_response)
+        resolved_body = resolve_placeholders(scenario.request.body, previous_response)
+    except ScenarioError as e:
+        return False, f"path_params/bodyの値解決に失敗しました: {e}", "ERR", previous_response
+
+    status, response_json, error = _call_api(base_url, path, method, resolved_path_params, resolved_body)
     if error:
-        return False, f"API呼び出しに失敗しました: {error}", "ERR"
+        return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
 
     try:
         resolved_check = resolve_db_check(scenario.db_check, response_json)
     except ScenarioError as e:
-        return False, f"APIレスポンスからの値解決に失敗しました: {e}", str(status)
+        return False, f"APIレスポンスからの値解決に失敗しました: {e}", str(status), response_json
 
     try:
         if resolved_check.engine == "postgres":
@@ -151,9 +166,9 @@ def _run_scenario(
             influx_config = get_influxdb_config(db_config)
             ok, detail = influx_backend.check(resolved_check, influx_config)
     except (ValueError, KeyError) as e:
-        return False, f"DB検証でエラーが発生しました: {e}", str(status)
+        return False, f"DB検証でエラーが発生しました: {e}", str(status), response_json
 
-    return ok, detail, str(status)
+    return ok, detail, str(status), response_json
 
 
 def _resolve_operation(openapi: dict, operation_id: str) -> tuple[str, str]:

@@ -276,6 +276,176 @@ def test_scenario_placeholder_resolution_passes_resolved_where_to_backend(monkey
     assert captured["where"] == {"id": 42}
 
 
+# ---------- シナリオ間の {{response.xxx}} 連携（path_params / body） ----------
+
+
+def _create_then_update_scenarios():
+    return {
+        "scenarios": [
+            {
+                "name": "ユーザー作成",
+                "request": {"operationId": "createUser", "body": {"name": "太郎"}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {"id": "{{response.id}}"}, "expect": {}},
+            },
+            {
+                "name": "作成したユーザーを更新",
+                "request": {
+                    "operationId": "updateUser",
+                    "path_params": {"id": "{{response.id}}"},
+                    "body": {"name": "次郎"},
+                },
+                "db_check": {"engine": "postgres", "table": "users", "where": {"id": "{{response.id}}"}, "expect": {}},
+            },
+        ]
+    }
+
+
+def test_path_params_resolved_from_previous_scenario_response(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _create_then_update_scenarios())
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        result = MagicMock()
+        result.returncode = 0
+        if len(calls) == 1:
+            result.stdout = '{"id": 42}\n201'
+        else:
+            result.stdout = '{"id": 42, "name": "次郎"}\n200'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+    assert len(calls) == 2
+    # path_params の {{response.id}} が前段シナリオの id=42 に解決され、URLに反映されていること
+    assert any("/users/42" in arg for arg in calls[1])
+    assert not any("{{response.id}}" in arg for arg in calls[1])
+
+
+def test_body_resolved_from_previous_scenario_response(monkeypatch, tmp_path):
+    data = {
+        "scenarios": [
+            {
+                "name": "ユーザー作成",
+                "request": {"operationId": "createUser", "body": {"name": "太郎"}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+            },
+            {
+                "name": "作成したユーザーIDを紐づけて注文作成",
+                "request": {"operationId": "createUser", "body": {"linked_user_id": "{{response.id}}"}},
+                "db_check": {"engine": "postgres", "table": "orders", "where": {}, "expect": {}},
+            },
+        ]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"id": 99}\n201'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+    second_body = calls[1][calls[1].index("-d") + 1]
+    assert json.loads(second_body) == {"linked_user_id": 99}
+
+
+def test_path_params_placeholder_with_no_previous_scenario_marks_ng(monkeypatch, tmp_path, capsys):
+    # 1件目からいきなり {{response.id}} を参照している場合、前段のレスポンスが空なので解決に失敗する
+    data = {
+        "scenarios": [
+            {
+                "name": "前段なしでいきなり更新",
+                "request": {"operationId": "updateUser", "path_params": {"id": "{{response.id}}"}, "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+            }
+        ]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+
+    def fail_if_called(cmd, **kwargs):
+        raise AssertionError("解決に失敗した時点でcurlを呼んではいけない")
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fail_if_called)
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "[NG]" in out
+    assert "値解決に失敗" in out
+
+
+def test_previous_response_updates_to_most_recent_scenario_only(monkeypatch, tmp_path):
+    # 3シナリオ連鎖: 2番目の path_params は1番目のレスポンス、3番目の path_params は
+    # （1番目ではなく）2番目のレスポンスを参照すること（常に「直前」のレスポンスであること）
+    data = {
+        "scenarios": [
+            {
+                "name": "1件目",
+                "request": {"operationId": "createUser", "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+            },
+            {
+                "name": "2件目",
+                "request": {"operationId": "updateUser", "path_params": {"id": "{{response.id}}"}, "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+            },
+            {
+                "name": "3件目",
+                "request": {"operationId": "updateUser", "path_params": {"id": "{{response.id}}"}, "body": {}},
+                "db_check": {"engine": "postgres", "table": "users", "where": {}, "expect": {}},
+            },
+        ]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        result = MagicMock()
+        result.returncode = 0
+        # 1件目はid=1を、2件目はid=2を返す。3件目のURLはid=2を参照すべき（id=1ではない）
+        stdout_by_call = ['{"id": 1}\n201', '{"id": 2}\n200', '{"id": 2}\n200']
+        result.stdout = stdout_by_call[len(calls) - 1]
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+    assert any("/users/1" in arg for arg in calls[1])
+    assert any("/users/2" in arg for arg in calls[2])
+
+
 def test_unresolvable_placeholder_marks_scenario_ng(monkeypatch, tmp_path, capsys):
     scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
     _patch_common(monkeypatch)
