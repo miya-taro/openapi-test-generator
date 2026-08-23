@@ -75,6 +75,26 @@ def _normalize_schema(schema: dict) -> None:
     _reduce_one_of_any_of(schema)
     _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
     _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
+    _normalize_nullable(schema)
+
+
+def _normalize_nullable(schema: dict) -> None:
+    """OAS 3.0 形式の `nullable: true` を JSON Schema 2020-12 の `type` 配列形式
+    （例: `type: "integer"` → `type: ["integer", "null"]`）に変換する。
+
+    `nullable` は JSON Schema 標準のキーワードではなく、`jsonschema` のような汎用
+    バリデータには無視される。normalize せずに渡すと、API が正当な null 値を返しても
+    レスポンスボディ検証（ランナー側 Level 4）が誤って NG 判定してしまう。
+    generator 側（rules/common.py）は元々 `nullable: true` と `type` 配列の "null" の
+    両方を見ているため、この変換後も後方互換で動作する。
+    """
+    if schema.pop("nullable", None) is not True:
+        return
+    type_ = schema.get("type")
+    if isinstance(type_, str):
+        schema["type"] = [type_, "null"]
+    elif isinstance(type_, list) and "null" not in type_:
+        schema["type"] = [*type_, "null"]
 
 
 def _normalize_exclusive_bound(schema: dict, bound_key: str, exclusive_key: str) -> None:

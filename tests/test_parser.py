@@ -189,3 +189,81 @@ def test_exclusive_minimum_false_is_removed(tmp_path):
     schema = api["components"]["schemas"]["N"]
     assert "exclusiveMinimum" not in schema
     assert schema["minimum"] == 5
+
+
+def test_nullable_true_converts_string_type_to_array(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": "integer", "nullable": True}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
+    assert schema["type"] == ["integer", "null"]
+    assert "nullable" not in schema
+
+
+def test_nullable_false_is_removed_without_touching_type(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": "integer", "nullable": False}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
+    assert schema["type"] == "integer"
+    assert "nullable" not in schema
+
+
+def test_nullable_absent_leaves_schema_untouched(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": "integer"}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
+    assert schema["type"] == "integer"
+    assert "nullable" not in schema
+
+
+def test_nullable_true_with_no_type_does_not_crash():
+    from src.parser import _normalize_nullable
+    schema = {"nullable": True}
+    _normalize_nullable(schema)
+    assert "nullable" not in schema
+    assert "type" not in schema
+
+
+def test_nullable_true_with_already_array_type_adds_null_once(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {"schemas": {"N": {"type": ["integer", "string"], "nullable": True}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["N"]
+    assert schema["type"] == ["integer", "string", "null"]
+
+
+def test_response_body_with_nullable_field_passes_jsonschema_validation(tmp_path):
+    """runner側のLevel4検証と同じ経路: nullable変換後のスキーマがjsonschemaでnull値を正しく許容すること。"""
+    from jsonschema import Draft202012Validator
+
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {"age": {"type": "integer", "nullable": True}},
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["User"]
+    validator = Draft202012Validator(schema)
+    errors = list(validator.iter_errors({"age": None}))
+    assert errors == []
