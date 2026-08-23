@@ -96,3 +96,229 @@ def test_auth_specs_extracted_for_bearer_scheme():
     assert len(specs) == 1
     assert specs[0]["schemeType"] == "bearer"
     assert specs[0]["headerName"] == "Authorization"
+
+
+def test_auth_specs_basic_scheme():
+    api = {
+        "openapi": "3.1.0",
+        "security": [{"BasicAuth": []}],
+        "components": {"securitySchemes": {"BasicAuth": {"type": "http", "scheme": "basic"}}},
+        "paths": {"/me": {"get": {"operationId": "getMe", "responses": {"200": {"description": "OK"}}}}},
+    }
+    specs = extract_auth_specs(api)
+    assert specs[0]["schemeType"] == "basic"
+
+
+def test_auth_specs_api_key_scheme_uses_custom_header_name():
+    api = {
+        "openapi": "3.1.0",
+        "security": [{"ApiKeyAuth": []}],
+        "components": {
+            "securitySchemes": {"ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-Api-Key"}}
+        },
+        "paths": {"/me": {"get": {"operationId": "getMe", "responses": {"200": {"description": "OK"}}}}},
+    }
+    specs = extract_auth_specs(api)
+    assert specs[0]["schemeType"] == "apiKey"
+    assert specs[0]["headerName"] == "X-Api-Key"
+
+
+def test_auth_specs_skips_empty_path_item():
+    api = {"openapi": "3.1.0", "paths": {"/empty": None}}
+    assert extract_auth_specs(api) == []
+
+
+def test_auth_specs_skips_empty_security_requirement():
+    # security: [{}] は「無条件で許可」を表し、スキーム名が取れないため対象外
+    api = {
+        "openapi": "3.1.0",
+        "security": [{}],
+        "paths": {"/me": {"get": {"operationId": "getMe", "responses": {"200": {"description": "OK"}}}}},
+    }
+    assert extract_auth_specs(api) == []
+
+
+def test_auth_specs_operation_level_security_overrides_global():
+    api = {
+        "openapi": "3.1.0",
+        "security": [{"BearerAuth": []}],
+        "components": {"securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}},
+        "paths": {
+            "/public": {
+                "get": {"operationId": "getPublic", "security": [], "responses": {"200": {"description": "OK"}}}
+            }
+        },
+    }
+    # operation 側で security: [] を明示 → 認証不要としてスキップ
+    assert extract_auth_specs(api) == []
+
+
+# --- extract_specs: 分岐カバレッジ ---
+
+
+def test_extract_specs_skips_empty_path_item():
+    api = {"openapi": "3.1.0", "paths": {"/empty": None}}
+    param_specs, body_specs = extract_specs(api)
+    assert param_specs == []
+    assert body_specs == []
+
+
+def test_extract_specs_skips_param_missing_name():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "get": {
+                    "operationId": "getX",
+                    "parameters": [{"in": "query", "schema": {"type": "string"}}],  # name なし
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    param_specs, _ = extract_specs(api)
+    assert param_specs == []
+
+
+def test_extract_specs_skips_binary_format_param():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "get": {
+                    "operationId": "getX",
+                    "parameters": [
+                        {"name": "file", "in": "query", "schema": {"type": "string", "format": "binary"}}
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    param_specs, _ = extract_specs(api)
+    assert param_specs == []
+
+
+def test_extract_specs_skips_non_json_request_body():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "operationId": "postX",
+                    "requestBody": {"content": {"multipart/form-data": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    assert body_specs == []
+
+
+def test_extract_specs_skips_request_body_with_no_schema():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "operationId": "postX",
+                    "requestBody": {"content": {"application/json": {}}},
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    assert body_specs == []
+
+
+def test_extract_specs_nested_object_property_recursion():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/orders": {
+                "post": {
+                    "operationId": "createOrder",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "customer": {
+                                            "type": "object",
+                                            "required": ["name"],
+                                            "properties": {"name": {"type": "string"}},
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    field_paths = {s["fieldPath"] for s in body_specs}
+    assert "customer" in field_paths
+    assert "customer.name" in field_paths
+    name_spec = next(s for s in body_specs if s["fieldPath"] == "customer.name")
+    assert name_spec["required"] is True
+
+
+def test_extract_specs_skips_binary_format_body_field():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "operationId": "postX",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"file": {"type": "string", "format": "binary"}},
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    assert not any(s["fieldPath"] == "file" for s in body_specs)
+
+
+def test_operation_id_fallback_when_missing():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/users/{id}/posts": {
+                "get": {
+                    "parameters": [{"name": "id", "in": "path", "schema": {"type": "integer"}}],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    param_specs, _ = extract_specs(api)
+    # operationId 未指定 → {METHOD}_{PATH_NORMALIZED} 形式にフォールバックする
+    assert param_specs[0]["operationId"] == "GET_users_id_posts"
+
+
+def test_success_status_defaults_to_200_when_no_responses():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/x": {"get": {"operationId": "getX", "parameters": [
+            {"name": "q", "in": "query", "schema": {"type": "string"}}
+        ]}}},
+    }
+    param_specs, _ = extract_specs(api)
+    assert param_specs[0]["successStatus"] == "200"
+    assert param_specs[0]["responsesInfo"] == {}

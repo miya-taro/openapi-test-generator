@@ -60,6 +60,24 @@ def test_exclusive_minimum_boolean_form_is_ignored_unnormalized():
     assert not any(c["keyword"] == "exclusiveMinimum" for c in cases)
 
 
+def test_exclusive_maximum_value():
+    cases = generate_integer_cases(
+        {"type": "integer", "exclusiveMaximum": 100}, {"paramName": "n", "opts": ALL_OPTS}
+    )
+    abnormal = next(c for c in cases if "exclusiveMaximum境界値" in c["perspective"])
+    normal = next(c for c in cases if "exclusiveMaximum未満値" in c["perspective"])
+    assert abnormal["inputValue"] == "100"
+    assert normal["inputValue"] == "99"
+
+
+def test_exclusive_maximum_number_type_uses_decimal_step():
+    cases = generate_integer_cases(
+        {"type": "number", "exclusiveMaximum": 1.0}, {"paramName": "n", "opts": ALL_OPTS}
+    )
+    normal = next(c for c in cases if "exclusiveMaximum未満値" in c["perspective"])
+    assert normal["inputValue"] == "0.9"
+
+
 def test_multiple_of():
     cases = generate_integer_cases({"type": "integer", "multipleOf": 3}, {"paramName": "n", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "multipleOf" and c["perspective"].startswith("正常系"))
