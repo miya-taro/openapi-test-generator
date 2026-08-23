@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox,
+    QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox,
 )
 
 from settings import load_settings, save_settings
@@ -154,6 +154,10 @@ class GenerateRunTab(QWidget):
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
 
+        self.dry_run_checkbox = QCheckBox("dry-run（実際にはリクエストを送信しない。生成内容の確認用）")
+        self.dry_run_checkbox.setChecked(bool(settings["gen_dry_run"]))
+        layout.addWidget(self.dry_run_checkbox)
+
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
 
@@ -163,6 +167,7 @@ class GenerateRunTab(QWidget):
         self.settings["gen_base_url"] = self.base_url_field.get()
         self.settings["gen_health_path"] = self.health_path_field.get()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
+        self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
 
     def on_run(self) -> None:
         openapi_path = self.openapi_field.get()
@@ -181,6 +186,7 @@ class GenerateRunTab(QWidget):
         result_path = output_dir / "試験仕様_result.xlsx"
         health_path = self.health_path_field.get() or "/health"
         auth_config_path = self.auth_config_field.get()
+        dry_run = self.dry_run_checkbox.isChecked()
 
         self.save_fields()
 
@@ -203,6 +209,8 @@ class GenerateRunTab(QWidget):
             ]
             if auth_config_path:
                 run_cmd += ["--auth-config", auth_config_path]
+            if dry_run:
+                run_cmd += ["--dry-run"]
             code = run_streamed(run_cmd, self.panel.log_queue)
             self.panel.finish(code, result_path)
 
@@ -240,6 +248,10 @@ class DBScenarioTab(QWidget):
         self.auth_config_field.set(settings["db_auth_config_path"])
         layout.addWidget(self.auth_config_field)
 
+        self.dry_run_checkbox = QCheckBox("dry-run（実際にはAPIリクエスト送信・DB接続を行わない。設定内容の確認用）")
+        self.dry_run_checkbox.setChecked(bool(settings["db_dry_run"]))
+        layout.addWidget(self.dry_run_checkbox)
+
         self.panel = LogPanel("実行", self.on_run, show_open_result=False)
         layout.addWidget(self.panel, stretch=1)
 
@@ -250,6 +262,7 @@ class DBScenarioTab(QWidget):
         self.settings["db_base_url"] = self.base_url_field.get()
         self.settings["db_health_path"] = self.health_path_field.get()
         self.settings["db_auth_config_path"] = self.auth_config_field.get()
+        self.settings["db_dry_run"] = self.dry_run_checkbox.isChecked()
 
     def on_run(self) -> None:
         scenario_path = self.scenario_field.get()
@@ -265,6 +278,7 @@ class DBScenarioTab(QWidget):
 
         health_path = self.health_path_field.get() or "/health"
         auth_config_path = self.auth_config_field.get()
+        dry_run = self.dry_run_checkbox.isChecked()
         self.save_fields()
 
         def worker() -> None:
@@ -274,6 +288,8 @@ class DBScenarioTab(QWidget):
             ]
             if auth_config_path:
                 cmd += ["--auth-config", auth_config_path]
+            if dry_run:
+                cmd += ["--dry-run"]
             code = run_streamed(cmd, self.panel.log_queue)
             self.panel.finish(code, None)
 

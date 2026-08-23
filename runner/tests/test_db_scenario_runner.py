@@ -413,3 +413,47 @@ def test_auth_config_success_sets_env_and_call_api_sends_header(monkeypatch, tmp
     )
     assert code == 0
     assert "Authorization: Bearer tok123" in " ".join(captured_cmd["cmd"])
+
+
+# ---------- main(): --dry-run ----------
+
+
+def test_dry_run_returns_0_without_executing(monkeypatch, tmp_path, capsys):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
+    # dry-run はネットワーク・DBに触れないため、触れたら失敗するようフェイクを仕込む
+    monkeypatch.setattr(dsr_module, "check_curl_available", lambda: (_ for _ in ()).throw(AssertionError("called")))
+    monkeypatch.setattr(dsr_module, "health_check", lambda base_url, health_path: (_ for _ in ()).throw(AssertionError("called")))
+    monkeypatch.setattr(dsr_module.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
+    monkeypatch.setattr(
+        dsr_module.postgres_backend, "check",
+        lambda check, config: (_ for _ in ()).throw(AssertionError("called")),
+    )
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path), "--dry-run"],
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "シナリオ数: 1 件" in out
+    assert "DRY-RUN" in out
+
+
+def test_dry_run_still_validates_scenario_file(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, {"not_scenarios": []})
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path), "--dry-run"],
+    )
+    assert code == 3
+
+
+def test_dry_run_still_validates_config_file(monkeypatch, tmp_path):
+    scenario_path, openapi_path, _ = _write_files(tmp_path, {"scenarios": []})
+    bad_config_path = tmp_path / "bad_config.json"
+    bad_config_path.write_text("{not valid json", encoding="utf-8")
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(bad_config_path), "--dry-run"],
+    )
+    assert code == 3

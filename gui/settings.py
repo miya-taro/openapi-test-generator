@@ -5,18 +5,20 @@ from pathlib import Path
 
 SETTINGS_PATH = Path.home() / ".openapi_test_gui_settings.json"
 
-DEFAULTS: dict[str, str] = {
+DEFAULTS: dict[str, str | bool] = {
     "gen_openapi_path": "",
     "gen_output_dir": "",
     "gen_base_url": "",
     "gen_health_path": "/health",
     "gen_auth_config_path": "",
+    "gen_dry_run": False,
     "db_scenario_path": "",
     "db_openapi_path": "",
     "db_config_path": "",
     "db_base_url": "",
     "db_health_path": "/health",
     "db_auth_config_path": "",
+    "db_dry_run": False,
 }
 
 

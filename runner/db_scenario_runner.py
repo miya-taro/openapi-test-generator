@@ -46,6 +46,10 @@ def main() -> int:
         "--auth-config", metavar="JSON",
         help="ログインして認証トークンを取得するための設定ファイル（固定トークンの TEST_AUTH_TOKEN の代わり）",
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="実際の HTTP リクエスト送信・DB接続を行わない（シナリオ/openapi/config の読み込みのみ確認）",
+    )
     args = parser.parse_args()
 
     scenario_path = Path(args.scenario_path)
@@ -76,6 +80,12 @@ def main() -> int:
         print(f"[ERROR] config.json の読み込みに失敗しました: {e}", file=sys.stderr)
         return 3
 
+    print(f"[INFO] シナリオ数: {len(scenarios)} 件")
+
+    if args.dry_run:
+        print("[DRY-RUN] HTTP リクエスト送信・DB接続を行わずに終了します")
+        return 0
+
     try:
         check_curl_available()
     except RuntimeError as e:
@@ -100,8 +110,6 @@ def main() -> int:
         except AuthLoginError as e:
             print(f"[ERROR] ログインに失敗しました: {e}", file=sys.stderr)
             return 3
-
-    print(f"[INFO] シナリオ数: {len(scenarios)} 件")
 
     has_fail = False
     for scenario in scenarios:

@@ -278,6 +278,11 @@ python db_scenario_runner.py scenarios.yaml openapi.json \
 `--auth-config` はオプションで、フォーマットは `runner.py` と共通（「ログインして認証する API」参照）。
 指定するとログインして取得したトークンが、シナリオ実行時の全APIリクエストに自動で付与される。
 
+`--dry-run` を付けると、シナリオYAML/openapi.json/config.jsonの読み込みと件数確認だけを行い、
+実際のAPIリクエスト送信・DB接続は一切行わずに終了する（`runner.py`の`--dry-run`と同じ考え方）。
+DB検証は実際にデータを書き込む操作を伴うことが多いため、初めて設定を試すときはまず
+`--dry-run`で内容を確認してから本実行することを推奨する。
+
 ### 終了コード
 
 | コード | 意味 |
