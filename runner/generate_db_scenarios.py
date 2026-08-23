@@ -203,6 +203,10 @@ def _scenario_baseline(schema: dict) -> object:
     （実務のOpenAPIでもよくある）でも、DBシナリオの叩き台として意味のある
     値を持つリクエストボディにするため。
     """
+    # スキーマに default が明示されていれば、型ベースの適当な値より優先する。
+    if "default" in schema:
+        return schema["default"]
+
     t = schema.get("type", "string")
     fmt = schema.get("format", "")
     enum = schema.get("enum")
@@ -219,7 +223,9 @@ def _scenario_baseline(schema: dict) -> object:
         return [_scenario_baseline(items)]
     if t == "object":
         props = schema.get("properties", {})
-        return {k: _scenario_baseline(v) for k, v in props.items()}
+        # readOnly なプロパティ（サーバー側専用）はリクエストボディには含めない
+        # readOnly なプロパティ（サーバー側専用）はリクエストボディには含めない
+        return {k: _scenario_baseline(v) for k, v in props.items() if not v.get("readOnly")}
 
     min_len = schema.get("minLength")
     if min_len and min_len > 0:

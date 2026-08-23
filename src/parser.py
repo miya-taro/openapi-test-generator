@@ -162,6 +162,7 @@ def _reduce_one_of_any_of(schema: dict) -> None:
         variants = schema.get(key)
         if not isinstance(variants, list) or not variants:
             continue
+        discriminator = schema.pop("discriminator", None)
         del schema[key]
         first = variants[0]
         if isinstance(first, dict):
@@ -169,7 +170,33 @@ def _reduce_one_of_any_of(schema: dict) -> None:
             _reduce_one_of_any_of(first)  # 入れ子の oneOf/anyOf も先に展開しておく
             for k, v in first.items():
                 schema.setdefault(k, v)
+            if discriminator:
+                _apply_discriminator_constraint(schema, discriminator, first)
         return
+
+
+def _apply_discriminator_constraint(schema: dict, discriminator: dict, variant: dict) -> None:
+    """discriminator が指定されている場合、選ばれた代表バリアントの判別プロパティに
+    enum 制約を補う（既に enum/const があれば触らない）。
+
+    本来は discriminator.mapping やスキーマ名から判別値を特定すべきだが、この時点では
+    既に $ref が解決済みでバリアントの元のスキーマ名を追跡できない。そのためバリアントの
+    `title`（OpenAPI仕様上、mapping が無い場合の既定の判別値と一致することが多い）を
+    使う。title が無ければ制約を補わず、従来通り無制約のまま残す。
+    """
+    prop_name = discriminator.get("propertyName")
+    if not prop_name:
+        return
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or prop_name not in properties:
+        return
+    prop_schema = properties[prop_name]
+    if not isinstance(prop_schema, dict) or "enum" in prop_schema or "const" in prop_schema:
+        return
+
+    variant_title = variant.get("title")
+    if variant_title:
+        prop_schema["enum"] = [variant_title]
 
 
 def _walk_schemas(obj: Any, visitor, visited: set[int]) -> None:

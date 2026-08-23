@@ -161,6 +161,7 @@ def _build_responses_info(responses: dict | None) -> dict:
         result[status] = {
             "contentTypes": list(content.keys()) if content else [],
             "headerNames": list(headers.keys()) if headers else [],
+            "headers": headers or {},
         }
     return result
 
@@ -211,6 +212,13 @@ def _flatten_body_schema(
 
             if prop_schema.get("format") == "binary":
                 log.debug({"fieldPath": field_path}, "binary フィールドをスキップ")
+                continue
+
+            if prop_schema.get("readOnly"):
+                # readOnly はサーバー側専用のフィールド（例: id, createdAt）で、
+                # クライアントがリクエストに含めるものではないため、リクエストボディの
+                # フィールド単位テスト対象からは除外する。
+                log.debug({"fieldPath": field_path}, "readOnly フィールドをスキップ")
                 continue
 
             results.append({

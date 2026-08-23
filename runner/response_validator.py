@@ -34,7 +34,38 @@ def resolve_response_schema(operation_id: str, path: str, method: str, status: s
         return None
 
     schema = json_content.get("schema")
-    return schema if isinstance(schema, dict) and schema else None
+    if not isinstance(schema, dict) or not schema:
+        return None
+    return _strip_write_only(schema)
+
+
+def _strip_write_only(schema: dict) -> dict:
+    """レスポンス検証用のスキーマから writeOnly なプロパティを取り除く。
+
+    writeOnly（例: password）はリクエスト専用のフィールドで、サーバーがレスポンスに
+    含めることは仕様上ないため、含まれていないことを理由に誤ってNG判定してしまうのを防ぐ。
+    元のスキーマ（openapiドキュメント内で共有されている可能性がある）は変更せず、
+    新しい辞書を組み立てて返す。
+    """
+    result = dict(schema)
+
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        new_props = {}
+        for name, prop_schema in properties.items():
+            if isinstance(prop_schema, dict) and prop_schema.get("writeOnly"):
+                continue
+            new_props[name] = _strip_write_only(prop_schema) if isinstance(prop_schema, dict) else prop_schema
+        result["properties"] = new_props
+        required = result.get("required")
+        if isinstance(required, list):
+            result["required"] = [r for r in required if r in new_props]
+
+    items = result.get("items")
+    if isinstance(items, dict):
+        result["items"] = _strip_write_only(items)
+
+    return result
 
 
 def _find_path_by_operation_id(paths: dict, operation_id: str) -> dict | None:

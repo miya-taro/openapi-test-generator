@@ -57,6 +57,91 @@ def test_resolve_response_schema_by_operation_id_when_path_differs():
     assert schema is not None
 
 
+# --- resolve_response_schema: writeOnly の除去 ---
+
+WRITE_ONLY_OPENAPI = {
+    "paths": {
+        "/users/{id}": {
+            "get": {
+                "operationId": "getUser",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["id", "password"],
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "password": {"type": "string", "writeOnly": True},
+                                        "profile": {
+                                            "type": "object",
+                                            "required": ["secretToken"],
+                                            "properties": {
+                                                "secretToken": {"type": "string", "writeOnly": True},
+                                                "nickname": {"type": "string"},
+                                            },
+                                        },
+                                        "tags": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "internalNote": {"type": "string", "writeOnly": True},
+                                                    "label": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def test_resolve_response_schema_strips_write_only_top_level_property():
+    schema = resolve_response_schema("getUser", "/users/{id}", "GET", "200", WRITE_ONLY_OPENAPI)
+    assert "password" not in schema["properties"]
+    assert "password" not in schema["required"]
+    assert "id" in schema["properties"]
+
+
+def test_resolve_response_schema_strips_write_only_nested_property():
+    schema = resolve_response_schema("getUser", "/users/{id}", "GET", "200", WRITE_ONLY_OPENAPI)
+    profile = schema["properties"]["profile"]
+    assert "secretToken" not in profile["properties"]
+    assert "secretToken" not in profile["required"]
+    assert "nickname" in profile["properties"]
+
+
+def test_resolve_response_schema_strips_write_only_inside_array_items():
+    schema = resolve_response_schema("getUser", "/users/{id}", "GET", "200", WRITE_ONLY_OPENAPI)
+    item_props = schema["properties"]["tags"]["items"]["properties"]
+    assert "internalNote" not in item_props
+    assert "label" in item_props
+
+
+def test_resolve_response_schema_write_only_stripping_does_not_mutate_original():
+    resolve_response_schema("getUser", "/users/{id}", "GET", "200", WRITE_ONLY_OPENAPI)
+    original_props = (
+        WRITE_ONLY_OPENAPI["paths"]["/users/{id}"]["get"]["responses"]["200"]
+        ["content"]["application/json"]["schema"]["properties"]
+    )
+    assert "password" in original_props  # 元のopenapiドキュメントは変更されていないこと
+
+
+def test_write_only_field_missing_in_actual_response_does_not_fail_validation():
+    # サーバーがwriteOnlyフィールドをレスポンスに含めなくても、requiredから除外済みなので合格する
+    schema = resolve_response_schema("getUser", "/users/{id}", "GET", "200", WRITE_ONLY_OPENAPI)
+    errors = validate_body('{"id": 1, "profile": {"nickname": "太郎"}}', schema)
+    assert errors == []
+
+
 # --- validate_body ---
 
 SCHEMA = {

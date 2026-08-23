@@ -45,7 +45,7 @@ def execute(case: RunCase, base_url: str) -> RunResult:
 
 def execute_with_openapi(case: RunCase, base_url: str, openapi: dict | None) -> RunResult:
     from request_builder import build_url, build_body_args
-    url = build_url(base_url, case)
+    url = build_url(base_url, case, openapi)
     body_args = build_body_args(case, openapi)
     return _run_curl(case, url, body_args)
 

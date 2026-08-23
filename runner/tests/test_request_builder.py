@@ -83,6 +83,123 @@ def test_base_url_trailing_slash():
     assert url == "http://localhost:8080/users?page=1"
 
 
+# --- 配列型クエリパラメータの style/explode ---
+
+ARRAY_QUERY_OPENAPI = {
+    "paths": {
+        "/users": {
+            "get": {
+                "operationId": "getUsers",
+                "parameters": [
+                    {
+                        "name": "tags",
+                        "in": "query",
+                        "schema": {"type": "array", "items": {"type": "string"}},
+                        # style/explode省略 → 既定 style: form, explode: true
+                    }
+                ],
+            }
+        }
+    }
+}
+
+
+def test_array_query_param_default_style_uses_repeated_key():
+    case = make_case(param_in="query", param_name="tags", input_value='["a", "b"]')
+    url = build_url("http://localhost:8080", case, ARRAY_QUERY_OPENAPI)
+    assert url == "http://localhost:8080/users?tags=a&tags=b"
+
+
+def test_array_query_param_explode_false_uses_comma_separated():
+    openapi = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "parameters": [
+                        {
+                            "name": "tags",
+                            "in": "query",
+                            "schema": {"type": "array", "items": {"type": "string"}},
+                            "style": "form",
+                            "explode": False,
+                        }
+                    ],
+                }
+            }
+        }
+    }
+    case = make_case(param_in="query", param_name="tags", input_value='["a", "b"]')
+    url = build_url("http://localhost:8080", case, openapi)
+    assert url == "http://localhost:8080/users?tags=a%2Cb"
+
+
+def test_array_query_param_space_delimited():
+    openapi = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "parameters": [
+                        {
+                            "name": "tags",
+                            "in": "query",
+                            "schema": {"type": "array", "items": {"type": "string"}},
+                            "style": "spaceDelimited",
+                        }
+                    ],
+                }
+            }
+        }
+    }
+    case = make_case(param_in="query", param_name="tags", input_value='["a", "b"]')
+    url = build_url("http://localhost:8080", case, openapi)
+    assert "tags=a" in url and "b" in url
+    assert "&tags=" not in url  # 繰り返しキーではなく1つのパラメータにまとまっている
+
+
+def test_array_query_param_pipe_delimited():
+    openapi = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "parameters": [
+                        {
+                            "name": "tags",
+                            "in": "query",
+                            "schema": {"type": "array", "items": {"type": "string"}},
+                            "style": "pipeDelimited",
+                        }
+                    ],
+                }
+            }
+        }
+    }
+    case = make_case(param_in="query", param_name="tags", input_value='["a", "b"]')
+    url = build_url("http://localhost:8080", case, openapi)
+    assert url == "http://localhost:8080/users?tags=a%7Cb"
+
+
+def test_non_array_query_param_unaffected_by_openapi_arg():
+    case = make_case(param_in="query", param_name="page", input_value="2")
+    url = build_url("http://localhost:8080", case, ARRAY_QUERY_OPENAPI)
+    assert url == "http://localhost:8080/users?page=2"
+
+
+def test_array_query_param_malformed_json_falls_back_to_raw_value():
+    case = make_case(param_in="query", param_name="tags", input_value="not-json")
+    url = build_url("http://localhost:8080", case, ARRAY_QUERY_OPENAPI)
+    assert url == "http://localhost:8080/users?tags=not-json"
+
+
+def test_array_query_param_without_openapi_falls_back_to_raw_value():
+    # openapi未指定（execute()経由の旧来の呼び出し）では従来通りの挙動
+    case = make_case(param_in="query", param_name="tags", input_value='["a", "b"]')
+    url = build_url("http://localhost:8080", case)
+    assert "tags=%5B" in url  # JSON文字列がそのままURLエンコードされる（従来通り）
+
+
 # --- build_body_args tests ---
 
 def test_non_body_returns_empty():
@@ -189,6 +306,63 @@ def test_baseline_does_not_override_test_field():
     args = build_body_args(case, SAMPLE_OPENAPI)
     body = json.loads(args[1])
     assert body["age"] == 25
+
+
+# --- readOnly / default（ベースライン組み立て） ---
+
+READONLY_DEFAULT_OPENAPI = {
+    "paths": {
+        "/tickets": {
+            "post": {
+                "operationId": "createTicket",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["id", "title", "status"],
+                                "properties": {
+                                    "id": {"type": "integer", "readOnly": True},
+                                    "title": {"type": "string"},
+                                    "status": {"type": "string", "default": "open"},
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def test_baseline_excludes_readonly_field_even_if_required():
+    case = make_case(
+        operation_id="createTicket",
+        path="/tickets",
+        method="POST",
+        param_in="body",
+        param_name="title",
+        input_value="バグ報告",
+    )
+    args = build_body_args(case, READONLY_DEFAULT_OPENAPI)
+    body = json.loads(args[1])
+    assert "id" not in body
+    assert body["title"] == "バグ報告"
+
+
+def test_baseline_uses_schema_default_over_generic_dummy():
+    case = make_case(
+        operation_id="createTicket",
+        path="/tickets",
+        method="POST",
+        param_in="body",
+        param_name="title",
+        input_value="バグ報告",
+    )
+    args = build_body_args(case, READONLY_DEFAULT_OPENAPI)
+    body = json.loads(args[1])
+    assert body["status"] == "open"
 
 
 def test_baseline_minlength_string():

@@ -295,6 +295,71 @@ def test_extract_specs_skips_binary_format_body_field():
     assert not any(s["fieldPath"] == "file" for s in body_specs)
 
 
+def test_extract_specs_skips_readonly_body_field():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "operationId": "postX",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer", "readOnly": True},
+                                        "name": {"type": "string"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    assert not any(s["fieldPath"] == "id" for s in body_specs)
+    assert any(s["fieldPath"] == "name" for s in body_specs)
+
+
+def test_extract_specs_skips_readonly_nested_object_and_its_children():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/x": {
+                "post": {
+                    "operationId": "postX",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "meta": {
+                                            "type": "object",
+                                            "readOnly": True,
+                                            "properties": {"createdAt": {"type": "string"}},
+                                        },
+                                        "name": {"type": "string"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    assert not any(s["fieldPath"] == "meta" for s in body_specs)
+    assert not any(s["fieldPath"] == "meta.createdAt" for s in body_specs)
+    assert any(s["fieldPath"] == "name" for s in body_specs)
+
+
 def test_operation_id_fallback_when_missing():
     api = {
         "openapi": "3.1.0",

@@ -24,7 +24,7 @@ FORMAT_SAMPLES: dict[str, str | int | bool] = {
 }
 
 
-def build_url(base_url: str, case: RunCase) -> str:
+def build_url(base_url: str, case: RunCase, openapi: dict | None = None) -> str:
     path = case.path
     if case.param_in == "path" and case.input_value not in OMIT_MARKERS:
         val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
@@ -34,9 +34,60 @@ def build_url(base_url: str, case: RunCase) -> str:
 
     if case.param_in == "query" and case.input_value not in OMIT_MARKERS:
         val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
-        url += "?" + urlencode({case.param_name: val})
+        query_val = _build_query_value(case, val, openapi) if openapi is not None else val
+        url += "?" + urlencode({case.param_name: query_val}, doseq=True)
 
     return url
+
+
+def _build_query_value(case: RunCase, val: str, openapi: dict) -> object:
+    """クエリパラメータの値を組み立てる。
+
+    配列型のクエリパラメータは、generator（array.py）がJSONリテラル文字列
+    （例: '["a", "b"]'）をinputValueとして出力するが、これをそのままURLに
+    埋め込むと本来の配列としてサーバーに解釈されない。OpenAPIの`style`/`explode`
+    （既定はstyle: form, explode: true = 繰り返しキー形式）に従って正しく
+    シリアライズする。配列型でない場合は入力値をそのまま返す（従来通り）。
+    """
+    param_schema = _resolve_query_param_schema(openapi, case)
+    schema = (param_schema or {}).get("schema") or {}
+    if schema.get("type") != "array":
+        return val
+
+    try:
+        items = json.loads(val)
+    except (json.JSONDecodeError, TypeError):
+        return val
+    if not isinstance(items, list):
+        return val
+
+    style = (param_schema or {}).get("style", "form")
+    explode = (param_schema or {}).get("explode", style == "form")
+    if style == "form" and explode:
+        return [str(v) for v in items]  # urlencode(doseq=True) が繰り返しキーに展開する
+    if style == "spaceDelimited":
+        sep = " "
+    elif style == "pipeDelimited":
+        sep = "|"
+    else:  # style: form かつ explode: false、または未対応スタイル
+        sep = ","
+    return sep.join(str(v) for v in items)
+
+
+def _resolve_query_param_schema(openapi: dict, case: RunCase) -> dict | None:
+    paths = openapi.get("paths", {})
+    path_item = paths.get(case.path)
+    if path_item is None:
+        path_item = _find_path_by_operation_id(paths, case.operation_id)
+    if path_item is None:
+        return None
+    op = path_item.get(case.method.lower())
+    if not isinstance(op, dict):
+        return None
+    for p in (*(path_item.get("parameters") or []), *(op.get("parameters") or [])):
+        if isinstance(p, dict) and p.get("name") == case.param_name and p.get("in") == "query":
+            return p
+    return None
 
 
 def build_body_args(case: RunCase, openapi: dict | None) -> list[str]:
@@ -183,6 +234,11 @@ def _resolve_ref(schema: dict, openapi: dict) -> dict:
 
 
 def _expand_value(schema: dict) -> object:
+    # スキーマに default が明示されていれば、型ベースの適当な値より優先する
+    # （リクエストのベースラインとして、実際にAPIが期待するデフォルト値に近い方が正確なため）。
+    if "default" in schema:
+        return schema["default"]
+
     t = schema.get("type", "string")
     fmt = schema.get("format", "")
     enum = schema.get("enum")
@@ -204,7 +260,13 @@ def _expand_value(schema: dict) -> object:
     if t == "object":
         props = schema.get("properties", {})
         required = schema.get("required", [])
-        return {k: _expand_value(props[k]) for k in required if k in props}
+        # readOnly なプロパティ（サーバー側専用）はリクエストには含めない
+        # readOnly なプロパティ（サーバー側専用）はリクエストには含めない
+        return {
+            k: _expand_value(props[k])
+            for k in required
+            if k in props and not props[k].get("readOnly")
+        }
 
     # string
     min_len = schema.get("minLength")

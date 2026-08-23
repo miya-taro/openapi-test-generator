@@ -90,6 +90,40 @@ def test_create_body_fills_all_properties_even_without_required():
     assert "category" in body  # ネストしたオブジェクトも埋まる
 
 
+def test_scenario_baseline_excludes_readonly_and_uses_default():
+    openapi = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/tickets": {
+                "post": {
+                    "operationId": "createTicket",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer", "readOnly": True},
+                                        "title": {"type": "string"},
+                                        "status": {"type": "string", "default": "open"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        },
+    }
+    mapping = {"operations": {"createTicket": {"engine": "postgres", "table": "tickets"}}}
+    scenarios = gen_module._generate_scenarios(openapi, mapping["operations"])
+    body = scenarios[0]["request"]["body"]
+    assert "id" not in body
+    assert body["status"] == "open"
+    assert "title" in body
+
+
 def test_where_excludes_id_and_nested_fields():
     mapping = {"operations": {"createPet": {"engine": "postgres", "table": "pets"}}}
     scenarios = gen_module._generate_scenarios(SAMPLE_OPENAPI, mapping["operations"])

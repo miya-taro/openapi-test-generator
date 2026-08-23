@@ -47,9 +47,28 @@ def test_derive_response_header_multiple_content_types():
     assert "複数あり" in result
 
 
-def test_derive_response_header_includes_header_names():
-    result = _derive_response_header({"contentTypes": ["application/json"], "headerNames": ["X-Total-Count"]})
-    assert "X-Total-Count: OpenAPI定義を確認" in result
+def test_derive_response_header_includes_header_names_existence_only():
+    result = _derive_response_header(
+        {"contentTypes": ["application/json"], "headers": {"X-Total-Count": {}}}
+    )
+    assert "X-Total-Count: （存在確認のみ）" in result
+
+
+def test_derive_response_header_uses_concrete_example_when_available():
+    result = _derive_response_header(
+        {"contentTypes": ["application/json"], "headers": {"X-Api-Version": {"example": "v1"}}}
+    )
+    assert "X-Api-Version: v1" in result
+
+
+def test_derive_response_header_uses_schema_enum_of_one_when_available():
+    result = _derive_response_header(
+        {
+            "contentTypes": ["application/json"],
+            "headers": {"X-Cache-Status": {"schema": {"enum": ["HIT"]}}},
+        }
+    )
+    assert "X-Cache-Status: HIT" in result
 
 
 # --- generate_test_cases: auth の includeAbnormal 制御 ---

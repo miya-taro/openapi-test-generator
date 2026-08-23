@@ -154,6 +154,101 @@ def test_any_of_reduces_to_first_variant(tmp_path):
     assert reduced["minLength"] == 1
 
 
+def test_one_of_with_discriminator_constrains_property_using_variant_title(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {
+                            "title": "Cat",
+                            "type": "object",
+                            "required": ["petType"],
+                            "properties": {"petType": {"type": "string"}},
+                        },
+                        {
+                            "title": "Dog",
+                            "type": "object",
+                            "required": ["petType"],
+                            "properties": {"petType": {"type": "string"}},
+                        },
+                    ],
+                    "discriminator": {"propertyName": "petType"},
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "discriminator" not in reduced
+    assert reduced["properties"]["petType"]["enum"] == ["Cat"]
+
+
+def test_discriminator_does_not_override_existing_enum(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {
+                            "title": "Cat",
+                            "type": "object",
+                            "properties": {"petType": {"type": "string", "enum": ["cat"]}},
+                        },
+                    ],
+                    "discriminator": {"propertyName": "petType"},
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert reduced["properties"]["petType"]["enum"] == ["cat"]  # 既存のenumは上書きしない
+
+
+def test_discriminator_without_variant_title_leaves_property_unconstrained(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {"type": "object", "properties": {"petType": {"type": "string"}}},
+                    ],
+                    "discriminator": {"propertyName": "petType"},
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "enum" not in reduced["properties"]["petType"]
+
+
+def test_one_of_without_discriminator_unaffected(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {"title": "Cat", "type": "object", "properties": {"petType": {"type": "string"}}},
+                    ],
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "enum" not in reduced["properties"]["petType"]
+
+
 def test_exclusive_minimum_boolean_normalized(tmp_path):
     doc = {
         "openapi": "3.1.0",

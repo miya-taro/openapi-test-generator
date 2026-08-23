@@ -12,6 +12,7 @@ ParamIn = Literal["path", "query", "header", "cookie"]
 class ResponseInfo(TypedDict):
     contentTypes: list[str]
     headerNames: list[str]
+    headers: dict  # ヘッダ名 -> OpenAPIのheaderオブジェクト（schema/example等、生の定義）
 
 
 class ResolvedSchema(TypedDict, total=False):

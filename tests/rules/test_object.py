@@ -53,3 +53,71 @@ def test_normal_only_generates_nothing():
         {"paramName": "requestBody", "opts": NORMAL_ONLY, "isRootBody": True},
     )
     assert cases == []
+
+
+# --- additionalProperties がスキーマ（型付き追加プロパティを許可）の場合 ---
+
+
+def test_additional_properties_schema_generates_normal_case_with_matching_type():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "string"}},
+        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True, "successStatus": "201"},
+    )
+    case = next(c for c in cases if c["perspective"] == "正常系_additionalProperties型適合")
+    assert case["expectedStatus"] == "201"
+    assert '"value"' in case["inputValue"]
+
+
+def test_additional_properties_schema_integer_uses_integer_sample():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "integer"}},
+        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
+    )
+    case = next(c for c in cases if c["perspective"] == "正常系_additionalProperties型適合")
+    assert '"__extra__": 1' in case["inputValue"]
+
+
+def test_additional_properties_schema_generates_abnormal_case_with_mismatched_type():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "integer"}},
+        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
+    )
+    case = next(c for c in cases if c["perspective"] == "異常系_additionalProperties型不適合")
+    assert case["expectedStatus"] == "400"
+    assert '"abc"' in case["inputValue"]
+
+
+def test_additional_properties_schema_normal_only_skips_abnormal_case():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "integer"}},
+        {"paramName": "requestBody", "opts": NORMAL_ONLY, "isRootBody": True},
+    )
+    assert any(c["perspective"] == "正常系_additionalProperties型適合" for c in cases)
+    assert not any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
+
+
+def test_additional_properties_schema_abnormal_only_skips_normal_case():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "integer"}},
+        {"paramName": "requestBody", "opts": ABNORMAL_ONLY, "isRootBody": True},
+    )
+    assert not any(c["perspective"] == "正常系_additionalProperties型適合" for c in cases)
+    assert any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
+
+
+def test_additional_properties_schema_string_type_has_no_abnormal_case():
+    # common.py の _get_invalid_value_for_type は string 型に対する不正値を定義していない
+    # （既存の型不正テストと同じ挙動を踏襲）
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": {"type": "string"}},
+        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
+    )
+    assert not any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
+
+
+def test_additional_properties_true_generates_no_cases():
+    cases = generate_object_cases(
+        {"type": "object", "additionalProperties": True},
+        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
+    )
+    assert not any(c["keyword"] == "additionalProperties" for c in cases)

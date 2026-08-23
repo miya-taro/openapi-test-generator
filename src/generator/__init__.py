@@ -26,15 +26,38 @@ def _derive_response_header(info: dict | None) -> str:
     if not info:
         return ""
     content_types = info.get("contentTypes", [])
-    header_names = info.get("headerNames", [])
+    headers_def = info.get("headers", {})
     lines: list[str] = []
     if len(content_types) == 1:
         lines.append(f"Content-Type: {content_types[0]}")
     elif len(content_types) > 1:
         lines.append("Content-Type: （複数あり・要確認）")
-    for header in header_names:
-        lines.append(f"{header}: OpenAPI定義を確認")
+    for header_name, header_def in headers_def.items():
+        concrete = _concrete_header_value(header_def)
+        if concrete is not None:
+            lines.append(f"{header_name}: {concrete}")
+        else:
+            lines.append(f"{header_name}: （存在確認のみ）")
     return "\n".join(lines)
+
+
+def _concrete_header_value(header_def: dict | None) -> str | None:
+    """OpenAPIのheaderオブジェクトから、具体的に一致検証できる値を取り出せる場合は返す。
+    example/enum(1件)/defaultのいずれかがあれば使う。判断できない場合は None
+    （呼び出し側は「存在確認のみ」の期待値として扱う）。"""
+    if not header_def:
+        return None
+    if "example" in header_def:
+        return str(header_def["example"])
+    schema = header_def.get("schema") or {}
+    if "example" in schema:
+        return str(schema["example"])
+    enum = schema.get("enum")
+    if isinstance(enum, list) and len(enum) == 1:
+        return str(enum[0])
+    if "default" in schema:
+        return str(schema["default"])
+    return None
 
 
 # 現在の生成スコープ: Validation Keyword 単位のフィールド個別テスト（Layer 1）のみ。

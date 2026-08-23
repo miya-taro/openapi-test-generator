@@ -36,3 +36,6 @@ class ResponseSchema:
     expected_content_type: str | None
     expected_response_time_ms: float
     expected_body_schema: dict | None = None
+    # ヘッダ名 -> 期待値（存在確認のみの場合は None）。Content-Type は
+    # expected_content_type 側で扱うためここには含めない。
+    expected_headers: dict = field(default_factory=dict)

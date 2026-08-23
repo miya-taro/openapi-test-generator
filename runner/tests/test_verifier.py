@@ -41,12 +41,14 @@ def make_schema(
     expected_content_type: str | None = None,
     expected_response_time_ms: float = 3000.0,
     expected_body_schema: dict | None = None,
+    expected_headers: dict | None = None,
 ) -> ResponseSchema:
     return ResponseSchema(
         expected_status=expected_status,
         expected_content_type=expected_content_type,
         expected_response_time_ms=expected_response_time_ms,
         expected_body_schema=expected_body_schema,
+        expected_headers=expected_headers or {},
     )
 
 
@@ -113,6 +115,64 @@ def test_level3_fail_content_type_mismatch():
 def test_level3_skipped_when_no_expected_ct():
     result = make_result(status=200, headers={})
     schema = make_schema(200, expected_content_type=None)
+    verdict, _ = verify(result, schema)
+    assert verdict == PASS
+
+
+# Level 3: Content-Type以外の期待ヘッダ
+
+def test_level3_header_existence_only_passes_regardless_of_value():
+    result = make_result(status=200, headers={"X-Total-Count": "42"})
+    schema = make_schema(200, expected_headers={"X-Total-Count": None})
+    verdict, detail = verify(result, schema)
+    assert verdict == PASS
+
+
+def test_level3_header_missing_fails():
+    result = make_result(status=200, headers={})
+    schema = make_schema(200, expected_headers={"X-Total-Count": None})
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "ヘッダ不足" in detail
+    assert "X-Total-Count" in detail
+
+
+def test_level3_header_concrete_value_matches_passes():
+    result = make_result(status=200, headers={"X-Api-Version": "v1"})
+    schema = make_schema(200, expected_headers={"X-Api-Version": "v1"})
+    verdict, detail = verify(result, schema)
+    assert verdict == PASS
+
+
+def test_level3_header_concrete_value_mismatch_fails():
+    result = make_result(status=200, headers={"X-Api-Version": "v2"})
+    schema = make_schema(200, expected_headers={"X-Api-Version": "v1"})
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "X-Api-Version不一致" in detail
+    assert "期待=v1" in detail
+    assert "v2" in detail
+
+
+def test_level3_header_lookup_is_case_insensitive():
+    result = make_result(status=200, headers={"x-api-version": "v1"})
+    schema = make_schema(200, expected_headers={"X-Api-Version": "v1"})
+    verdict, _ = verify(result, schema)
+    assert verdict == PASS
+
+
+def test_level3_multiple_expected_headers_all_must_pass():
+    result = make_result(status=200, headers={"X-Api-Version": "v1"})  # X-Total-Countが無い
+    schema = make_schema(200, expected_headers={"X-Api-Version": "v1", "X-Total-Count": None})
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "X-Total-Count" in detail
+    assert "X-Api-Version" not in detail  # 一致している方は言及されない
+
+
+def test_level3_no_expected_headers_does_not_affect_pass():
+    result = make_result(status=200, headers={})
+    schema = make_schema(200, expected_headers={})
     verdict, _ = verify(result, schema)
     assert verdict == PASS
 

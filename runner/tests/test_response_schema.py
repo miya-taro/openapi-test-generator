@@ -48,6 +48,41 @@ def test_placeholder_content_type_returns_none():
     assert schema.expected_content_type is None
 
 
+# --- expected_headers（Content-Type以外の期待ヘッダ） ---
+
+
+def test_expected_headers_empty_when_no_header_column():
+    schema = from_run_case(make_case(expected_response_header=""))
+    assert schema.expected_headers == {}
+
+
+def test_expected_headers_excludes_content_type():
+    case = make_case(expected_response_header="Content-Type: application/json")
+    schema = from_run_case(case)
+    assert schema.expected_headers == {}
+
+
+def test_expected_headers_existence_only_marker_becomes_none():
+    case = make_case(expected_response_header="X-Total-Count: （存在確認のみ）")
+    schema = from_run_case(case)
+    assert schema.expected_headers == {"X-Total-Count": None}
+
+
+def test_expected_headers_concrete_value_is_kept():
+    case = make_case(expected_response_header="X-Api-Version: v1")
+    schema = from_run_case(case)
+    assert schema.expected_headers == {"X-Api-Version": "v1"}
+
+
+def test_expected_headers_multiple_lines_combined_with_content_type():
+    case = make_case(
+        expected_response_header="Content-Type: application/json\nX-Api-Version: v1\nX-Total-Count: （存在確認のみ）"
+    )
+    schema = from_run_case(case)
+    assert schema.expected_content_type == "application/json"
+    assert schema.expected_headers == {"X-Api-Version": "v1", "X-Total-Count": None}
+
+
 def test_response_time_3s():
     schema = from_run_case(make_case(expected_response_time="3秒以内"))
     assert schema.expected_response_time_ms == pytest.approx(3000.0)
