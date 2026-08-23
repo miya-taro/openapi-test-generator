@@ -243,6 +243,39 @@ python db_scenario_runner.py scenarios.yaml openapi.json \
 | 1 | 1件以上NG（該当データなし / カラム値不一致 / operationId不明 等）|
 | 3 | 実行エラー（ファイル不在 / YAML不正 / DB接続失敗 / ヘルスチェック失敗）|
 
+### シナリオYAMLの叩き台を自動生成する
+
+シナリオYAMLを白紙から書くのは大変なため、`openapi.json` と「operationId → テーブル名」の
+簡単な対応表から、叩き台を自動生成できる。POST/PUT/PATCH/DELETE（データを変更する操作）を
+自動で拾い出し、リクエストボディはスキーマから有効な値を自動で埋める。
+
+対応表（`mapping.yaml`）:
+
+```yaml
+operations:
+  createUser:
+    engine: postgres
+    table: users
+  postSensorData:
+    engine: influxdb
+    measurement: sensor_data
+    tags: [device_id]   # タグとして扱うフィールド（influxdbのみ）
+```
+
+```sh
+python generate_db_scenarios.py openapi.json mapping.yaml -o scenarios.generated.yaml
+```
+
+生成されるYAMLの `where`/`columns`/`fields` は、送信したリクエストボディと同じ値で
+「そのデータが本当にDBに存在するか」を検証する形になる。ただし以下は自動では判断できないため、
+生成後に必ず確認・修正すること。
+
+- `id` のようなサーバー側で自動採番されるフィールドは `where` から除外される（送信値と一致しない可能性が高いため）
+- ネストしたオブジェクト・配列（別テーブルへのリレーションの可能性がある）も `where` から除外される
+- `update`/`delete` 系の `path_params` は `{{response.id}}` のプレースホルダになる。実際に使うには、
+  対象データを作成する `create` 系シナリオを先に置き、そのレスポンスから値を引き継ぐ想定で
+  シナリオの順序を調整する必要がある
+
 ## テスト
 
 ```sh
