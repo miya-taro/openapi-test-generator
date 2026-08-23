@@ -304,6 +304,116 @@ def test_check_sql_syntax_connect_failure(tmp_path, monkeypatch):
     assert "接続に失敗" in result
 
 
+# --- execute_sql ---
+
+
+def test_execute_sql_empty_text():
+    assert validators.execute_sql("", "some/config.json") == "（空です）"
+
+
+def test_execute_sql_blank_config_path():
+    result = validators.execute_sql("TRUNCATE TABLE users;", "")
+    assert "未入力" in result
+
+
+def test_execute_sql_success_commits(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql):
+            calls.append(("execute", sql))
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit",))
+
+        def rollback(self):
+            calls.append(("rollback",))
+
+        def close(self):
+            calls.append(("close",))
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+
+    result = validators.execute_sql("INSERT INTO users (id) VALUES (1);", str(path))
+
+    assert result == "OK: DBに反映しました"
+    assert ("commit",) in calls
+    assert ("rollback",) not in calls  # 成功時はrollbackしないこと
+
+
+def test_execute_sql_error_rolls_back_not_commits(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql):
+            raise RuntimeError("constraint violation")
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append("commit")
+
+        def rollback(self):
+            calls.append("rollback")
+
+        def close(self):
+            pass
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+
+    result = validators.execute_sql("BOGUS;", str(path))
+
+    assert result.startswith("NG")
+    assert "constraint violation" in result
+    assert "commit" not in calls
+    assert "rollback" in calls
+
+
+def test_execute_sql_connect_failure(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    import psycopg2
+
+    def fake_connect(**kwargs):
+        raise psycopg2.OperationalError("connection refused")
+
+    monkeypatch.setattr(psycopg2, "connect", fake_connect)
+
+    result = validators.execute_sql("SELECT 1;", str(path))
+    assert result.startswith("NG")
+    assert "接続に失敗" in result
+
+
 # --- validate_sql_file ---
 
 

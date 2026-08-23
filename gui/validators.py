@@ -152,16 +152,17 @@ def validate_mapping_yaml_text(text: str) -> str:
     return f"OK（{len(operations)}件のoperation対応）"
 
 
-def check_sql_syntax(sql_text: str, config_path: str, timeout: int = 5) -> str:
-    """setup.sql/teardown.sqlの内容を、実際にPostgreSQLへBEGIN〜ROLLBACKで試し実行して検証する。
+def _run_sql_against_db(sql_text: str, config_path: str, timeout: int, commit: bool) -> str:
+    """setup.sql/teardown.sqlをPostgreSQLへ流す共通処理。
 
-    静的なパースだけでは検出できない実際のエラー（型不一致・制約違反等）を、DBへの変更を
-    残さずに検出できる。ネットワーク呼び出しを伴うため、GUI側は必ずバックグラウンドスレッドで呼ぶこと。
+    commit=Falseなら必ずROLLBACKして何も残さない（check_sql_syntaxの構文検証用）。
+    commit=Trueなら成功時にCOMMITし、実際にDBへ反映する（execute_sqlの本実行用）。
+    どちらもネットワーク呼び出しを伴うため、GUI側は必ずバックグラウンドスレッドで呼ぶこと。
     """
     if not sql_text.strip():
         return "（空です）"
     if not config_path:
-        return "（DB接続設定が未入力のため検証できません）"
+        return "（DB接続設定が未入力です）"
     if not Path(config_path).exists():
         return "NG: DB接続設定ファイルが見つかりません"
 
@@ -183,12 +184,35 @@ def check_sql_syntax(sql_text: str, config_path: str, timeout: int = 5) -> str:
     try:
         with conn.cursor() as cur:
             cur.execute(sql_text)
-    except Exception as e:  # SQL実行エラーの例外種別は多岐にわたるため、境界での広い捕捉として許容する
-        return f"NG: SQL実行エラー（ロールバック済み・DBへの変更はありません）: {e}"
-    finally:
+        if commit:
+            conn.commit()
+            return "OK: DBに反映しました"
         conn.rollback()
+        return "OK: 構文チェックを通過しました（ロールバック済み・DBへの変更はありません）"
+    except Exception as e:  # SQL実行エラーの例外種別は多岐にわたるため、境界での広い捕捉として許容する
+        conn.rollback()
+        suffix = "" if commit else "（ロールバック済み・DBへの変更はありません）"
+        return f"NG: SQL実行エラー{suffix}: {e}"
+    finally:
         conn.close()
-    return "OK: 構文チェックを通過しました（ロールバック済み・DBへの変更はありません）"
+
+
+def check_sql_syntax(sql_text: str, config_path: str, timeout: int = 5) -> str:
+    """setup.sql/teardown.sqlの内容を、実際にPostgreSQLへBEGIN〜ROLLBACKで試し実行して検証する。
+
+    静的なパースだけでは検出できない実際のエラー（型不一致・制約違反等）を、DBへの変更を
+    残さずに検出できる。DBには一切反映されない（本実行はexecute_sqlを使うこと）。
+    """
+    return _run_sql_against_db(sql_text, config_path, timeout, commit=False)
+
+
+def execute_sql(sql_text: str, config_path: str, timeout: int = 5) -> str:
+    """setup.sql/teardown.sqlの内容を、実際にPostgreSQLへ本実行してコミットする。
+
+    check_sql_syntaxとは違い、成功すればDBに実際に反映される（TRUNCATE/INSERT等）。
+    破壊的な操作になり得るため、呼び出し前に必ずユーザーへの確認を取ること。
+    """
+    return _run_sql_against_db(sql_text, config_path, timeout, commit=True)
 
 
 def check_db_connectivity(path: str, timeout: int = 5) -> str:

@@ -310,6 +310,131 @@ def test_sqlgen_check_syntax_button_disabled_while_checking(window, tmp_path, mo
     assert _wait_for(lambda: window.sql_gen_tab.check_syntax_button.isEnabled() is True)
 
 
+# ---------- setup.sql/teardown.sql: 本実行（DBに反映） ----------
+
+
+def _generate_setup_and_teardown(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q, **kwargs):
+        (tmp_path / "setup.sql.generated").write_text("INSERT INTO users (id) VALUES (1);", encoding="utf-8")
+        (tmp_path / "teardown.sql.generated").write_text("TRUNCATE TABLE users;", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.sql_gen_tab.on_run()
+    assert _wait_for(lambda: window.sql_gen_tab.execute_setup_button.isEnabled() is True)
+
+
+def test_execute_buttons_disabled_until_generated(window):
+    assert window.sql_gen_tab.execute_setup_button.isEnabled() is False
+    assert window.sql_gen_tab.execute_teardown_button.isEnabled() is False
+
+
+def test_execute_buttons_enabled_after_generation(window, tmp_path, monkeypatch):
+    _generate_setup_and_teardown(window, tmp_path, monkeypatch)
+    assert window.sql_gen_tab.execute_setup_button.isEnabled() is True
+    assert window.sql_gen_tab.execute_teardown_button.isEnabled() is True
+
+
+def test_execute_setup_prompts_confirmation_and_aborts_on_no(window, tmp_path, monkeypatch):
+    _generate_setup_and_teardown(window, tmp_path, monkeypatch)
+
+    called = []
+    monkeypatch.setattr(app_module.validators, "execute_sql", lambda *a, **k: called.append(1) or "OK")
+    asked = []
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: (asked.append(a), app_module.QMessageBox.StandardButton.No)[1],
+    )
+
+    window.sql_gen_tab.on_execute_setup()
+
+    assert len(asked) == 1
+    assert called == []
+
+
+def test_execute_setup_runs_when_confirmed_and_saves_preview_first(window, tmp_path, monkeypatch):
+    _generate_setup_and_teardown(window, tmp_path, monkeypatch)
+    window.sql_gen_tab.preview_edit.setPlainText("INSERT INTO users (id) VALUES (2);")
+
+    captured = []
+    monkeypatch.setattr(
+        app_module.validators, "execute_sql",
+        lambda sql, cfg, **k: (captured.append((sql, cfg)), "OK: DBに反映しました")[1],
+    )
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.Yes,
+    )
+
+    window.sql_gen_tab.on_execute_setup()
+
+    assert _wait_for(lambda: len(captured) == 1)
+    assert captured[0] == ("INSERT INTO users (id) VALUES (2);", str(tmp_path / "config.json"))
+    # 実行前にプレビューの編集内容がファイルに保存されていること
+    assert (tmp_path / "setup.sql.generated").read_text(encoding="utf-8") == "INSERT INTO users (id) VALUES (2);"
+    assert _wait_for(lambda: "OK" in window.sql_gen_tab.preview_status_label.text())
+
+
+def test_execute_teardown_runs_when_confirmed_using_file_content(window, tmp_path, monkeypatch):
+    _generate_setup_and_teardown(window, tmp_path, monkeypatch)
+
+    captured = []
+    monkeypatch.setattr(
+        app_module.validators, "execute_sql",
+        lambda sql, cfg, **k: (captured.append((sql, cfg)), "OK: DBに反映しました")[1],
+    )
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.Yes,
+    )
+
+    window.sql_gen_tab.on_execute_teardown()
+
+    assert _wait_for(lambda: len(captured) == 1)
+    assert captured[0] == ("TRUNCATE TABLE users;", str(tmp_path / "config.json"))
+
+
+def test_execute_teardown_no_op_when_no_teardown_file(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.output_dir_field.set(str(tmp_path))
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **k: 0)  # setup/teardown ファイルは作られない
+    window.sql_gen_tab.on_run()
+    assert _wait_for(lambda: window.sql_gen_tab.panel.status_label.text() != "実行中...")
+
+    asked = []
+    monkeypatch.setattr(app_module.QMessageBox, "warning", lambda *a, **k: asked.append(a))
+    window.sql_gen_tab.on_execute_teardown()
+    assert asked == []  # teardownファイルが無いので確認ダイアログすら出ない
+
+
+def test_all_sql_buttons_disabled_while_op_running(window, tmp_path, monkeypatch):
+    import threading as _threading
+    release = _threading.Event()
+
+    _generate_setup_and_teardown(window, tmp_path, monkeypatch)
+
+    def slow_execute(sql, cfg, **k):
+        release.wait(timeout=2)
+        return "OK: DBに反映しました"
+
+    monkeypatch.setattr(app_module.validators, "execute_sql", slow_execute)
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.Yes,
+    )
+
+    window.sql_gen_tab.on_execute_setup()
+    assert _wait_for(lambda: window.sql_gen_tab.check_syntax_button.isEnabled() is False)
+    assert window.sql_gen_tab.save_preview_button.isEnabled() is False
+    assert window.sql_gen_tab.execute_teardown_button.isEnabled() is False
+
+    release.set()
+    assert _wait_for(lambda: window.sql_gen_tab.execute_setup_button.isEnabled() is True)
+
+
 def test_mapping_gen_prompts_before_overwriting_existing_output(window, captured_cmds, tmp_path, monkeypatch):
     (tmp_path / "mapping.yaml.generated").write_text("existing", encoding="utf-8")
     window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))

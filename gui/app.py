@@ -922,37 +922,62 @@ class SetupSqlGenTab(QWidget):
         self.save_preview_button.clicked.connect(self.on_save_preview)
         preview_btn_row.addWidget(self.save_preview_button)
 
-        self.check_syntax_button = QPushButton("構文を検証（DBでロールバック実行）")
+        self.check_syntax_button = QPushButton("構文を検証（ロールバックのみ・DBは変わりません）")
         self.check_syntax_button.setObjectName("secondaryButton")
         self.check_syntax_button.clicked.connect(self.on_check_syntax)
         preview_btn_row.addWidget(self.check_syntax_button)
         preview_btn_row.addStretch(1)
         layout.addLayout(preview_btn_row)
 
+        execute_row = QHBoxLayout()
+        self.execute_setup_button = QPushButton("setup.sqlを実行（DBに反映）")
+        self.execute_setup_button.setEnabled(False)
+        self.execute_setup_button.clicked.connect(self.on_execute_setup)
+        execute_row.addWidget(self.execute_setup_button)
+
+        self.execute_teardown_button = QPushButton("teardown.sqlを実行（DBに反映）")
+        self.execute_teardown_button.setObjectName("secondaryButton")
+        self.execute_teardown_button.setEnabled(False)
+        self.execute_teardown_button.clicked.connect(self.on_execute_teardown)
+        execute_row.addWidget(self.execute_teardown_button)
+        execute_row.addStretch(1)
+        layout.addLayout(execute_row)
+
         self.preview_status_label = QLabel("")
         self.preview_status_label.setWordWrap(True)
         layout.addWidget(self.preview_status_label)
 
         self._current_setup_path: "Path | None" = None
-        self._syntax_check_queue: "queue.Queue[str]" = queue.Queue()
-        self._syntax_check_timer = QTimer(self)
-        self._syntax_check_timer.timeout.connect(self._poll_syntax_check)
-        self._syntax_check_timer.start(150)
+        self._current_teardown_path: "Path | None" = None
+        self._sql_op_running = False
+        self._sql_op_queue: "queue.Queue[str]" = queue.Queue()
+        self._sql_op_timer = QTimer(self)
+        self._sql_op_timer.timeout.connect(self._poll_sql_op)
+        self._sql_op_timer.start(150)
 
         self.panel.on_finish = self._on_generated
 
     def stop(self) -> None:
-        self._syntax_check_timer.stop()
+        self._sql_op_timer.stop()
 
     def _on_generated(self, code: int, path: "Path | None") -> None:
         if code == 0 and path and Path(path).exists():
             self._current_setup_path = Path(path)
+            teardown_path = Path(path).parent / "teardown.sql.generated"
+            self._current_teardown_path = teardown_path if teardown_path.exists() else None
             self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
-            self.save_preview_button.setEnabled(True)
         else:
             self._current_setup_path = None
+            self._current_teardown_path = None
             self.preview_edit.clear()
-            self.save_preview_button.setEnabled(False)
+        self._refresh_sql_buttons()
+
+    def _refresh_sql_buttons(self) -> None:
+        running = self._sql_op_running
+        self.save_preview_button.setEnabled(not running and self._current_setup_path is not None)
+        self.check_syntax_button.setEnabled(not running)
+        self.execute_setup_button.setEnabled(not running and self._current_setup_path is not None)
+        self.execute_teardown_button.setEnabled(not running and self._current_teardown_path is not None)
 
     def on_save_preview(self) -> None:
         if not self._current_setup_path:
@@ -961,23 +986,51 @@ class SetupSqlGenTab(QWidget):
         self.preview_status_label.setText(f"保存しました: {self._current_setup_path}")
 
     def on_check_syntax(self) -> None:
-        sql_text = self.preview_edit.toPlainText()
+        self._run_sql_op(self.preview_edit.toPlainText(), validators.check_sql_syntax, "検証中...")
+
+    def on_execute_setup(self) -> None:
+        if not self._confirm_execute("setup.sql"):
+            return
+        # 実行内容とファイルの中身を一致させるため、実行前にプレビューの編集内容を保存しておく
+        if self._current_setup_path:
+            self._current_setup_path.write_text(self.preview_edit.toPlainText(), encoding="utf-8")
+        self._run_sql_op(self.preview_edit.toPlainText(), validators.execute_sql, "実行中...")
+
+    def on_execute_teardown(self) -> None:
+        if not self._current_teardown_path or not self._confirm_execute("teardown.sql"):
+            return
+        sql_text = self._current_teardown_path.read_text(encoding="utf-8")
+        self._run_sql_op(sql_text, validators.execute_sql, "実行中...")
+
+    def _confirm_execute(self, label: str) -> bool:
+        reply = QMessageBox.warning(
+            self, f"{label}の実行確認",
+            f"{label}を実際のDBに対して実行します。構文チェックと違い、変更はロールバックされず"
+            "そのまま反映されます（TRUNCATE等でデータが失われる可能性があります）。本当に実行しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _run_sql_op(self, sql_text: str, validator_fn, running_label: str) -> None:
         config_path = self.config_field.get()
-        self.check_syntax_button.setEnabled(False)
-        self.preview_status_label.setText("検証中...")
+        self._sql_op_running = True
+        self._refresh_sql_buttons()
+        self.preview_status_label.setText(running_label)
 
         def worker() -> None:
-            result = validators.check_sql_syntax(sql_text, config_path)
-            self._syntax_check_queue.put(result)
+            result = validator_fn(sql_text, config_path)
+            self._sql_op_queue.put(result)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _poll_syntax_check(self) -> None:
+    def _poll_sql_op(self) -> None:
         try:
             while True:
-                result = self._syntax_check_queue.get_nowait()
+                result = self._sql_op_queue.get_nowait()
                 self.preview_status_label.setText(result)
-                self.check_syntax_button.setEnabled(True)
+                self._sql_op_running = False
+                self._refresh_sql_buttons()
         except queue.Empty:
             pass
 
