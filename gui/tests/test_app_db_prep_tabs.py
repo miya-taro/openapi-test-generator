@@ -50,6 +50,8 @@ def window(monkeypatch):
             tab.panel.stop()
         if hasattr(tab, "connectivity_row"):
             tab.connectivity_row.stop()
+        if hasattr(tab, "stop"):
+            tab.stop()
 
 
 # ---------- MappingGenTab ----------
@@ -168,6 +170,144 @@ def test_scengen_preview_populated_on_success(window, tmp_path, monkeypatch):
     window.scenario_gen_tab.on_run()
     assert _wait_for(lambda: window.scenario_gen_tab.preview_edit.toPlainText() != "")
     assert "scenarios" in window.scenario_gen_tab.preview_edit.toPlainText()
+
+
+# ---------- 編集可能プレビュー: 保存ボタン ----------
+
+
+def test_mapping_gen_save_button_disabled_until_generated(window):
+    assert window.mapping_gen_tab.save_preview_button.isEnabled() is False
+
+
+def test_mapping_gen_save_button_writes_edited_text_back_to_file(window, tmp_path, monkeypatch):
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q, **kwargs):
+        (tmp_path / "mapping.yaml.generated").write_text("operations:\n  a: {}\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.mapping_gen_tab.on_run()
+    assert _wait_for(lambda: window.mapping_gen_tab.save_preview_button.isEnabled() is True)
+
+    window.mapping_gen_tab.preview_edit.setPlainText("operations:\n  a: {}\n  b: {}\n")
+    window.mapping_gen_tab.on_save_preview()
+
+    saved = (tmp_path / "mapping.yaml.generated").read_text(encoding="utf-8")
+    assert saved == "operations:\n  a: {}\n  b: {}\n"
+    assert "保存しました" in window.mapping_gen_tab.preview_status_label.text()
+
+
+def test_sqlgen_save_button_writes_edited_text_back_to_file(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q, **kwargs):
+        (tmp_path / "setup.sql.generated").write_text("INSERT INTO users (id) VALUES (1);\n", encoding="utf-8")
+        (tmp_path / "teardown.sql.generated").write_text("TRUNCATE TABLE users;\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.sql_gen_tab.on_run()
+    assert _wait_for(lambda: window.sql_gen_tab.save_preview_button.isEnabled() is True)
+
+    window.sql_gen_tab.preview_edit.setPlainText("INSERT INTO users (id) VALUES (2);\n")
+    window.sql_gen_tab.on_save_preview()
+
+    saved = (tmp_path / "setup.sql.generated").read_text(encoding="utf-8")
+    assert saved == "INSERT INTO users (id) VALUES (2);\n"
+
+
+def test_scengen_save_button_writes_edited_text_back_to_file(window, tmp_path, monkeypatch):
+    window.scenario_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.scenario_gen_tab.mapping_field.set(str(tmp_path / "mapping.yaml"))
+    window.scenario_gen_tab.output_dir_field.set(str(tmp_path))
+
+    def fake_run(cmd, q, **kwargs):
+        (tmp_path / "scenarios.generated.yaml").write_text("scenarios:\n  list: []\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(app_module, "run_streamed", fake_run)
+    window.scenario_gen_tab.on_run()
+    assert _wait_for(lambda: window.scenario_gen_tab.save_preview_button.isEnabled() is True)
+
+    window.scenario_gen_tab.preview_edit.setPlainText("scenarios:\n  list: []\n# edited\n")
+    window.scenario_gen_tab.on_save_preview()
+
+    saved = (tmp_path / "scenarios.generated.yaml").read_text(encoding="utf-8")
+    assert saved == "scenarios:\n  list: []\n# edited\n"
+
+
+def test_save_preview_no_op_when_nothing_generated_yet(window):
+    window.mapping_gen_tab.preview_edit.setPlainText("operations: {}")
+    window.mapping_gen_tab.on_save_preview()  # 例外にならないこと
+    assert window.mapping_gen_tab.preview_status_label.text() == ""
+
+
+# ---------- 編集可能プレビュー: ライブ検証（デバウンス） ----------
+
+
+def test_mapping_gen_preview_live_validation_updates_on_edit(window):
+    window.mapping_gen_tab.preview_edit.setPlainText("operations:\n  a: {}\n")
+    assert _wait_for(lambda: "OK" in window.mapping_gen_tab.preview_status_label.text(), timeout=2)
+
+
+def test_mapping_gen_preview_live_validation_reports_error(window):
+    window.mapping_gen_tab.preview_edit.setPlainText("foo: bar")
+    assert _wait_for(lambda: "NG" in window.mapping_gen_tab.preview_status_label.text(), timeout=2)
+
+
+def test_scengen_preview_live_validation_updates_on_edit(window):
+    text = (
+        "scenarios:\n"
+        "  - name: t\n"
+        "    request:\n"
+        "      operationId: op1\n"
+        "    response_check:\n"
+        "      expect: {}\n"
+    )
+    window.scenario_gen_tab.preview_edit.setPlainText(text)
+    assert _wait_for(lambda: "OK" in window.scenario_gen_tab.preview_status_label.text(), timeout=2)
+
+
+# ---------- setup.sql: 構文を検証（DBロールバック） ----------
+
+
+def test_sqlgen_check_syntax_button_calls_validator_with_current_text_and_config(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.preview_edit.setPlainText("INSERT INTO users (id) VALUES (1);")
+
+    captured = []
+    monkeypatch.setattr(
+        app_module.validators, "check_sql_syntax",
+        lambda sql, cfg, **k: (captured.append((sql, cfg)), "OK: 構文チェックを通過しました")[1],
+    )
+    window.sql_gen_tab.on_check_syntax()
+
+    assert _wait_for(lambda: len(captured) == 1)
+    assert captured[0] == ("INSERT INTO users (id) VALUES (1);", str(tmp_path / "config.json"))
+    assert _wait_for(lambda: "OK" in window.sql_gen_tab.preview_status_label.text())
+
+
+def test_sqlgen_check_syntax_button_disabled_while_checking(window, tmp_path, monkeypatch):
+    import threading as _threading
+    release = _threading.Event()
+
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.preview_edit.setPlainText("SELECT 1;")
+
+    def slow_check(sql, cfg, **k):
+        release.wait(timeout=2)
+        return "OK"
+
+    monkeypatch.setattr(app_module.validators, "check_sql_syntax", slow_check)
+    window.sql_gen_tab.on_check_syntax()
+    assert _wait_for(lambda: window.sql_gen_tab.check_syntax_button.isEnabled() is False)
+
+    release.set()
+    assert _wait_for(lambda: window.sql_gen_tab.check_syntax_button.isEnabled() is True)
 
 
 def test_mapping_gen_prompts_before_overwriting_existing_output(window, captured_cmds, tmp_path, monkeypatch):

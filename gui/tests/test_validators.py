@@ -146,6 +146,164 @@ def test_validate_mapping_yaml_missing_operations_key(tmp_path):
     assert result.startswith("NG")
 
 
+# --- validate_mapping_yaml_text / validate_scenarios_yaml_text ---
+
+
+def test_validate_mapping_yaml_text_empty():
+    assert validators.validate_mapping_yaml_text("") == "（空です）"
+    assert validators.validate_mapping_yaml_text("   \n") == "（空です）"
+
+
+def test_validate_mapping_yaml_text_valid():
+    result = validators.validate_mapping_yaml_text("operations:\n  createUser:\n    table: users\n")
+    assert result.startswith("OK")
+    assert "1件" in result
+
+
+def test_validate_mapping_yaml_text_invalid_yaml():
+    result = validators.validate_mapping_yaml_text("operations: [unterminated")
+    assert result.startswith("NG")
+
+
+def test_validate_mapping_yaml_text_missing_operations_key():
+    result = validators.validate_mapping_yaml_text("foo: bar")
+    assert result.startswith("NG")
+
+
+def test_validate_mapping_yaml_path_delegates_to_text_variant(tmp_path):
+    path = tmp_path / "mapping.yaml"
+    path.write_text("operations:\n  a: {}\n  b: {}\n", encoding="utf-8")
+    assert validators.validate_mapping_yaml(str(path)) == validators.validate_mapping_yaml_text(
+        path.read_text(encoding="utf-8")
+    )
+
+
+def test_validate_scenarios_yaml_text_empty():
+    assert validators.validate_scenarios_yaml_text("") == "（空です）"
+
+
+def test_validate_scenarios_yaml_text_valid():
+    text = (
+        "scenarios:\n"
+        "  - name: test\n"
+        "    request:\n"
+        "      operationId: op1\n"
+        "    response_check:\n"
+        "      expect: {}\n"
+    )
+    result = validators.validate_scenarios_yaml_text(text)
+    assert result.startswith("OK")
+    assert "1件" in result
+
+
+def test_validate_scenarios_yaml_text_invalid():
+    result = validators.validate_scenarios_yaml_text("foo: bar")
+    assert result.startswith("NG")
+
+
+# --- check_sql_syntax ---
+
+
+def test_check_sql_syntax_empty_text():
+    assert validators.check_sql_syntax("", "some/config.json") == "（空です）"
+
+
+def test_check_sql_syntax_blank_config_path():
+    result = validators.check_sql_syntax("SELECT 1;", "")
+    assert "未入力" in result
+
+
+def test_check_sql_syntax_missing_config_file(tmp_path):
+    result = validators.check_sql_syntax("SELECT 1;", str(tmp_path / "missing.json"))
+    assert result.startswith("NG")
+    assert "見つかりません" in result
+
+
+def test_check_sql_syntax_success(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql):
+            pass
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+
+    result = validators.check_sql_syntax("INSERT INTO users (id) VALUES (1);", str(path))
+    assert result.startswith("OK")
+
+
+def test_check_sql_syntax_execution_error_still_rolls_back(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    rollback_calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql):
+            raise RuntimeError("syntax error at or near \"BOGUS\"")
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def rollback(self):
+            rollback_calls.append(1)
+
+        def close(self):
+            pass
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+
+    result = validators.check_sql_syntax("BOGUS SQL;", str(path))
+    assert result.startswith("NG")
+    assert "syntax error" in result
+    assert rollback_calls == [1]  # エラー時もrollbackされていること
+
+
+def test_check_sql_syntax_connect_failure(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    import psycopg2
+
+    def fake_connect(**kwargs):
+        raise psycopg2.OperationalError("connection refused")
+
+    monkeypatch.setattr(psycopg2, "connect", fake_connect)
+
+    result = validators.check_sql_syntax("SELECT 1;", str(path))
+    assert result.startswith("NG")
+    assert "接続に失敗" in result
+
+
 # --- validate_sql_file ---
 
 

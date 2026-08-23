@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from db_scenario import load_scenarios, resolve_placeholders, resolve_db_check, ScenarioError, DBCheck
+from db_scenario import load_scenarios, parse_scenarios, resolve_placeholders, resolve_db_check, ScenarioError, DBCheck
 
 
 def _write_yaml(tmp_path, data: dict) -> Path:
@@ -28,6 +28,34 @@ POSTGRES_SCENARIO = {
         }
     ]
 }
+
+
+# ---------- parse_scenarios（テキスト直接指定版） ----------
+
+
+def test_parse_scenarios_from_text_equivalent_to_load_scenarios(tmp_path):
+    text = yaml.dump(POSTGRES_SCENARIO, allow_unicode=True)
+    from_text = parse_scenarios(text)
+    path = _write_yaml(tmp_path, POSTGRES_SCENARIO)
+    from_file = load_scenarios(path)
+    assert len(from_text) == len(from_file) == 1
+    assert from_text[0].name == from_file[0].name
+    assert from_text[0].db_check.table == from_file[0].db_check.table
+
+
+def test_parse_scenarios_invalid_yaml_raises_scenario_error():
+    with pytest.raises(ScenarioError, match="パース"):
+        parse_scenarios("scenarios: [unterminated")
+
+
+def test_parse_scenarios_missing_scenarios_key_raises():
+    with pytest.raises(ScenarioError, match="scenarios"):
+        parse_scenarios("foo: bar")
+
+
+def test_load_scenarios_missing_file_raises_scenario_error(tmp_path):
+    with pytest.raises(ScenarioError, match="読み込み"):
+        load_scenarios(tmp_path / "does_not_exist.yaml")
 
 
 # ---------- load_scenarios: 正常系 ----------

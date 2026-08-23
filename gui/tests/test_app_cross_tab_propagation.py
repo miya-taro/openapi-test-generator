@@ -35,6 +35,8 @@ def window(monkeypatch):
             tab.panel.stop()
         if hasattr(tab, "connectivity_row"):
             tab.connectivity_row.stop()
+        if hasattr(tab, "stop"):
+            tab.stop()
 
 
 def test_config_builder_save_propagates_to_all_config_consumers(window, tmp_path):

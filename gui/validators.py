@@ -103,11 +103,21 @@ def validate_scenarios_yaml(path: str, required: bool = True) -> str:
         return err
     if not path:
         return "（未入力・任意）"
+    return validate_scenarios_yaml_text(Path(path).read_text(encoding="utf-8"))
 
-    from db_scenario import load_scenarios, ScenarioError
+
+def validate_scenarios_yaml_text(text: str) -> str:
+    """parse_scenarios()と同じ検証を、ファイルではなくテキストに対して行う。
+
+    GUIの編集中プレビュー（未保存の内容）をその場で検証するために使う。
+    """
+    if not text.strip():
+        return "（空です）"
+
+    from db_scenario import parse_scenarios, ScenarioError
 
     try:
-        scenarios = load_scenarios(path)
+        scenarios = parse_scenarios(text)
     except ScenarioError as e:
         return f"NG: {e}"
     return f"OK（{len(scenarios)}件のシナリオ）"
@@ -119,9 +129,18 @@ def validate_mapping_yaml(path: str, required: bool = True) -> str:
         return err
     if not path:
         return "（未入力・任意）"
+    return validate_mapping_yaml_text(Path(path).read_text(encoding="utf-8"))
+
+
+def validate_mapping_yaml_text(text: str) -> str:
+    """generate_mapping.pyの出力（"operations"キーを持つYAML）と同じ形式かを、
+    ファイルではなくテキストに対して検証する。GUIの編集中プレビューの検証に使う。
+    """
+    if not text.strip():
+        return "（空です）"
 
     try:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        data = yaml.safe_load(text)
     except yaml.YAMLError as e:
         return f"NG: YAML解析に失敗しました: {e}"
 
@@ -131,6 +150,45 @@ def validate_mapping_yaml(path: str, required: bool = True) -> str:
     if not isinstance(operations, dict):
         return 'NG: "operations" はオブジェクトである必要があります'
     return f"OK（{len(operations)}件のoperation対応）"
+
+
+def check_sql_syntax(sql_text: str, config_path: str, timeout: int = 5) -> str:
+    """setup.sql/teardown.sqlの内容を、実際にPostgreSQLへBEGIN〜ROLLBACKで試し実行して検証する。
+
+    静的なパースだけでは検出できない実際のエラー（型不一致・制約違反等）を、DBへの変更を
+    残さずに検出できる。ネットワーク呼び出しを伴うため、GUI側は必ずバックグラウンドスレッドで呼ぶこと。
+    """
+    if not sql_text.strip():
+        return "（空です）"
+    if not config_path:
+        return "（DB接続設定が未入力のため検証できません）"
+    if not Path(config_path).exists():
+        return "NG: DB接続設定ファイルが見つかりません"
+
+    from config_loader import load_config, get_postgres_config
+
+    try:
+        data = load_config(config_path)
+        pg_config = get_postgres_config(data)
+    except (FileNotFoundError, ValueError) as e:
+        return f"NG: DB接続設定の読み込みに失敗しました: {e}"
+
+    import psycopg2
+
+    try:
+        conn = psycopg2.connect(connect_timeout=timeout, **pg_config)
+    except Exception as e:  # 接続失敗の例外種別は多岐にわたるため、境界での広い捕捉として許容する
+        return f"NG: DB接続に失敗しました: {e}"
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_text)
+    except Exception as e:  # SQL実行エラーの例外種別は多岐にわたるため、境界での広い捕捉として許容する
+        return f"NG: SQL実行エラー（ロールバック済み・DBへの変更はありません）: {e}"
+    finally:
+        conn.rollback()
+        conn.close()
+    return "OK: 構文チェックを通過しました（ロールバック済み・DBへの変更はありません）"
 
 
 def check_db_connectivity(path: str, timeout: int = 5) -> str:

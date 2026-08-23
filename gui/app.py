@@ -26,6 +26,7 @@ from widgets import PathField, TextField
 from process_runner import run_streamed, exit_code_meaning
 from progress_parser import ProgressTracker
 import validators
+from highlighters import YamlConfidenceHighlighter, SqlHighlighter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CLI_PY = REPO_ROOT / "src" / "cli.py"
@@ -771,20 +772,52 @@ class MappingGenTab(QWidget):
         )
         layout.addWidget(self.panel, stretch=1)
 
-        preview_label = QLabel("生成結果プレビュー（確信度コメントはここで確認できます）")
+        preview_label = QLabel("生成結果プレビュー（確信度コメントを確認しながら、その場で編集・保存できます）")
         layout.addWidget(preview_label)
         self.preview_edit = QPlainTextEdit()
-        self.preview_edit.setReadOnly(True)
         self.preview_edit.setFixedHeight(160)
+        self._preview_highlighter = YamlConfidenceHighlighter(self.preview_edit.document())
         layout.addWidget(self.preview_edit)
+
+        preview_btn_row = QHBoxLayout()
+        self.save_preview_button = QPushButton("保存")
+        self.save_preview_button.setObjectName("secondaryButton")
+        self.save_preview_button.setEnabled(False)
+        self.save_preview_button.clicked.connect(self.on_save_preview)
+        preview_btn_row.addWidget(self.save_preview_button)
+        preview_btn_row.addStretch(1)
+        layout.addLayout(preview_btn_row)
+
+        self.preview_status_label = QLabel("")
+        self.preview_status_label.setWordWrap(True)
+        layout.addWidget(self.preview_status_label)
+
+        self._current_output_path: "Path | None" = None
+        self._preview_validate_timer = QTimer(self)
+        self._preview_validate_timer.setSingleShot(True)
+        self._preview_validate_timer.timeout.connect(self._validate_preview)
+        self.preview_edit.textChanged.connect(lambda: self._preview_validate_timer.start(500))
 
         self.panel.on_finish = self._on_generated
 
     def _on_generated(self, code: int, path: "Path | None") -> None:
         if code == 0 and path and Path(path).exists():
+            self._current_output_path = Path(path)
             self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+            self.save_preview_button.setEnabled(True)
         else:
+            self._current_output_path = None
             self.preview_edit.clear()
+            self.save_preview_button.setEnabled(False)
+
+    def _validate_preview(self) -> None:
+        self.preview_status_label.setText(validators.validate_mapping_yaml_text(self.preview_edit.toPlainText()))
+
+    def on_save_preview(self) -> None:
+        if not self._current_output_path:
+            return
+        self._current_output_path.write_text(self.preview_edit.toPlainText(), encoding="utf-8")
+        self.preview_status_label.setText(f"保存しました: {self._current_output_path}")
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -875,20 +908,78 @@ class SetupSqlGenTab(QWidget):
         )
         layout.addWidget(self.panel, stretch=1)
 
-        preview_label = QLabel("生成結果プレビュー（setup.sql。WARNINGコメントはここで確認できます）")
+        preview_label = QLabel("生成結果プレビュー（setup.sql。WARNINGコメントの確認、編集・保存ができます）")
         layout.addWidget(preview_label)
         self.preview_edit = QPlainTextEdit()
-        self.preview_edit.setReadOnly(True)
         self.preview_edit.setFixedHeight(160)
+        self._preview_highlighter = SqlHighlighter(self.preview_edit.document())
         layout.addWidget(self.preview_edit)
+
+        preview_btn_row = QHBoxLayout()
+        self.save_preview_button = QPushButton("保存")
+        self.save_preview_button.setObjectName("secondaryButton")
+        self.save_preview_button.setEnabled(False)
+        self.save_preview_button.clicked.connect(self.on_save_preview)
+        preview_btn_row.addWidget(self.save_preview_button)
+
+        self.check_syntax_button = QPushButton("構文を検証（DBでロールバック実行）")
+        self.check_syntax_button.setObjectName("secondaryButton")
+        self.check_syntax_button.clicked.connect(self.on_check_syntax)
+        preview_btn_row.addWidget(self.check_syntax_button)
+        preview_btn_row.addStretch(1)
+        layout.addLayout(preview_btn_row)
+
+        self.preview_status_label = QLabel("")
+        self.preview_status_label.setWordWrap(True)
+        layout.addWidget(self.preview_status_label)
+
+        self._current_setup_path: "Path | None" = None
+        self._syntax_check_queue: "queue.Queue[str]" = queue.Queue()
+        self._syntax_check_timer = QTimer(self)
+        self._syntax_check_timer.timeout.connect(self._poll_syntax_check)
+        self._syntax_check_timer.start(150)
 
         self.panel.on_finish = self._on_generated
 
+    def stop(self) -> None:
+        self._syntax_check_timer.stop()
+
     def _on_generated(self, code: int, path: "Path | None") -> None:
         if code == 0 and path and Path(path).exists():
+            self._current_setup_path = Path(path)
             self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+            self.save_preview_button.setEnabled(True)
         else:
+            self._current_setup_path = None
             self.preview_edit.clear()
+            self.save_preview_button.setEnabled(False)
+
+    def on_save_preview(self) -> None:
+        if not self._current_setup_path:
+            return
+        self._current_setup_path.write_text(self.preview_edit.toPlainText(), encoding="utf-8")
+        self.preview_status_label.setText(f"保存しました: {self._current_setup_path}")
+
+    def on_check_syntax(self) -> None:
+        sql_text = self.preview_edit.toPlainText()
+        config_path = self.config_field.get()
+        self.check_syntax_button.setEnabled(False)
+        self.preview_status_label.setText("検証中...")
+
+        def worker() -> None:
+            result = validators.check_sql_syntax(sql_text, config_path)
+            self._syntax_check_queue.put(result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _poll_syntax_check(self) -> None:
+        try:
+            while True:
+                result = self._syntax_check_queue.get_nowait()
+                self.preview_status_label.setText(result)
+                self.check_syntax_button.setEnabled(True)
+        except queue.Empty:
+            pass
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -977,20 +1068,52 @@ class ScenarioGenTab(QWidget):
         )
         layout.addWidget(self.panel, stretch=1)
 
-        preview_label = QLabel("生成結果プレビュー")
+        preview_label = QLabel("生成結果プレビュー（where/columns/tags等をその場で編集・保存できます）")
         layout.addWidget(preview_label)
         self.preview_edit = QPlainTextEdit()
-        self.preview_edit.setReadOnly(True)
         self.preview_edit.setFixedHeight(160)
+        self._preview_highlighter = YamlConfidenceHighlighter(self.preview_edit.document())
         layout.addWidget(self.preview_edit)
+
+        preview_btn_row = QHBoxLayout()
+        self.save_preview_button = QPushButton("保存")
+        self.save_preview_button.setObjectName("secondaryButton")
+        self.save_preview_button.setEnabled(False)
+        self.save_preview_button.clicked.connect(self.on_save_preview)
+        preview_btn_row.addWidget(self.save_preview_button)
+        preview_btn_row.addStretch(1)
+        layout.addLayout(preview_btn_row)
+
+        self.preview_status_label = QLabel("")
+        self.preview_status_label.setWordWrap(True)
+        layout.addWidget(self.preview_status_label)
+
+        self._current_output_path: "Path | None" = None
+        self._preview_validate_timer = QTimer(self)
+        self._preview_validate_timer.setSingleShot(True)
+        self._preview_validate_timer.timeout.connect(self._validate_preview)
+        self.preview_edit.textChanged.connect(lambda: self._preview_validate_timer.start(500))
 
         self.panel.on_finish = self._on_generated
 
     def _on_generated(self, code: int, path: "Path | None") -> None:
         if code == 0 and path and Path(path).exists():
+            self._current_output_path = Path(path)
             self.preview_edit.setPlainText(Path(path).read_text(encoding="utf-8"))
+            self.save_preview_button.setEnabled(True)
         else:
+            self._current_output_path = None
             self.preview_edit.clear()
+            self.save_preview_button.setEnabled(False)
+
+    def _validate_preview(self) -> None:
+        self.preview_status_label.setText(validators.validate_scenarios_yaml_text(self.preview_edit.toPlainText()))
+
+    def on_save_preview(self) -> None:
+        if not self._current_output_path:
+            return
+        self._current_output_path.write_text(self.preview_edit.toPlainText(), encoding="utf-8")
+        self.preview_status_label.setText(f"保存しました: {self._current_output_path}")
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -1261,6 +1384,8 @@ class MainWindow(QMainWindow):
                 tab.panel.stop()
             if hasattr(tab, "connectivity_row"):
                 tab.connectivity_row.stop()
+            if hasattr(tab, "stop"):
+                tab.stop()
         super().closeEvent(event)
 
 

@@ -60,7 +60,20 @@ class DBScenario:
 def load_scenarios(yaml_path: str | Path) -> list[DBScenario]:
     path = Path(yaml_path)
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ScenarioError(f"ファイルの読み込みに失敗しました: {e}") from e
+    return parse_scenarios(text)
+
+
+def parse_scenarios(text: str) -> list[DBScenario]:
+    """YAMLテキストからシナリオ一覧を組み立てる（load_scenariosのファイル読み込み無し版）。
+
+    GUIの編集中プレビュー（未保存のテキスト）をファイルに書き出さずそのまま検証したい
+    ケースのために分離している。
+    """
+    try:
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as e:
         raise ScenarioError(f"YAML のパースに失敗しました: {e}") from e
 

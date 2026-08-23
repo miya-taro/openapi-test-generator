@@ -37,6 +37,8 @@ def window(monkeypatch):
             tab.panel.stop()
         if hasattr(tab, "connectivity_row"):
             tab.connectivity_row.stop()
+        if hasattr(tab, "stop"):
+            tab.stop()
 
 
 # ---------- ConfigBuilderTab ----------
