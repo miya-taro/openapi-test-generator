@@ -9,7 +9,7 @@ from pathlib import Path
 # 再利用するため、リポジトリルートを sys.path に追加する。
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config_loader import load_config
+from config_loader import load_config, get_postgres_config
 from excel_reader import read_excel
 from excel_writer import write_results
 from hook_runner import run_hook
@@ -83,10 +83,11 @@ def main() -> int:
         return 3
 
     # 2. config.json 読み込み（--setup / --teardown 指定時のみ）
+    # --setup/--teardown フックは psycopg2 直結（hook_runner.py）のため postgres セクションのみ使う。
     db_config: dict | None = None
     if args.config:
         try:
-            db_config = load_config(args.config)
+            db_config = get_postgres_config(load_config(args.config))
         except (FileNotFoundError, ValueError) as e:
             print(f"[ERROR] config.json の読み込みに失敗しました: {e}", file=sys.stderr)
             return 3

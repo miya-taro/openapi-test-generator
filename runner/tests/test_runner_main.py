@@ -96,7 +96,8 @@ def test_teardown_without_config_returns_4(monkeypatch, tmp_path):
 def test_setup_with_config_does_not_return_4(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     _patch_happy_path(monkeypatch)
-    monkeypatch.setattr(runner_module, "load_config", lambda path: {"host": "h"})
+    monkeypatch.setattr(runner_module, "load_config", lambda path: {"postgres": {"host": "h"}})
+    monkeypatch.setattr(runner_module, "get_postgres_config", lambda config: config["postgres"])
     monkeypatch.setattr(runner_module, "run_hook", lambda *a, **k: None)
     code = run_main(
         monkeypatch,
@@ -123,7 +124,8 @@ def test_missing_excel_file_returns_3(monkeypatch, tmp_path):
 def test_setup_and_teardown_hooks_called_with_correct_args_and_order(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     calls = _patch_happy_path(monkeypatch)
-    monkeypatch.setattr(runner_module, "load_config", lambda path: {"host": "h", "dbname": "d"})
+    monkeypatch.setattr(runner_module, "load_config", lambda path: {"postgres": {"host": "h", "dbname": "d"}})
+    monkeypatch.setattr(runner_module, "get_postgres_config", lambda config: config["postgres"])
 
     def fake_run_hook(sql_path, db_config, is_teardown=False):
         calls.append(("run_hook", sql_path, is_teardown))
@@ -151,7 +153,8 @@ def test_teardown_still_runs_when_status_check_fails(monkeypatch, tmp_path):
     # NG（ステータス不一致）が出ても teardown は必ず実行される
     excel_path, openapi_path = _write_files(tmp_path)
     calls = _patch_happy_path(monkeypatch, cases=[_case(status="200")], status=500)
-    monkeypatch.setattr(runner_module, "load_config", lambda path: {"host": "h"})
+    monkeypatch.setattr(runner_module, "load_config", lambda path: {"postgres": {"host": "h"}})
+    monkeypatch.setattr(runner_module, "get_postgres_config", lambda config: config["postgres"])
 
     def fake_run_hook(sql_path, db_config, is_teardown=False):
         calls.append(("run_hook", sql_path, is_teardown))

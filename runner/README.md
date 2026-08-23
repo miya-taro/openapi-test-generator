@@ -80,13 +80,23 @@ python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080
 
 ### config.json のフォーマット
 
+`postgres` セクションが `--setup`/`--teardown` フックで使われる。`influxdb` セクションは
+[db_scenario_runner.py](#dbシナリオによるdb検証) で InfluxDB を検証対象にする場合のみ必要。
+
 ```json
 {
-  "db": {
+  "postgres": {
     "host": "192.168.1.100",
     "port": 5432,
     "dbname": "mydb",
     "user": "testuser",
+    "password": "testpass"
+  },
+  "influxdb": {
+    "host": "192.168.1.100",
+    "port": 8086,
+    "database": "metrics",
+    "username": "testuser",
     "password": "testpass"
   }
 }
@@ -155,6 +165,84 @@ python runner.py 試験項目.xlsx openapi.json \
 
 Level 1 が NG の場合、Level 2〜4 は評価しない。
 
+---
+
+## DBシナリオによるDB検証
+
+`runner.py`（Excel の試験項目を実行するツール）とは別レイヤの、業務シナリオ観点のツール。
+「APIを呼び出した結果、DB（PostgreSQL / InfluxDB）が期待通り変化したか」をYAMLで宣言的に記述して検証する。
+
+試験データの初期化・後始末はこのツールの範囲外。上記の `--setup`/`--teardown`（TRUNCATE等）を
+使って、シナリオ実行の前後でテーブルを初期化する運用を想定している。
+
+### シナリオ定義（YAML）
+
+```yaml
+scenarios:
+  - name: ユーザー作成でusersテーブルに1行増える
+    request:
+      operationId: createUser
+      body: { name: "太郎", email: "taro@example.com" }
+    db_check:
+      engine: postgres
+      table: users
+      where: { email: "taro@example.com" }
+      expect:
+        exists: true
+        columns: { name: "太郎" }
+
+  - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
+    request:
+      operationId: updateUser
+      path_params: { id: "{{response.id}}" }
+      body: { name: "次郎" }
+    db_check:
+      engine: postgres
+      table: users
+      where: { id: "{{response.id}}" }
+      expect:
+        columns: { name: "次郎" }
+
+  - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
+    request:
+      operationId: postSensorData
+      body: { device_id: "abc123", temperature: 23.5 }
+    db_check:
+      engine: influxdb
+      measurement: sensor_data
+      tags: { device_id: "abc123" }
+      time_range: 5m
+      expect:
+        exists: true
+        fields: { temperature: 23.5 }
+```
+
+- `where`/`tags`/`columns`/`fields` の値に `{{response.xxx}}` と書くと、直前のAPIレスポンスJSONの値
+  （作成されたIDなど）に置き換わる（ネストしたパスは `{{response.user.id}}` のようにドット区切り）
+- `table`/`where`/`columns`（PostgreSQL）、`measurement`/`tags`/`fields`（InfluxDB）を指定するだけで
+  SQL/InfluxQLを書かずに検証できる。JOINや集計など複雑な検証が必要な場合のみ、PostgreSQL側で
+  `raw_sql` を直接指定するエスケープハッチがある
+- `expect.exists: false` で「行/ポイントが存在しないこと」も検証できる（削除シナリオ用）
+
+### 使用例
+
+```sh
+python db_scenario_runner.py scenarios.yaml openapi.json \
+  --base-url http://192.168.1.100:8080 \
+  --config config.json
+```
+
+`config.json` は `--setup`/`--teardown` と同じファイルを使う。`postgres` シナリオのみなら
+`influxdb` セクションは不要、逆も同様（実際に使うエンジンのセクションのみ検証される）。
+
+### 終了コード
+
+| コード | 意味 |
+|---|---|
+| 0 | 全シナリオOK |
+| 1 | 1件以上NG（該当データなし / カラム値不一致 / operationId不明 等）|
+| 3 | 実行エラー（ファイル不在 / YAML不正 / DB接続失敗 / ヘルスチェック失敗）|
+
 ## テスト
 
 ```sh
@@ -174,6 +262,13 @@ runner/
 ├── verifier.py         # Level 1〜4 検証
 ├── response_validator.py  # Level 4: レスポンスボディの JSON Schema 検証
 ├── excel_writer.py     # 結果 Excel 書き込み（P〜U 列）
+├── config_loader.py     # config.json（postgres/influxdb セクション）読み込み
+├── hook_runner.py       # --setup/--teardown SQL 実行
+├── db_scenario_runner.py  # DBシナリオ CLI エントリーポイント
+├── db_scenario.py       # DBシナリオ YAML 読み込み・プレースホルダ解決
+├── db_backends/
+│   ├── postgres_backend.py  # engine: postgres の検証
+│   └── influx_backend.py    # engine: influxdb の検証
 └── tests/
     ├── fixtures/
     │   └── sample.xlsx
