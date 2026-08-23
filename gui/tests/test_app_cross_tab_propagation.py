@@ -124,6 +124,38 @@ def test_scengen_success_propagates_to_db_tab(window, tmp_path, monkeypatch):
     assert _wait_for(lambda: window.db_tab.scenario_field.get() == expected)
 
 
+def test_openapi_path_propagates_to_all_openapi_consumers(window, tmp_path):
+    openapi_path = str(tmp_path / "openapi.json")
+
+    window.gen_tab.openapi_field.set(openapi_path)
+
+    assert window.mapping_gen_tab.openapi_field.get() == openapi_path
+    assert window.scenario_gen_tab.openapi_field.get() == openapi_path
+    assert window.db_tab.openapi_field.get() == openapi_path
+
+
+def test_openapi_path_propagates_from_any_tab_not_just_gen_tab(window, tmp_path):
+    openapi_path = str(tmp_path / "openapi.json")
+
+    window.db_tab.openapi_field.set(openapi_path)
+
+    assert window.gen_tab.openapi_field.get() == openapi_path
+    assert window.mapping_gen_tab.openapi_field.get() == openapi_path
+    assert window.scenario_gen_tab.openapi_field.get() == openapi_path
+
+
+def test_openapi_path_propagation_does_not_recurse_infinitely(window, tmp_path):
+    # 4タブが相互に配線されているため、無限再帰にならず1回で収束することを確認する
+    openapi_path = str(tmp_path / "openapi.json")
+    window.gen_tab.openapi_field.set(openapi_path)
+    # 収束後にもう一度同じ値をセットしても、全タブが同じ値のままであること（例外や無限ループが起きない）
+    window.mapping_gen_tab.openapi_field.set(openapi_path)
+
+    assert window.gen_tab.openapi_field.get() == openapi_path
+    assert window.scenario_gen_tab.openapi_field.get() == openapi_path
+    assert window.db_tab.openapi_field.get() == openapi_path
+
+
 def test_mapping_gen_preview_still_populated_after_propagation_wiring(window, tmp_path, monkeypatch):
     """_chain_on_finishで連結しても、タブ自身のプレビュー更新（元のon_finish）が失われないこと。"""
     window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))

@@ -1592,6 +1592,21 @@ class MainWindow(QMainWindow):
         self._chain_on_finish(self.sql_gen_tab.panel, propagate_setup_sql)
         self._chain_on_finish(self.scenario_gen_tab.panel, propagate_scenario)
 
+        # openapi.jsonは「テスト生成・実行」「③mapping.yaml」「⑤シナリオ雛形」「DBシナリオ」の
+        # 4タブそれぞれが個別に持っており、生成パイプラインのような一方向の流れが無いため、
+        # 上記とは別に「どれか1つを変更したら残り全部に反映する」相互同期にする。
+        openapi_tabs = (self.gen_tab, self.mapping_gen_tab, self.scenario_gen_tab, self.db_tab)
+
+        def make_openapi_propagator(source_tab):
+            def propagate(text: str) -> None:
+                for tab in openapi_tabs:
+                    if tab is not source_tab and tab.openapi_field.get() != text:
+                        tab.openapi_field.set(text)
+            return propagate
+
+        for tab in openapi_tabs:
+            tab.openapi_field.line_edit.textChanged.connect(make_openapi_propagator(tab))
+
     @staticmethod
     def _chain_on_finish(panel: "LogPanel", extra_callback) -> None:
         """panel.on_finish に既存のハンドラ（プレビュー更新等）を残したまま、追加のコールバックを連結する。"""
