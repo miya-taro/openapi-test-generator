@@ -238,6 +238,20 @@ def test_health_check_failure_returns_3(monkeypatch, tmp_path):
     assert code == 3
 
 
+def test_skip_health_check_bypasses_a_failing_health_check(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    _patch_happy_path(monkeypatch)
+    monkeypatch.setattr(
+        runner_module, "health_check",
+        lambda base_url, health_path: (_ for _ in ()).throw(AssertionError("health_check should not be called")),
+    )
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--skip-health-check"],
+    )
+    assert code == 0
+
+
 # --- openapi.json 読み込み: 警告のみで続行 ---
 
 

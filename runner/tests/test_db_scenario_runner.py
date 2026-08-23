@@ -179,6 +179,23 @@ def test_health_check_failure_returns_3(monkeypatch, tmp_path):
     assert code == 3
 
 
+def test_skip_health_check_bypasses_a_failing_health_check(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, {"scenarios": []})
+    monkeypatch.setattr(dsr_module, "check_curl_available", lambda: None)
+    monkeypatch.setattr(
+        dsr_module, "health_check",
+        lambda base_url, health_path: (_ for _ in ()).throw(AssertionError("health_check should not be called")),
+    )
+    code = run_main(
+        monkeypatch,
+        [
+            str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path),
+            "--skip-health-check",
+        ],
+    )
+    assert code == 0
+
+
 def test_zero_scenarios_returns_0(monkeypatch, tmp_path):
     scenario_path, openapi_path, config_path = _write_files(tmp_path, {"scenarios": []})
     _patch_common(monkeypatch)

@@ -74,6 +74,11 @@ QWidget#contentWrap {
     background-color: #f7f8fa;
 }
 
+QWidget#openapiHeader {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e0e3e8;
+}
+
 QLabel#introLabel {
     background-color: #eef2ff;
     color: #1e3a8a;

@@ -16,12 +16,12 @@ def test_save_then_load_round_trip(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
 
-    to_save = {**DEFAULTS, "gen_base_url": "http://example.com", "gen_openapi_path": "C:/x/openapi.json"}
+    to_save = {**DEFAULTS, "gen_base_url": "http://example.com", "shared_openapi_path": "C:/x/openapi.json"}
     save_settings(to_save)
 
     loaded = load_settings()
     assert loaded["gen_base_url"] == "http://example.com"
-    assert loaded["gen_openapi_path"] == "C:/x/openapi.json"
+    assert loaded["shared_openapi_path"] == "C:/x/openapi.json"
 
 
 def test_load_settings_merges_missing_keys_with_defaults(tmp_path, monkeypatch):
@@ -46,3 +46,26 @@ def test_load_settings_falls_back_to_defaults_on_invalid_json(tmp_path, monkeypa
 def test_save_settings_does_not_raise_when_directory_unwritable(monkeypatch):
     monkeypatch.setattr(settings_module, "SETTINGS_PATH", Path("Z:/does/not/exist/settings.json"))
     save_settings(dict(DEFAULTS))  # 例外を送出しないことのみ確認
+
+
+def test_load_settings_migrates_legacy_per_tab_openapi_path(tmp_path, monkeypatch):
+    # 過去バージョンではopenapi.jsonの欄がタブごとに独立していた。既存ユーザーの
+    # 設定ファイルに残っていれば、統合後のshared_openapi_pathへ引き継ぐ。
+    path = tmp_path / "settings.json"
+    path.write_text('{"mapgen_openapi_path": "C:/legacy/openapi.json"}', encoding="utf-8")
+    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
+
+    loaded = load_settings()
+    assert loaded["shared_openapi_path"] == "C:/legacy/openapi.json"
+
+
+def test_load_settings_does_not_overwrite_existing_shared_openapi_path(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text(
+        '{"shared_openapi_path": "C:/new/openapi.json", "gen_openapi_path": "C:/legacy/openapi.json"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
+
+    loaded = load_settings()
+    assert loaded["shared_openapi_path"] == "C:/new/openapi.json"

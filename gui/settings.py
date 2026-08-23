@@ -6,10 +6,11 @@ from pathlib import Path
 SETTINGS_PATH = Path.home() / ".openapi_test_gui_settings.json"
 
 DEFAULTS: dict[str, str | bool] = {
-    "gen_openapi_path": "",
+    "shared_openapi_path": "",
     "gen_output_dir": "",
     "gen_base_url": "",
     "gen_health_path": "/health",
+    "gen_health_check_enabled": False,
     "gen_auth_config_path": "",
     "gen_dry_run": False,
     "gen_config_path": "",
@@ -18,10 +19,10 @@ DEFAULTS: dict[str, str | bool] = {
     "gen_full_body": False,
     "gen_fail_fast": False,
     "db_scenario_path": "",
-    "db_openapi_path": "",
     "db_config_path": "",
     "db_base_url": "",
     "db_health_path": "/health",
+    "db_health_check_enabled": False,
     "db_auth_config_path": "",
     "db_dry_run": False,
     "db_report_dir": "",
@@ -43,7 +44,6 @@ DEFAULTS: dict[str, str | bool] = {
     "authb_token_path": "access_token",
     "authb_header_name": "Authorization",
     "authb_header_format": "Bearer {token}",
-    "mapgen_openapi_path": "",
     "mapgen_config_path": "",
     "mapgen_schema": "public",
     "mapgen_output_dir": "",
@@ -51,10 +51,28 @@ DEFAULTS: dict[str, str | bool] = {
     "sqlgen_schema": "public",
     "sqlgen_tables": "",
     "sqlgen_output_dir": "",
-    "scengen_openapi_path": "",
     "scengen_mapping_path": "",
     "scengen_output_dir": "",
 }
+
+
+# 過去バージョンではopenapi.jsonの入力欄がタブごとに独立していた名残。
+# 1箇所に統合した際、既存ユーザーの設定ファイルにこれらの値が残っていれば
+# shared_openapi_pathへ引き継ぐ（_migrate_shared_openapi_path参照）。
+_LEGACY_OPENAPI_PATH_KEYS = (
+    "gen_openapi_path", "mapgen_openapi_path", "scengen_openapi_path", "db_openapi_path",
+)
+
+
+def _migrate_shared_openapi_path(merged: dict) -> dict:
+    if merged.get("shared_openapi_path"):
+        return merged
+    for key in _LEGACY_OPENAPI_PATH_KEYS:
+        value = merged.get(key)
+        if value:
+            merged["shared_openapi_path"] = value
+            break
+    return merged
 
 
 def load_settings() -> dict:
@@ -62,7 +80,7 @@ def load_settings() -> dict:
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return {**DEFAULTS, **data}
+                return _migrate_shared_openapi_path({**DEFAULTS, **data})
         except (json.JSONDecodeError, OSError):
             pass
     return dict(DEFAULTS)

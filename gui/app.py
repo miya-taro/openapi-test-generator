@@ -299,16 +299,15 @@ class ConnectivityCheckRow(QWidget):
 class GenerateRunTab(QWidget):
     """openapi-test-gen で生成 → openapi-test-run で実行、を1クリックで行うタブ。"""
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
         layout = QVBoxLayout(self)
 
-        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
-        self.openapi_field.set(settings["gen_openapi_path"])
+        # openapi.jsonは全タブ共通でMainWindowが1つだけ持つ欄を共有する（自分のlayoutには足さない）。
+        self.openapi_field = openapi_field
         self.openapi_field.line_edit.textChanged.connect(self._maybe_fill_base_url_from_openapi)
-        layout.addWidget(self.openapi_field)
 
         self.output_dir_field = PathField(
             "出力先フォルダ", is_dir=True, placeholder="空欄可: openapi.jsonと同じフォルダに出力します",
@@ -322,16 +321,22 @@ class GenerateRunTab(QWidget):
         )
         layout.addWidget(self.base_url_field)
 
+        self.health_check_checkbox = QCheckBox("実行前にヘルスチェック（疎通確認）を行う")
+        self.health_check_checkbox.setChecked(bool(settings["gen_health_check_enabled"]))
+        self.health_check_checkbox.toggled.connect(self._on_health_check_toggled)
+        layout.addWidget(self.health_check_checkbox)
+
         self.health_path_field = TextField("Health Path", settings["gen_health_path"])
         layout.addWidget(self.health_path_field)
 
         health_note = QLabel(
-            "対象APIの疎通確認に使うパスです。ここが200番台を返さないと試験は1件も実行されず、"
-            "「ヘルスチェック失敗」で即座に中断します。対象APIに/healthが無い場合は、GETで200番台が"
-            "返る既存のパス（例: /、または対象APIの一覧取得系エンドポイントなど）に変更してください。"
+            "チェックすると、試験開始前にBase URL + Health PathへGETを送り、200番台が返るか"
+            "確認します（本文は見ません）。200番台以外だと試験は1件も実行されず即座に中断するため、"
+            "毎回の実行で必須にしたくない場合はチェックを外したままにしてください（既定でオフです）。"
         )
         health_note.setWordWrap(True)
         layout.addWidget(health_note)
+        self.health_path_field.setEnabled(self.health_check_checkbox.isChecked())
 
         self.auth_config_field = PathField(
             "認証設定(任意)", name_filter=JSON_FILTER,
@@ -387,6 +392,9 @@ class GenerateRunTab(QWidget):
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
 
+    def _on_health_check_toggled(self, checked: bool) -> None:
+        self.health_path_field.setEnabled(checked)
+
     def _maybe_fill_base_url_from_openapi(self) -> None:
         """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
         if self.base_url_field.get():
@@ -412,10 +420,10 @@ class GenerateRunTab(QWidget):
         ])
 
     def save_fields(self) -> None:
-        self.settings["gen_openapi_path"] = self.openapi_field.get()
         self.settings["gen_output_dir"] = self.output_dir_field.get()
         self.settings["gen_base_url"] = self.base_url_field.get()
         self.settings["gen_health_path"] = self.health_path_field.get()
+        self.settings["gen_health_check_enabled"] = self.health_check_checkbox.isChecked()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
         self.settings["gen_config_path"] = self.config_field.get()
@@ -468,6 +476,7 @@ class GenerateRunTab(QWidget):
         cases_path = output_dir / "test_cases.json"
         result_path = output_dir / "試験仕様_result.xlsx"
         health_path = self.health_path_field.get() or "/health"
+        health_check_enabled = self.health_check_checkbox.isChecked()
         auth_config_path = self.auth_config_field.get()
         dry_run = self.dry_run_checkbox.isChecked()
         full_body = self.full_body_checkbox.isChecked()
@@ -492,6 +501,8 @@ class GenerateRunTab(QWidget):
                 "--base-url", base_url, "--health-path", health_path,
                 "--output", str(result_path),
             ]
+            if not health_check_enabled:
+                run_cmd += ["--skip-health-check"]
             if auth_config_path:
                 run_cmd += ["--auth-config", auth_config_path]
             if config_path:
@@ -817,15 +828,13 @@ class AuthConfigBuilderTab(QWidget):
 class MappingGenTab(QWidget):
     """generate_mapping.py（mapping.yaml叩き台生成）を実行するタブ。"""
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
         layout = QVBoxLayout(self)
 
-        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
-        self.openapi_field.set(settings["mapgen_openapi_path"])
-        layout.addWidget(self.openapi_field)
+        self.openapi_field = openapi_field
 
         self.config_field = PathField(
             "DB接続設定", name_filter=JSON_FILTER,
@@ -921,7 +930,6 @@ class MappingGenTab(QWidget):
         ])
 
     def save_fields(self) -> None:
-        self.settings["mapgen_openapi_path"] = self.openapi_field.get()
         self.settings["mapgen_config_path"] = self.config_field.get()
         self.settings["mapgen_schema"] = self.schema_field.get()
         self.settings["mapgen_output_dir"] = self.output_dir_field.get()
@@ -1187,15 +1195,13 @@ class SetupSqlGenTab(QWidget):
 class ScenarioGenTab(QWidget):
     """generate_db_scenarios.py（シナリオYAML雛形生成）を実行するタブ。"""
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
         layout = QVBoxLayout(self)
 
-        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
-        self.openapi_field.set(settings["scengen_openapi_path"])
-        layout.addWidget(self.openapi_field)
+        self.openapi_field = openapi_field
 
         self.mapping_field = PathField("mapping.yaml", name_filter=YAML_FILTER)
         self.mapping_field.set(settings["scengen_mapping_path"])
@@ -1286,7 +1292,6 @@ class ScenarioGenTab(QWidget):
         ])
 
     def save_fields(self) -> None:
-        self.settings["scengen_openapi_path"] = self.openapi_field.get()
         self.settings["scengen_mapping_path"] = self.mapping_field.get()
         self.settings["scengen_output_dir"] = self.output_dir_field.get()
 
@@ -1320,7 +1325,7 @@ class ScenarioGenTab(QWidget):
 class DBScenarioTab(QWidget):
     """db_scenario_runner.py を実行するタブ。"""
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
@@ -1330,10 +1335,8 @@ class DBScenarioTab(QWidget):
         self.scenario_field.set(settings["db_scenario_path"])
         layout.addWidget(self.scenario_field)
 
-        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
-        self.openapi_field.set(settings["db_openapi_path"])
+        self.openapi_field = openapi_field
         self.openapi_field.line_edit.textChanged.connect(self._maybe_fill_base_url_from_openapi)
-        layout.addWidget(self.openapi_field)
 
         self.config_field = PathField(
             "DB接続設定", name_filter=JSON_FILTER,
@@ -1348,16 +1351,22 @@ class DBScenarioTab(QWidget):
         )
         layout.addWidget(self.base_url_field)
 
+        self.health_check_checkbox = QCheckBox("実行前にヘルスチェック（疎通確認）を行う")
+        self.health_check_checkbox.setChecked(bool(settings["db_health_check_enabled"]))
+        self.health_check_checkbox.toggled.connect(self._on_health_check_toggled)
+        layout.addWidget(self.health_check_checkbox)
+
         self.health_path_field = TextField("Health Path", settings["db_health_path"])
         layout.addWidget(self.health_path_field)
 
         health_note = QLabel(
-            "対象APIの疎通確認に使うパスです。ここが200番台を返さないと試験は1件も実行されず、"
-            "「ヘルスチェック失敗」で即座に中断します。対象APIに/healthが無い場合は、GETで200番台が"
-            "返る既存のパス（例: /、または対象APIの一覧取得系エンドポイントなど）に変更してください。"
+            "チェックすると、試験開始前にBase URL + Health PathへGETを送り、200番台が返るか"
+            "確認します（本文は見ません）。200番台以外だと試験は1件も実行されず即座に中断するため、"
+            "毎回の実行で必須にしたくない場合はチェックを外したままにしてください（既定でオフです）。"
         )
         health_note.setWordWrap(True)
         layout.addWidget(health_note)
+        self.health_path_field.setEnabled(self.health_check_checkbox.isChecked())
 
         self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
         self.auth_config_field.set(settings["db_auth_config_path"])
@@ -1403,6 +1412,9 @@ class DBScenarioTab(QWidget):
         if isinstance(url, str) and url:
             self.base_url_field.set(url)
 
+    def _on_health_check_toggled(self, checked: bool) -> None:
+        self.health_path_field.setEnabled(checked)
+
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("シナリオYAML", validators.validate_scenarios_yaml(self.scenario_field.get())),
@@ -1413,10 +1425,10 @@ class DBScenarioTab(QWidget):
 
     def save_fields(self) -> None:
         self.settings["db_scenario_path"] = self.scenario_field.get()
-        self.settings["db_openapi_path"] = self.openapi_field.get()
         self.settings["db_config_path"] = self.config_field.get()
         self.settings["db_base_url"] = self.base_url_field.get()
         self.settings["db_health_path"] = self.health_path_field.get()
+        self.settings["db_health_check_enabled"] = self.health_check_checkbox.isChecked()
         self.settings["db_auth_config_path"] = self.auth_config_field.get()
         self.settings["db_dry_run"] = self.dry_run_checkbox.isChecked()
         self.settings["db_report_dir"] = self.report_dir_field.get()
@@ -1434,6 +1446,7 @@ class DBScenarioTab(QWidget):
             return
 
         health_path = self.health_path_field.get() or "/health"
+        health_check_enabled = self.health_check_checkbox.isChecked()
         auth_config_path = self.auth_config_field.get()
         dry_run = self.dry_run_checkbox.isChecked()
         report_dir = self.report_dir_field.get()
@@ -1448,6 +1461,8 @@ class DBScenarioTab(QWidget):
                 *_script_cmd(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
                 "--base-url", base_url, "--config", config_path, "--health-path", health_path,
             ]
+            if not health_check_enabled:
+                cmd += ["--skip-health-check"]
             if auth_config_path:
                 cmd += ["--auth-config", auth_config_path]
             if dry_run:
@@ -1470,13 +1485,21 @@ class MainWindow(QMainWindow):
         self.settings = load_settings()
         self._build_help_menu()
 
-        self.gen_tab = GenerateRunTab(self.settings)
+        # openapi.jsonは全操作に共通するファイルであり、タブごとに別々に選び直すのは
+        # 二度手間で分かりにくい、という指摘を受けて1箇所（画面上部）に統一した。
+        self.openapi_field = PathField(
+            "openapi.json", name_filter=JSON_FILTER,
+            placeholder="試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます",
+        )
+        self.openapi_field.set(self.settings["shared_openapi_path"])
+
+        self.gen_tab = GenerateRunTab(self.settings, self.openapi_field)
         self.config_builder_tab = ConfigBuilderTab(self.settings)
         self.auth_builder_tab = AuthConfigBuilderTab(self.settings)
-        self.mapping_gen_tab = MappingGenTab(self.settings)
+        self.mapping_gen_tab = MappingGenTab(self.settings, self.openapi_field)
         self.sql_gen_tab = SetupSqlGenTab(self.settings)
-        self.scenario_gen_tab = ScenarioGenTab(self.settings)
-        self.db_tab = DBScenarioTab(self.settings)
+        self.scenario_gen_tab = ScenarioGenTab(self.settings, self.openapi_field)
+        self.db_tab = DBScenarioTab(self.settings, self.openapi_field)
 
         db_prep_tabs = QTabWidget()
         db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定")
@@ -1528,12 +1551,25 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(20, 18, 20, 18)
         content_layout.addWidget(self.nav_stack)
 
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self.nav_list)
+        body_layout.addWidget(content_wrap, stretch=1)
+
+        header = QWidget()
+        header.setObjectName("openapiHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 12, 20, 12)
+        header_layout.addWidget(self.openapi_field)
+
         container = QWidget()
-        outer = QHBoxLayout(container)
+        outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        outer.addWidget(self.nav_list)
-        outer.addWidget(content_wrap, stretch=1)
+        outer.addWidget(header)
+        outer.addWidget(body, stretch=1)
         self.setCentralWidget(container)
 
     def _build_help_menu(self) -> None:
@@ -1592,21 +1628,6 @@ class MainWindow(QMainWindow):
         self._chain_on_finish(self.sql_gen_tab.panel, propagate_setup_sql)
         self._chain_on_finish(self.scenario_gen_tab.panel, propagate_scenario)
 
-        # openapi.jsonは「テスト生成・実行」「③mapping.yaml」「⑤シナリオ雛形」「DBシナリオ」の
-        # 4タブそれぞれが個別に持っており、生成パイプラインのような一方向の流れが無いため、
-        # 上記とは別に「どれか1つを変更したら残り全部に反映する」相互同期にする。
-        openapi_tabs = (self.gen_tab, self.mapping_gen_tab, self.scenario_gen_tab, self.db_tab)
-
-        def make_openapi_propagator(source_tab):
-            def propagate(text: str) -> None:
-                for tab in openapi_tabs:
-                    if tab is not source_tab and tab.openapi_field.get() != text:
-                        tab.openapi_field.set(text)
-            return propagate
-
-        for tab in openapi_tabs:
-            tab.openapi_field.line_edit.textChanged.connect(make_openapi_propagator(tab))
-
     @staticmethod
     def _chain_on_finish(panel: "LogPanel", extra_callback) -> None:
         """panel.on_finish に既存のハンドラ（プレビュー更新等）を残したまま、追加のコールバックを連結する。"""
@@ -1634,6 +1655,7 @@ class MainWindow(QMainWindow):
 
         for tab in self._all_tabs:
             tab.save_fields()
+        self.settings["shared_openapi_path"] = self.openapi_field.get()
         save_settings(self.settings)
         for tab in self._all_tabs:
             if hasattr(tab, "panel"):

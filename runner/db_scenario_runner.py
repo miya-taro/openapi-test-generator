@@ -45,6 +45,10 @@ def main() -> int:
     parser.add_argument("--config", required=True, metavar="JSON", help="DB 接続情報の設定ファイル")
     parser.add_argument("--health-path", default="/health", help="ヘルスチェック用パス（省略時: /health）")
     parser.add_argument(
+        "--skip-health-check", action="store_true",
+        help="実行前の疎通確認（ヘルスチェック）を行わない",
+    )
+    parser.add_argument(
         "--auth-config", metavar="JSON",
         help="ログインして認証トークンを取得するための設定ファイル（固定トークンの TEST_AUTH_TOKEN の代わり）",
     )
@@ -98,7 +102,7 @@ def main() -> int:
         print(f"[ERROR] {e}", file=sys.stderr)
         return 3
 
-    if not health_check(args.base_url, args.health_path):
+    if not args.skip_health_check and not health_check(args.base_url, args.health_path):
         print(f"[ERROR] ヘルスチェック失敗: {args.base_url}{args.health_path}", file=sys.stderr)
         return 3
 

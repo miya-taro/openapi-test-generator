@@ -39,6 +39,10 @@ def main() -> int:
     parser.add_argument("--base-url", required=True, help="API サーバーのベース URL")
     parser.add_argument("--output", help="結果 Excel の出力先（省略時: {元ファイル名}_result.xlsx）")
     parser.add_argument("--health-path", default="/health", help="ヘルスチェック用パス（省略時: /health）")
+    parser.add_argument(
+        "--skip-health-check", action="store_true",
+        help="実行前の疎通確認（ヘルスチェック）を行わない",
+    )
     parser.add_argument("--fail-fast", action="store_true", help="Level 1 NG が出た時点で停止")
     parser.add_argument("--dry-run", action="store_true", help="実際の HTTP リクエストを送信しない")
     parser.add_argument("--full-body", action="store_true", help="実測ボディを切り捨てずに全文出力する")
@@ -106,8 +110,8 @@ def main() -> int:
             print(f"[ERROR] config.json の読み込みに失敗しました: {e}", file=sys.stderr)
             return 3
 
-    # 3. ヘルスチェック
-    if not health_check(args.base_url, args.health_path):
+    # 3. ヘルスチェック（--skip-health-check指定時は行わない）
+    if not args.skip_health_check and not health_check(args.base_url, args.health_path):
         print(
             f"[ERROR] ヘルスチェック失敗: {args.base_url}{args.health_path}",
             file=sys.stderr,

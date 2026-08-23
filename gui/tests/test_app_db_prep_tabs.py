@@ -95,11 +95,14 @@ def test_mapping_gen_omits_schema_flag_when_blank(window, captured_cmds, tmp_pat
     assert "--schema" not in captured_cmds[0]
 
 
-def test_mapping_gen_fields_persisted_to_settings(window, tmp_path):
+def test_mapping_gen_openapi_field_is_shared_across_tabs(window, tmp_path):
+    # openapi.jsonは全タブ共通の1つの入力欄（MainWindow.openapi_field）を参照している。
     openapi_path = str(tmp_path / "openapi.json")
     window.mapping_gen_tab.openapi_field.set(openapi_path)
-    window.mapping_gen_tab.save_fields()
-    assert window.settings["mapgen_openapi_path"] == openapi_path
+    assert window.openapi_field.get() == openapi_path
+    assert window.gen_tab.openapi_field is window.mapping_gen_tab.openapi_field
+    assert window.scenario_gen_tab.openapi_field is window.mapping_gen_tab.openapi_field
+    assert window.db_tab.openapi_field is window.mapping_gen_tab.openapi_field
 
 
 def test_mapping_gen_result_path_set_only_on_success(window, tmp_path, monkeypatch):

@@ -129,6 +129,44 @@ def test_gen_tab_dry_run_persisted_to_settings(window):
     assert window.settings["gen_dry_run"] is True
 
 
+def test_gen_tab_health_check_unchecked_by_default_adds_skip_flag(window, captured_cmds, tmp_path):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+    assert window.gen_tab.health_check_checkbox.isChecked() is False
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    assert "--skip-health-check" in captured_cmds[1]
+
+
+def test_gen_tab_health_check_checked_omits_skip_flag(window, captured_cmds, tmp_path):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+    window.gen_tab.health_check_checkbox.setChecked(True)
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    assert "--skip-health-check" not in captured_cmds[1]
+
+
+def test_gen_tab_health_path_field_disabled_until_health_check_checked(window):
+    assert window.gen_tab.health_check_checkbox.isChecked() is False
+    assert window.gen_tab.health_path_field.isEnabled() is False
+
+    window.gen_tab.health_check_checkbox.setChecked(True)
+    assert window.gen_tab.health_path_field.isEnabled() is True
+
+
+def test_gen_tab_health_check_persisted_to_settings(window):
+    window.gen_tab.health_check_checkbox.setChecked(True)
+    window.gen_tab.save_fields()
+    assert window.settings["gen_health_check_enabled"] is True
+
+
 def _fill_gen_tab_required(window, tmp_path):
     window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
     window.gen_tab.base_url_field.set("http://localhost")
@@ -371,6 +409,38 @@ def test_db_tab_dry_run_persisted_to_settings(window):
     window.db_tab.dry_run_checkbox.setChecked(True)
     window.db_tab.save_fields()
     assert window.settings["db_dry_run"] is True
+
+
+def test_db_tab_health_check_unchecked_by_default_adds_skip_flag(window, captured_cmds, tmp_path):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+    assert window.db_tab.health_check_checkbox.isChecked() is False
+
+    window.db_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+    assert "--skip-health-check" in captured_cmds[0]
+
+
+def test_db_tab_health_check_checked_omits_skip_flag(window, captured_cmds, tmp_path):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+    window.db_tab.health_check_checkbox.setChecked(True)
+
+    window.db_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+    assert "--skip-health-check" not in captured_cmds[0]
+
+
+def test_db_tab_health_check_persisted_to_settings(window):
+    window.db_tab.health_check_checkbox.setChecked(True)
+    window.db_tab.save_fields()
+    assert window.settings["db_health_check_enabled"] is True
 
 
 def test_db_tab_report_output_omitted_when_report_dir_blank(window, captured_cmds, tmp_path):
