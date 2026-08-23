@@ -6,10 +6,14 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButt
 class PathField(QWidget):
     """ファイル/フォルダ選択付きの入力欄。"""
 
-    def __init__(self, label: str, is_dir: bool = False, name_filter: str = "すべてのファイル (*.*)", parent=None):
+    def __init__(
+        self, label: str, is_dir: bool = False, name_filter: str = "すべてのファイル (*.*)",
+        for_saving: bool = False, parent=None,
+    ):
         super().__init__(parent)
         self.is_dir = is_dir
         self.name_filter = name_filter
+        self.for_saving = for_saving
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -29,6 +33,8 @@ class PathField(QWidget):
     def _browse(self) -> None:
         if self.is_dir:
             path = QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        elif self.for_saving:
+            path, _ = QFileDialog.getSaveFileName(self, "保存先を選択", filter=self.name_filter)
         else:
             path, _ = QFileDialog.getOpenFileName(self, "ファイルを選択", filter=self.name_filter)
         if path:

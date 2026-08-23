@@ -50,8 +50,9 @@ def window(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "load_settings", lambda: dict(DEFAULTS))
     w = app_module.MainWindow()
     yield w
-    w.gen_tab.panel.stop()
-    w.db_tab.panel.stop()
+    for tab in w._all_tabs:
+        if hasattr(tab, "panel"):
+            tab.panel.stop()
 
 
 # ---------- GenerateRunTab ----------
@@ -231,6 +232,16 @@ def test_gen_tab_new_fields_persisted_to_settings(window, tmp_path):
     assert window.settings["gen_fail_fast"] is True
 
 
+def test_gen_tab_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+
+    shown = []
+    monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
+    window.gen_tab.on_validate()
+    labels = [label for label, _ in shown[0]]
+    assert labels == ["openapi.json", "認証設定", "DB接続設定", "setup SQL", "teardown SQL"]
+
+
 # ---------- DBScenarioTab ----------
 
 
@@ -300,3 +311,81 @@ def test_db_tab_dry_run_persisted_to_settings(window):
     window.db_tab.dry_run_checkbox.setChecked(True)
     window.db_tab.save_fields()
     assert window.settings["db_dry_run"] is True
+
+
+def test_db_tab_report_output_omitted_when_report_dir_blank(window, captured_cmds, tmp_path):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+
+    window.db_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+    assert "--report-output" not in captured_cmds[0]
+
+
+def test_db_tab_report_output_included_when_report_dir_set(window, captured_cmds, tmp_path):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+    report_dir = tmp_path / "reports"
+    window.db_tab.report_dir_field.set(str(report_dir))
+
+    window.db_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+    cmd = captured_cmds[0]
+    assert cmd[cmd.index("--report-output") + 1] == str(report_dir / "db_scenario_result.xlsx")
+
+
+def test_db_tab_result_path_set_on_ok_and_ng_but_not_on_error(window, tmp_path, monkeypatch):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+    window.db_tab.report_dir_field.set(str(tmp_path))
+
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 1)  # 1 = 一部NG（レポート自体は出る）
+    window.db_tab.on_run()
+    assert _wait_for(lambda: window.db_tab.panel.status_label.text() != "実行中...")
+    assert window.db_tab.panel.result_path == tmp_path / "db_scenario_result.xlsx"
+
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 3)  # 3 = 実行エラー（レポートは出ない想定）
+    window.db_tab.on_run()
+    assert _wait_for(lambda: window.db_tab.panel.status_label.text() != "実行中...")
+    assert window.db_tab.panel.result_path is None
+
+
+def test_db_tab_prompts_before_overwriting_existing_report(window, captured_cmds, tmp_path, monkeypatch):
+    (tmp_path / "db_scenario_result.xlsx").write_text("existing", encoding="utf-8")
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+    window.db_tab.base_url_field.set("http://localhost")
+    window.db_tab.report_dir_field.set(str(tmp_path))
+
+    monkeypatch.setattr(
+        app_module.QMessageBox, "question",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.No,
+    )
+    window.db_tab.on_run()
+    assert captured_cmds == []
+
+
+def test_db_tab_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
+    window.db_tab.scenario_field.set(str(tmp_path / "scenarios.yaml"))
+    window.db_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.db_tab.config_field.set(str(tmp_path / "config.json"))
+
+    shown = []
+    monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
+    window.db_tab.on_validate()
+    labels = [label for label, _ in shown[0]]
+    assert labels == ["シナリオYAML", "openapi.json", "config.json", "認証設定"]
+
+
+def test_db_tab_report_dir_persisted_to_settings(window, tmp_path):
+    window.db_tab.report_dir_field.set(str(tmp_path))
+    window.db_tab.save_fields()
+    assert window.settings["db_report_dir"] == str(tmp_path)

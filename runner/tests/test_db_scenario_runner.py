@@ -225,6 +225,58 @@ def test_scenario_pass_returns_0(monkeypatch, tmp_path, capsys):
     assert "[OK]" in capsys.readouterr().out
 
 
+def test_report_output_writes_excel_with_one_row_per_scenario(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"id": 5}\n201'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    report_path = tmp_path / "report.xlsx"
+    code = run_main(
+        monkeypatch,
+        [
+            str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path),
+            "--report-output", str(report_path),
+        ],
+    )
+    assert code == 0
+    assert report_path.exists()
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(report_path))
+    ws = wb.active
+    assert ws[3][1].value == "ユーザー作成"
+    assert ws[3][2].value == "OK"
+
+
+def test_report_output_not_written_when_flag_omitted(monkeypatch, tmp_path):
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
+    _patch_common(monkeypatch)
+
+    def fake_run(cmd, **kwargs):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"id": 5}\n201'
+        return result
+
+    monkeypatch.setattr(dsr_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+    assert code == 0
+    assert not (tmp_path / "report.xlsx").exists()
+
+
 def test_scenario_fail_returns_1_and_prints_detail(monkeypatch, tmp_path, capsys):
     scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_postgres_scenario())
     _patch_common(monkeypatch)

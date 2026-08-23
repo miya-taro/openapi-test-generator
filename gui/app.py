@@ -5,23 +5,27 @@
 CLI自体はこれまで通り単独でも使用できる。
 """
 from __future__ import annotations
+import json
 import os
 import queue
 import sys
 import threading
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox,
+    QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox, QComboBox,
 )
 
 from settings import load_settings, save_settings
 from widgets import PathField, TextField
 from process_runner import run_streamed, exit_code_meaning
 from progress_parser import ProgressTracker
+import validators
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CLI_PY = REPO_ROOT / "src" / "cli.py"
@@ -38,6 +42,27 @@ YAML_FILTER = "YAML (*.yaml *.yml)"
 SQL_FILTER = "SQL (*.sql)"
 
 STATE_BY_CODE = {0: "ok", 1: "ng", 2: "warn"}
+
+
+def _confirm_overwrite(parent, paths: list[Path]) -> bool:
+    """既に存在するファイルがあれば上書き確認を出す。存在しなければ確認なしでTrue。"""
+    existing = [p for p in paths if p.exists()]
+    if not existing:
+        return True
+    names = "\n".join(f"・{p.name}" for p in existing)
+    reply = QMessageBox.question(
+        parent, "上書き確認",
+        f"以下のファイルは既に存在します。上書きしてよろしいですか？\n{names}",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return reply == QMessageBox.StandardButton.Yes
+
+
+def _show_validation(parent, title: str, checks: list[tuple[str, str]]) -> None:
+    """checks: [(表示名, 検証結果文字列), ...] をダイアログで表示する。"""
+    text = "\n".join(f"{label}: {result}" for label, result in checks)
+    QMessageBox.information(parent, title, text)
 
 
 class LogPanel(QWidget):
@@ -194,8 +219,25 @@ class GenerateRunTab(QWidget):
         self.fail_fast_checkbox.setChecked(bool(settings["gen_fail_fast"]))
         layout.addWidget(self.fail_fast_checkbox)
 
+        validate_row = QHBoxLayout()
+        self.validate_button = QPushButton("入力を確認")
+        self.validate_button.setObjectName("secondaryButton")
+        self.validate_button.clicked.connect(self.on_validate)
+        validate_row.addWidget(self.validate_button)
+        validate_row.addStretch(1)
+        layout.addLayout(validate_row)
+
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
+
+    def on_validate(self) -> None:
+        _show_validation(self, "入力の確認結果", [
+            ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
+            ("認証設定", validators.validate_auth_config(self.auth_config_field.get())),
+            ("DB接続設定", validators.validate_db_config(self.config_field.get(), required=False)),
+            ("setup SQL", validators.validate_sql_file(self.setup_field.get())),
+            ("teardown SQL", validators.validate_sql_file(self.teardown_field.get())),
+        ])
 
     def save_fields(self) -> None:
         self.settings["gen_openapi_path"] = self.openapi_field.get()
@@ -279,6 +321,296 @@ class GenerateRunTab(QWidget):
         self.panel.start(worker)
 
 
+class ConfigBuilderTab(QWidget):
+    """config.json（DB接続設定）をGUIのフォームから作成・編集するタブ。"""
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.output_path_field = PathField("保存先", name_filter=JSON_FILTER, for_saving=True)
+        self.output_path_field.set(settings["cfg_output_path"])
+        layout.addWidget(self.output_path_field)
+
+        io_row = QHBoxLayout()
+        self.load_button = QPushButton("読み込む")
+        self.load_button.setObjectName("secondaryButton")
+        self.load_button.clicked.connect(self.on_load)
+        io_row.addWidget(self.load_button)
+        io_row.addStretch(1)
+        layout.addLayout(io_row)
+
+        self.pg_checkbox = QCheckBox("PostgreSQLを使う")
+        self.pg_checkbox.setChecked(bool(settings["cfg_pg_enabled"]))
+        layout.addWidget(self.pg_checkbox)
+
+        self.pg_host = TextField("　host", settings["cfg_pg_host"])
+        layout.addWidget(self.pg_host)
+        self.pg_port = TextField("　port", settings["cfg_pg_port"])
+        layout.addWidget(self.pg_port)
+        self.pg_dbname = TextField("　dbname", settings["cfg_pg_dbname"])
+        layout.addWidget(self.pg_dbname)
+        self.pg_user = TextField("　user", settings["cfg_pg_user"])
+        layout.addWidget(self.pg_user)
+        self.pg_password = TextField("　password", "")  # パスワードは保存しない
+        layout.addWidget(self.pg_password)
+
+        self.influx_checkbox = QCheckBox("InfluxDBを使う")
+        self.influx_checkbox.setChecked(bool(settings["cfg_influx_enabled"]))
+        layout.addWidget(self.influx_checkbox)
+
+        self.influx_host = TextField("　host", settings["cfg_influx_host"])
+        layout.addWidget(self.influx_host)
+        self.influx_port = TextField("　port", settings["cfg_influx_port"])
+        layout.addWidget(self.influx_port)
+        self.influx_database = TextField("　database", settings["cfg_influx_database"])
+        layout.addWidget(self.influx_database)
+        self.influx_username = TextField("　username(任意)", settings["cfg_influx_username"])
+        layout.addWidget(self.influx_username)
+        self.influx_password = TextField("　password(任意)", "")  # パスワードは保存しない
+        layout.addWidget(self.influx_password)
+
+        save_row = QHBoxLayout()
+        self.save_button = QPushButton("保存")
+        self.save_button.clicked.connect(self.on_save)
+        save_row.addWidget(self.save_button)
+        save_row.addStretch(1)
+        layout.addLayout(save_row)
+
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        layout.addStretch(1)
+
+    def save_fields(self) -> None:
+        self.settings["cfg_output_path"] = self.output_path_field.get()
+        self.settings["cfg_pg_enabled"] = self.pg_checkbox.isChecked()
+        self.settings["cfg_pg_host"] = self.pg_host.get()
+        self.settings["cfg_pg_port"] = self.pg_port.get()
+        self.settings["cfg_pg_dbname"] = self.pg_dbname.get()
+        self.settings["cfg_pg_user"] = self.pg_user.get()
+        self.settings["cfg_influx_enabled"] = self.influx_checkbox.isChecked()
+        self.settings["cfg_influx_host"] = self.influx_host.get()
+        self.settings["cfg_influx_port"] = self.influx_port.get()
+        self.settings["cfg_influx_database"] = self.influx_database.get()
+        self.settings["cfg_influx_username"] = self.influx_username.get()
+        # パスワードは意図的に保存しない（設定ファイルへの平文保存を避けるため）
+
+    @staticmethod
+    def _parse_port(text: str, field_label: str) -> int:
+        try:
+            return int(text)
+        except ValueError:
+            raise ValueError(f"{field_label} のポート番号は数値で入力してください: {text!r}")
+
+    def _collect_config(self) -> dict:
+        data: dict = {}
+        if self.pg_checkbox.isChecked():
+            data["postgres"] = {
+                "host": self.pg_host.get(),
+                "port": self._parse_port(self.pg_port.get(), "PostgreSQL"),
+                "dbname": self.pg_dbname.get(),
+                "user": self.pg_user.get(),
+                "password": self.pg_password.get(),
+            }
+        if self.influx_checkbox.isChecked():
+            influx: dict = {
+                "host": self.influx_host.get(),
+                "port": self._parse_port(self.influx_port.get(), "InfluxDB"),
+                "database": self.influx_database.get(),
+            }
+            if self.influx_username.get():
+                influx["username"] = self.influx_username.get()
+            if self.influx_password.get():
+                influx["password"] = self.influx_password.get()
+            data["influxdb"] = influx
+        return data
+
+    def on_save(self) -> None:
+        output_path = self.output_path_field.get()
+        if not output_path:
+            QMessageBox.critical(self, "入力エラー", "保存先を指定してください")
+            return
+        if not self.pg_checkbox.isChecked() and not self.influx_checkbox.isChecked():
+            QMessageBox.critical(self, "入力エラー", "PostgreSQL/InfluxDBのいずれかは有効にしてください")
+            return
+        try:
+            data = self._collect_config()
+        except ValueError as e:
+            QMessageBox.critical(self, "入力エラー", str(e))
+            return
+
+        self.save_fields()
+        Path(output_path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        result = validators.validate_db_config(output_path)
+        self.status_label.setText(f"保存しました: {output_path}\n{result}")
+
+    def on_load(self) -> None:
+        path = self.output_path_field.get()
+        if not path or not Path(path).exists():
+            QMessageBox.critical(self, "入力エラー", "読み込むファイルが見つかりません")
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            QMessageBox.critical(self, "読み込みエラー", f"JSONの解析に失敗しました: {e}")
+            return
+
+        pg = data.get("postgres")
+        self.pg_checkbox.setChecked(bool(pg))
+        if isinstance(pg, dict):
+            self.pg_host.set(str(pg.get("host", "")))
+            self.pg_port.set(str(pg.get("port", "")))
+            self.pg_dbname.set(str(pg.get("dbname", "")))
+            self.pg_user.set(str(pg.get("user", "")))
+            self.pg_password.set(str(pg.get("password", "")))
+
+        influx = data.get("influxdb")
+        self.influx_checkbox.setChecked(bool(influx))
+        if isinstance(influx, dict):
+            self.influx_host.set(str(influx.get("host", "")))
+            self.influx_port.set(str(influx.get("port", "")))
+            self.influx_database.set(str(influx.get("database", "")))
+            self.influx_username.set(str(influx.get("username", "")))
+            self.influx_password.set(str(influx.get("password", "")))
+
+        self.status_label.setText(f"読み込みました: {path}")
+
+
+class AuthConfigBuilderTab(QWidget):
+    """auth_config.yaml（ログイン認証設定）をGUIのフォームから作成・編集するタブ。"""
+
+    _METHODS = ["POST", "GET", "PUT", "PATCH"]
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.output_path_field = PathField("保存先", name_filter=YAML_FILTER, for_saving=True)
+        self.output_path_field.set(settings["authb_output_path"])
+        layout.addWidget(self.output_path_field)
+
+        io_row = QHBoxLayout()
+        self.load_button = QPushButton("読み込む")
+        self.load_button.setObjectName("secondaryButton")
+        self.load_button.clicked.connect(self.on_load)
+        io_row.addWidget(self.load_button)
+        io_row.addStretch(1)
+        layout.addLayout(io_row)
+
+        self.login_url_field = TextField("login_url", settings["authb_login_url"])
+        layout.addWidget(self.login_url_field)
+
+        method_row = QHBoxLayout()
+        method_label = QLabel("method")
+        method_label.setFixedWidth(120)
+        method_row.addWidget(method_label)
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(self._METHODS)
+        idx = self.method_combo.findText(settings["authb_method"])
+        self.method_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        method_row.addWidget(self.method_combo, stretch=1)
+        layout.addLayout(method_row)
+
+        body_label = QLabel("body（任意, JSON形式）")
+        layout.addWidget(body_label)
+        self.body_edit = QPlainTextEdit()
+        self.body_edit.setPlainText(settings["authb_body"])
+        self.body_edit.setFixedHeight(80)
+        layout.addWidget(self.body_edit)
+
+        self.token_path_field = TextField("token_path", settings["authb_token_path"])
+        layout.addWidget(self.token_path_field)
+
+        self.header_name_field = TextField("header_name", settings["authb_header_name"])
+        layout.addWidget(self.header_name_field)
+
+        self.header_format_field = TextField("header_format", settings["authb_header_format"])
+        layout.addWidget(self.header_format_field)
+
+        save_row = QHBoxLayout()
+        self.save_button = QPushButton("保存")
+        self.save_button.clicked.connect(self.on_save)
+        save_row.addWidget(self.save_button)
+        save_row.addStretch(1)
+        layout.addLayout(save_row)
+
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        layout.addStretch(1)
+
+    def save_fields(self) -> None:
+        self.settings["authb_output_path"] = self.output_path_field.get()
+        self.settings["authb_login_url"] = self.login_url_field.get()
+        self.settings["authb_method"] = self.method_combo.currentText()
+        self.settings["authb_body"] = self.body_edit.toPlainText()
+        self.settings["authb_token_path"] = self.token_path_field.get()
+        self.settings["authb_header_name"] = self.header_name_field.get()
+        self.settings["authb_header_format"] = self.header_format_field.get()
+
+    def on_save(self) -> None:
+        output_path = self.output_path_field.get()
+        login_url = self.login_url_field.get()
+        if not output_path or not login_url:
+            QMessageBox.critical(self, "入力エラー", "保存先と login_url を入力してください")
+            return
+
+        body_text = self.body_edit.toPlainText().strip()
+        body = None
+        if body_text:
+            try:
+                body = json.loads(body_text)
+            except json.JSONDecodeError as e:
+                QMessageBox.critical(self, "入力エラー", f"body のJSON解析に失敗しました: {e}")
+                return
+
+        data: dict = {"login_url": login_url, "method": self.method_combo.currentText()}
+        if body is not None:
+            data["body"] = body
+        data["token_path"] = self.token_path_field.get() or "access_token"
+        data["header_name"] = self.header_name_field.get() or "Authorization"
+        data["header_format"] = self.header_format_field.get() or "Bearer {token}"
+
+        self.save_fields()
+        Path(output_path).write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
+        result = validators.validate_auth_config(output_path)
+        self.status_label.setText(f"保存しました: {output_path}\n{result}")
+
+    def on_load(self) -> None:
+        path = self.output_path_field.get()
+        if not path or not Path(path).exists():
+            QMessageBox.critical(self, "入力エラー", "読み込むファイルが見つかりません")
+            return
+
+        from auth_login import load_auth_config, AuthLoginError
+
+        try:
+            data = load_auth_config(path)
+        except AuthLoginError as e:
+            QMessageBox.critical(self, "読み込みエラー", str(e))
+            return
+
+        self.login_url_field.set(str(data.get("login_url", "")))
+        idx = self.method_combo.findText(str(data.get("method", "POST")).upper())
+        self.method_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        body = data.get("body")
+        self.body_edit.setPlainText(json.dumps(body, ensure_ascii=False, indent=2) if body else "")
+        self.token_path_field.set(str(data.get("token_path", "access_token")))
+        self.header_name_field.set(str(data.get("header_name", "Authorization")))
+        self.header_format_field.set(str(data.get("header_format", "Bearer {token}")))
+
+        self.status_label.setText(f"読み込みました: {path}")
+
+
 class MappingGenTab(QWidget):
     """generate_mapping.py（mapping.yaml叩き台生成）を実行するタブ。"""
 
@@ -310,11 +642,25 @@ class MappingGenTab(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        validate_row = QHBoxLayout()
+        self.validate_button = QPushButton("入力を確認")
+        self.validate_button.setObjectName("secondaryButton")
+        self.validate_button.clicked.connect(self.on_validate)
+        validate_row.addWidget(self.validate_button)
+        validate_row.addStretch(1)
+        layout.addLayout(validate_row)
+
         self.panel = LogPanel(
             "mapping.yaml生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
+
+    def on_validate(self) -> None:
+        _show_validation(self, "入力の確認結果", [
+            ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
+            ("DB接続設定", validators.validate_db_config(self.config_field.get())),
+        ])
 
     def save_fields(self) -> None:
         self.settings["mapgen_openapi_path"] = self.openapi_field.get()
@@ -333,6 +679,9 @@ class MappingGenTab(QWidget):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "mapping.yaml.generated"
         schema = self.schema_field.get()
+
+        if not _confirm_overwrite(self, [output_path]):
+            return
 
         self.save_fields()
 
@@ -379,11 +728,24 @@ class SetupSqlGenTab(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        validate_row = QHBoxLayout()
+        self.validate_button = QPushButton("入力を確認")
+        self.validate_button.setObjectName("secondaryButton")
+        self.validate_button.clicked.connect(self.on_validate)
+        validate_row.addWidget(self.validate_button)
+        validate_row.addStretch(1)
+        layout.addLayout(validate_row)
+
         self.panel = LogPanel(
             "setup.sql/teardown.sql生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
+
+    def on_validate(self) -> None:
+        _show_validation(self, "入力の確認結果", [
+            ("DB接続設定", validators.validate_db_config(self.config_field.get())),
+        ])
 
     def save_fields(self) -> None:
         self.settings["sqlgen_config_path"] = self.config_field.get()
@@ -403,6 +765,9 @@ class SetupSqlGenTab(QWidget):
         teardown_output = output_dir / "teardown.sql.generated"
         schema = self.schema_field.get()
         tables = self.tables_field.get()
+
+        if not _confirm_overwrite(self, [setup_output, teardown_output]):
+            return
 
         self.save_fields()
 
@@ -450,11 +815,25 @@ class ScenarioGenTab(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        validate_row = QHBoxLayout()
+        self.validate_button = QPushButton("入力を確認")
+        self.validate_button.setObjectName("secondaryButton")
+        self.validate_button.clicked.connect(self.on_validate)
+        validate_row.addWidget(self.validate_button)
+        validate_row.addStretch(1)
+        layout.addLayout(validate_row)
+
         self.panel = LogPanel(
             "シナリオ雛形生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
+
+    def on_validate(self) -> None:
+        _show_validation(self, "入力の確認結果", [
+            ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
+            ("mapping.yaml", validators.validate_mapping_yaml(self.mapping_field.get())),
+        ])
 
     def save_fields(self) -> None:
         self.settings["scengen_openapi_path"] = self.openapi_field.get()
@@ -471,6 +850,9 @@ class ScenarioGenTab(QWidget):
         output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "scenarios.generated.yaml"
+
+        if not _confirm_overwrite(self, [output_path]):
+            return
 
         self.save_fields()
 
@@ -520,8 +902,28 @@ class DBScenarioTab(QWidget):
         self.dry_run_checkbox.setChecked(bool(settings["db_dry_run"]))
         layout.addWidget(self.dry_run_checkbox)
 
-        self.panel = LogPanel("実行", self.on_run, show_open_result=False)
+        self.report_dir_field = PathField("レポート出力先フォルダ(任意)", is_dir=True)
+        self.report_dir_field.set(settings["db_report_dir"])
+        layout.addWidget(self.report_dir_field)
+
+        validate_row = QHBoxLayout()
+        self.validate_button = QPushButton("入力を確認")
+        self.validate_button.setObjectName("secondaryButton")
+        self.validate_button.clicked.connect(self.on_validate)
+        validate_row.addWidget(self.validate_button)
+        validate_row.addStretch(1)
+        layout.addLayout(validate_row)
+
+        self.panel = LogPanel("実行", self.on_run, open_result_label="結果Excelを開く")
         layout.addWidget(self.panel, stretch=1)
+
+    def on_validate(self) -> None:
+        _show_validation(self, "入力の確認結果", [
+            ("シナリオYAML", validators.validate_scenarios_yaml(self.scenario_field.get())),
+            ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
+            ("config.json", validators.validate_db_config(self.config_field.get())),
+            ("認証設定", validators.validate_auth_config(self.auth_config_field.get())),
+        ])
 
     def save_fields(self) -> None:
         self.settings["db_scenario_path"] = self.scenario_field.get()
@@ -531,6 +933,7 @@ class DBScenarioTab(QWidget):
         self.settings["db_health_path"] = self.health_path_field.get()
         self.settings["db_auth_config_path"] = self.auth_config_field.get()
         self.settings["db_dry_run"] = self.dry_run_checkbox.isChecked()
+        self.settings["db_report_dir"] = self.report_dir_field.get()
 
     def on_run(self) -> None:
         scenario_path = self.scenario_field.get()
@@ -547,6 +950,11 @@ class DBScenarioTab(QWidget):
         health_path = self.health_path_field.get() or "/health"
         auth_config_path = self.auth_config_field.get()
         dry_run = self.dry_run_checkbox.isChecked()
+        report_dir = self.report_dir_field.get()
+        report_path = Path(report_dir) / "db_scenario_result.xlsx" if report_dir else None
+        if report_path and not _confirm_overwrite(self, [report_path]):
+            return
+
         self.save_fields()
 
         def worker() -> None:
@@ -558,8 +966,11 @@ class DBScenarioTab(QWidget):
                 cmd += ["--auth-config", auth_config_path]
             if dry_run:
                 cmd += ["--dry-run"]
+            if report_path:
+                Path(report_dir).mkdir(parents=True, exist_ok=True)
+                cmd += ["--report-output", str(report_path)]
             code = run_streamed(cmd, self.panel.log_queue)
-            self.panel.finish(code, None)
+            self.panel.finish(code, report_path if (report_path and code in (0, 1)) else None)
 
         self.panel.start(worker)
 
@@ -574,12 +985,16 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         self.gen_tab = GenerateRunTab(self.settings)
+        self.config_builder_tab = ConfigBuilderTab(self.settings)
+        self.auth_builder_tab = AuthConfigBuilderTab(self.settings)
         self.mapping_gen_tab = MappingGenTab(self.settings)
         self.sql_gen_tab = SetupSqlGenTab(self.settings)
         self.scenario_gen_tab = ScenarioGenTab(self.settings)
         self.db_tab = DBScenarioTab(self.settings)
 
         db_prep_tabs = QTabWidget()
+        db_prep_tabs.addTab(self.config_builder_tab, "DB接続設定")
+        db_prep_tabs.addTab(self.auth_builder_tab, "認証設定")
         db_prep_tabs.addTab(self.mapping_gen_tab, "mapping.yaml")
         db_prep_tabs.addTab(self.sql_gen_tab, "setup.sql/teardown.sql")
         db_prep_tabs.addTab(self.scenario_gen_tab, "シナリオ雛形")
@@ -588,6 +1003,11 @@ class MainWindow(QMainWindow):
         tabs.addTab(db_prep_tabs, "DB準備")
         tabs.addTab(self.db_tab, "DBシナリオ")
 
+        self._all_tabs = (
+            self.gen_tab, self.config_builder_tab, self.auth_builder_tab,
+            self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab,
+        )
+
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -595,11 +1015,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qtのオーバーライド規約
-        for tab in (self.gen_tab, self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab):
+        for tab in self._all_tabs:
             tab.save_fields()
         save_settings(self.settings)
-        for tab in (self.gen_tab, self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab):
-            tab.panel.stop()
+        for tab in self._all_tabs:
+            if hasattr(tab, "panel"):
+                tab.panel.stop()
         super().closeEvent(event)
 
 

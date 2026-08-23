@@ -28,6 +28,7 @@ from config_loader import load_config, get_postgres_config, get_influxdb_config
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
 from db_backends import postgres_backend, influx_backend
 import response_check as response_check_module
+import db_scenario_report
 from http_client import check_curl_available, health_check, _resolve_auth_header
 from src.parser import parse_openapi, OpenAPIParseError
 
@@ -50,6 +51,10 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true",
         help="実際の HTTP リクエスト送信・DB接続を行わない（シナリオ/openapi/config の読み込みのみ確認）",
+    )
+    parser.add_argument(
+        "--report-output", metavar="XLSX",
+        help="シナリオ名・判定・APIステータス・詳細を一覧できるExcelレポートの出力先（任意）",
     )
     args = parser.parse_args()
 
@@ -113,6 +118,7 @@ def main() -> int:
             return 3
 
     has_fail = False
+    report_rows: list[tuple[str, bool, str, str]] = []
     # 直前のシナリオのAPIレスポンス。次のシナリオの path_params/body 内の
     # {{response.xxx}} を解決するのに使う（例: create シナリオで作ったIDを
     # 次の update/delete シナリオの path_params に引き継ぐ）。
@@ -126,6 +132,11 @@ def main() -> int:
         if not ok:
             print(f"         {detail}")
             has_fail = True
+        report_rows.append((scenario.name, ok, api_status, detail))
+
+    if args.report_output:
+        db_scenario_report.write_report(report_rows, args.report_output)
+        print(f"[INFO] レポートを {args.report_output} に出力しました")
 
     return 1 if has_fail else 0
 

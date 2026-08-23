@@ -45,8 +45,9 @@ def window(monkeypatch):
     monkeypatch.setattr(app_module, "load_settings", lambda: dict(DEFAULTS))
     w = app_module.MainWindow()
     yield w
-    for tab in (w.gen_tab, w.mapping_gen_tab, w.sql_gen_tab, w.scenario_gen_tab, w.db_tab):
-        tab.panel.stop()
+    for tab in w._all_tabs:
+        if hasattr(tab, "panel"):
+            tab.panel.stop()
 
 
 # ---------- MappingGenTab ----------
@@ -106,6 +107,112 @@ def test_mapping_gen_result_path_set_only_on_success(window, tmp_path, monkeypat
     window.mapping_gen_tab.on_run()
     assert _wait_for(lambda: window.mapping_gen_tab.panel.status_label.text() != "実行中...")
     assert window.mapping_gen_tab.panel.result_path is None
+
+
+def test_mapping_gen_prompts_before_overwriting_existing_output(window, captured_cmds, tmp_path, monkeypatch):
+    (tmp_path / "mapping.yaml.generated").write_text("existing", encoding="utf-8")
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+
+    asked = []
+    monkeypatch.setattr(
+        app_module.QMessageBox, "question",
+        lambda *a, **k: (asked.append(a), app_module.QMessageBox.StandardButton.No)[1],
+    )
+    window.mapping_gen_tab.on_run()
+    assert len(asked) == 1
+    assert captured_cmds == []  # Noを選んだので実行されない
+
+
+def test_mapping_gen_runs_when_overwrite_confirmed(window, captured_cmds, tmp_path, monkeypatch):
+    (tmp_path / "mapping.yaml.generated").write_text("existing", encoding="utf-8")
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+
+    monkeypatch.setattr(
+        app_module.QMessageBox, "question",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.Yes,
+    )
+    window.mapping_gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+
+def test_mapping_gen_no_prompt_when_output_does_not_exist(window, captured_cmds, tmp_path, monkeypatch):
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
+
+    asked = []
+    monkeypatch.setattr(app_module.QMessageBox, "question", lambda *a, **k: asked.append(a))
+    window.mapping_gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+    assert asked == []
+
+
+def test_sqlgen_prompts_before_overwriting_either_output_file(window, captured_cmds, tmp_path, monkeypatch):
+    (tmp_path / "teardown.sql.generated").write_text("existing", encoding="utf-8")  # setupは無い方
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.sql_gen_tab.output_dir_field.set(str(tmp_path))
+
+    asked = []
+    monkeypatch.setattr(
+        app_module.QMessageBox, "question",
+        lambda *a, **k: (asked.append(a), app_module.QMessageBox.StandardButton.No)[1],
+    )
+    window.sql_gen_tab.on_run()
+    assert len(asked) == 1
+    assert captured_cmds == []
+
+
+def test_scengen_prompts_before_overwriting_existing_output(window, captured_cmds, tmp_path, monkeypatch):
+    (tmp_path / "scenarios.generated.yaml").write_text("existing", encoding="utf-8")
+    window.scenario_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.scenario_gen_tab.mapping_field.set(str(tmp_path / "mapping.yaml"))
+    window.scenario_gen_tab.output_dir_field.set(str(tmp_path))
+
+    monkeypatch.setattr(
+        app_module.QMessageBox, "question",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.No,
+    )
+    window.scenario_gen_tab.on_run()
+    assert captured_cmds == []
+
+
+# ---------- 入力を確認ボタン ----------
+
+
+def test_mapping_gen_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
+    window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
+
+    shown = []
+    monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
+    window.mapping_gen_tab.on_validate()
+    assert len(shown) == 1
+    labels = [label for label, _ in shown[0]]
+    assert labels == ["openapi.json", "DB接続設定"]
+
+
+def test_sqlgen_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
+    window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
+
+    shown = []
+    monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
+    window.sql_gen_tab.on_validate()
+    assert shown[0] == [("DB接続設定", app_module.validators.validate_db_config(str(tmp_path / "config.json")))]
+
+
+def test_scengen_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
+    window.scenario_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.scenario_gen_tab.mapping_field.set(str(tmp_path / "mapping.yaml"))
+
+    shown = []
+    monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
+    window.scenario_gen_tab.on_validate()
+    labels = [label for label, _ in shown[0]]
+    assert labels == ["openapi.json", "mapping.yaml"]
 
 
 # ---------- SetupSqlGenTab ----------
