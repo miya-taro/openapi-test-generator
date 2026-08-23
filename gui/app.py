@@ -289,6 +289,14 @@ class GenerateRunTab(QWidget):
         self.health_path_field = TextField("Health Path", settings["gen_health_path"])
         layout.addWidget(self.health_path_field)
 
+        health_note = QLabel(
+            "対象APIの疎通確認に使うパスです。ここが200番台を返さないと試験は1件も実行されず、"
+            "「ヘルスチェック失敗」で即座に中断します。対象APIに/healthが無い場合は、GETで200番台が"
+            "返る既存のパス（例: /、または対象APIの一覧取得系エンドポイントなど）に変更してください。"
+        )
+        health_note.setWordWrap(True)
+        layout.addWidget(health_note)
+
         self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
@@ -353,6 +361,23 @@ class GenerateRunTab(QWidget):
         self.settings["gen_full_body"] = self.full_body_checkbox.isChecked()
         self.settings["gen_fail_fast"] = self.fail_fast_checkbox.isChecked()
 
+    def _confirm_setup_teardown(self) -> bool:
+        """setup/teardown SQLはロールバックされず実DBに即反映されるため、実行前に必ず確認する。
+
+        「DB準備」タブで生成したSQLのパスが自動連携でここに入っていることがあり、
+        本人が意識しないまま実DBへ反映されてしまう事故を防ぐための確認。
+        """
+        reply = QMessageBox.warning(
+            self, "setup/teardown SQLの実行確認",
+            "setup SQL / teardown SQL が指定されています。「生成して実行」を行うと、これらのSQLは"
+            "実行前後に実際のDBへ即座に反映されます（ロールバックされません）。"
+            "「DB準備」タブで生成したファイルが自動で入っている場合もあるため、内容をよく確認してから"
+            "続行してください。本当に実行しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
     def on_run(self) -> None:
         openapi_path = self.openapi_field.get()
         base_url = self.base_url_field.get()
@@ -370,6 +395,8 @@ class GenerateRunTab(QWidget):
             QMessageBox.critical(
                 self, "入力エラー", "setup SQL または teardown SQL を指定する場合は DB接続設定 が必要です"
             )
+            return
+        if (setup_path or teardown_path) and not self._confirm_setup_teardown():
             return
 
         output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
@@ -1232,6 +1259,14 @@ class DBScenarioTab(QWidget):
 
         self.health_path_field = TextField("Health Path", settings["db_health_path"])
         layout.addWidget(self.health_path_field)
+
+        health_note = QLabel(
+            "対象APIの疎通確認に使うパスです。ここが200番台を返さないと試験は1件も実行されず、"
+            "「ヘルスチェック失敗」で即座に中断します。対象APIに/healthが無い場合は、GETで200番台が"
+            "返る既存のパス（例: /、または対象APIの一覧取得系エンドポイントなど）に変更してください。"
+        )
+        health_note.setWordWrap(True)
+        layout.addWidget(health_note)
 
         self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
         self.auth_config_field.set(settings["db_auth_config_path"])

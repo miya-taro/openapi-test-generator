@@ -161,7 +161,7 @@ def test_gen_tab_teardown_without_config_shows_error_and_does_not_run(window, ca
     assert captured_cmds == []
 
 
-def test_gen_tab_setup_with_config_runs_and_passes_all_three_flags(window, captured_cmds, tmp_path):
+def test_gen_tab_setup_with_config_runs_and_passes_all_three_flags(window, captured_cmds, tmp_path, monkeypatch):
     _fill_gen_tab_required(window, tmp_path)
     config_path = str(tmp_path / "config.json")
     setup_path = str(tmp_path / "setup.sql")
@@ -170,6 +170,11 @@ def test_gen_tab_setup_with_config_runs_and_passes_all_three_flags(window, captu
     window.gen_tab.setup_field.set(setup_path)
     window.gen_tab.teardown_field.set(teardown_path)
 
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.Yes,
+    )
+
     window.gen_tab.on_run()
     assert _wait_for(lambda: len(captured_cmds) >= 2)
 
@@ -177,6 +182,20 @@ def test_gen_tab_setup_with_config_runs_and_passes_all_three_flags(window, captu
     assert run_cmd[run_cmd.index("--config") + 1] == config_path
     assert run_cmd[run_cmd.index("--setup") + 1] == setup_path
     assert run_cmd[run_cmd.index("--teardown") + 1] == teardown_path
+
+
+def test_gen_tab_setup_declined_at_confirmation_does_not_run(window, captured_cmds, tmp_path, monkeypatch):
+    _fill_gen_tab_required(window, tmp_path)
+    window.gen_tab.config_field.set(str(tmp_path / "config.json"))
+    window.gen_tab.setup_field.set(str(tmp_path / "setup.sql"))
+
+    monkeypatch.setattr(
+        app_module.QMessageBox, "warning",
+        lambda *a, **k: app_module.QMessageBox.StandardButton.No,
+    )
+
+    window.gen_tab.on_run()
+    assert captured_cmds == []
 
 
 def test_gen_tab_config_alone_without_setup_or_teardown_is_allowed(window, captured_cmds, tmp_path):
