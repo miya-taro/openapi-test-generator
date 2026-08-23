@@ -107,7 +107,7 @@ def test_sql_normal_comment_is_not_warning_colored():
     line = "-- 自動生成された雛形です"
     doc = _highlight(SqlHighlighter, line)
     fmt = _format_at(doc, 0, 3)
-    assert fmt["fg"] == "#6a6a6a"
+    assert fmt["fg"] == "#94a3b8"
     assert fmt["bg"] != "#c0392b"
 
 
@@ -116,7 +116,7 @@ def test_sql_keyword_is_highlighted():
     doc = _highlight(SqlHighlighter, line)
     idx = line.index("INSERT")
     fmt = _format_at(doc, 0, idx)
-    assert fmt["fg"] == "#1f5fa8"
+    assert fmt["fg"] == "#7dd3fc"
 
 
 def test_sql_string_literal_is_highlighted():
@@ -124,4 +124,4 @@ def test_sql_string_literal_is_highlighted():
     doc = _highlight(SqlHighlighter, line)
     idx = line.index("'placeholder_name'") + 1
     fmt = _format_at(doc, 0, idx)
-    assert fmt["fg"] == "#2f7d32"
+    assert fmt["fg"] == "#86efac"

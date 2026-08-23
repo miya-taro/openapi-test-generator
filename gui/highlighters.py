@@ -38,9 +38,11 @@ class YamlConfidenceHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document) -> None:
         super().__init__(document)
-        self._comment_fmt = _fmt("#6a6a6a")
-        self._key_fmt = _fmt("#1f5fa8", bold=True)
-        self._string_fmt = _fmt("#2f7d32")
+        # プレビューエディタの地の背景は#0f172a（ほぼ黒）のため、明るい背景向けの
+        # 暗い色（旧: #6a6a6a/#1f5fa8/#2f7d32）だと逆に地の文より読みにくくなる。
+        self._comment_fmt = _fmt("#94a3b8")
+        self._key_fmt = _fmt("#7dd3fc", bold=True)
+        self._string_fmt = _fmt("#86efac")
         self._high_fmt = _fmt("#1b7a1b", bold=True, background="#e2efda")
         self._medium_fmt = _fmt("#b36b00", bold=True, background="#fff2cc")
         self._low_fmt = _fmt("#c0392b", bold=True, background="#fce4d6")
@@ -82,9 +84,9 @@ class SqlHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document) -> None:
         super().__init__(document)
-        self._comment_fmt = _fmt("#6a6a6a")
-        self._string_fmt = _fmt("#2f7d32")
-        self._keyword_fmt = _fmt("#1f5fa8", bold=True)
+        self._comment_fmt = _fmt("#94a3b8")
+        self._string_fmt = _fmt("#86efac")
+        self._keyword_fmt = _fmt("#7dd3fc", bold=True)
         self._warning_fmt = _fmt("#ffffff", bold=True, background="#c0392b")
 
     def highlightBlock(self, text: str) -> None:  # noqa: N802 - Qtのオーバーライド規約

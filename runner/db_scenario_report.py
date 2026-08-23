@@ -57,5 +57,7 @@ def write_report(rows: list[tuple[str, bool, str, str]], output_path: str | Path
     for col_idx, width in enumerate(_COL_WIDTHS, start=1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
 
+    ws.freeze_panes = "A3"  # 実行日時行・ヘッダ行を固定し、シナリオ数が多くてもスクロール時に見失わないようにする
+
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(output_path))
