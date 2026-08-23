@@ -10,11 +10,13 @@ DEFAULTS: dict[str, str] = {
     "gen_output_dir": "",
     "gen_base_url": "",
     "gen_health_path": "/health",
+    "gen_auth_config_path": "",
     "db_scenario_path": "",
     "db_openapi_path": "",
     "db_config_path": "",
     "db_base_url": "",
     "db_health_path": "/health",
+    "db_auth_config_path": "",
 }
 
 

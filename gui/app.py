@@ -150,6 +150,10 @@ class GenerateRunTab(QWidget):
         self.health_path_field = TextField("Health Path", settings["gen_health_path"])
         layout.addWidget(self.health_path_field)
 
+        self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
+        self.auth_config_field.set(settings["gen_auth_config_path"])
+        layout.addWidget(self.auth_config_field)
+
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
 
@@ -158,6 +162,7 @@ class GenerateRunTab(QWidget):
         self.settings["gen_output_dir"] = self.output_dir_field.get()
         self.settings["gen_base_url"] = self.base_url_field.get()
         self.settings["gen_health_path"] = self.health_path_field.get()
+        self.settings["gen_auth_config_path"] = self.auth_config_field.get()
 
     def on_run(self) -> None:
         openapi_path = self.openapi_field.get()
@@ -175,6 +180,7 @@ class GenerateRunTab(QWidget):
         cases_path = output_dir / "test_cases.json"
         result_path = output_dir / "試験仕様_result.xlsx"
         health_path = self.health_path_field.get() or "/health"
+        auth_config_path = self.auth_config_field.get()
 
         self.save_fields()
 
@@ -195,6 +201,8 @@ class GenerateRunTab(QWidget):
                 "--base-url", base_url, "--health-path", health_path,
                 "--output", str(result_path),
             ]
+            if auth_config_path:
+                run_cmd += ["--auth-config", auth_config_path]
             code = run_streamed(run_cmd, self.panel.log_queue)
             self.panel.finish(code, result_path)
 
@@ -228,6 +236,10 @@ class DBScenarioTab(QWidget):
         self.health_path_field = TextField("Health Path", settings["db_health_path"])
         layout.addWidget(self.health_path_field)
 
+        self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
+        self.auth_config_field.set(settings["db_auth_config_path"])
+        layout.addWidget(self.auth_config_field)
+
         self.panel = LogPanel("実行", self.on_run, show_open_result=False)
         layout.addWidget(self.panel, stretch=1)
 
@@ -237,6 +249,7 @@ class DBScenarioTab(QWidget):
         self.settings["db_config_path"] = self.config_field.get()
         self.settings["db_base_url"] = self.base_url_field.get()
         self.settings["db_health_path"] = self.health_path_field.get()
+        self.settings["db_auth_config_path"] = self.auth_config_field.get()
 
     def on_run(self) -> None:
         scenario_path = self.scenario_field.get()
@@ -251,6 +264,7 @@ class DBScenarioTab(QWidget):
             return
 
         health_path = self.health_path_field.get() or "/health"
+        auth_config_path = self.auth_config_field.get()
         self.save_fields()
 
         def worker() -> None:
@@ -258,6 +272,8 @@ class DBScenarioTab(QWidget):
                 sys.executable, "-u", str(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
                 "--base-url", base_url, "--config", config_path, "--health-path", health_path,
             ]
+            if auth_config_path:
+                cmd += ["--auth-config", auth_config_path]
             code = run_streamed(cmd, self.panel.log_queue)
             self.panel.finish(code, None)
 
