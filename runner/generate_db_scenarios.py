@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import copy
 import sys
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -39,7 +40,9 @@ _HEADER_COMMENT = (
     "# db_check の table/measurement/where/columns/tags/fields は必ず確認・修正してください。\n"
     f"# {_PLACEHOLDER} となっている箇所は対応表に情報がなかった、または自動では判断できない値です。\n"
     "# update/delete 系の path_params は多くの場合、直前の作成シナリオのレスポンスから\n"
-    "# {{response.id}} で引き継ぐ想定です（シナリオの順序を調整してください）。\n\n"
+    "# {{response.id}} で引き継ぐ想定です（シナリオの順序を調整してください）。\n"
+    "# scenarios.defaults.engine が大多数のシナリオの既定値です。異なるengineのシナリオのみ\n"
+    "# db_check.engine で個別に上書きしています。\n\n"
 )
 
 
@@ -78,10 +81,31 @@ def main() -> int:
     if not scenarios:
         print("[WARN] 対応表にマッチする operationId が見つかりませんでした（0件生成）", file=sys.stderr)
 
-    body = yaml.dump({"scenarios": scenarios}, allow_unicode=True, sort_keys=False, Dumper=_NoAliasDumper)
+    default_engine = _dominant_engine(scenarios)
+    defaults: dict = {}
+    if default_engine:
+        defaults["engine"] = default_engine
+        for scenario in scenarios:
+            if scenario["db_check"].get("engine") == default_engine:
+                del scenario["db_check"]["engine"]
+
+    output = {"scenarios": {"defaults": defaults, "list": scenarios}}
+    body = yaml.dump(output, allow_unicode=True, sort_keys=False, Dumper=_NoAliasDumper)
     Path(args.output).write_text(_HEADER_COMMENT + body, encoding="utf-8")
     print(f"[INFO] {len(scenarios)} 件のシナリオ雛形を {args.output} に出力しました")
     return 0
+
+
+def _dominant_engine(scenarios: list[dict]) -> str | None:
+    """生成されたシナリオ群の中で最も多い engine を返す（同数なら postgres を優先）。
+    1件もなければ None。scenarios.defaults.engine の値として使う。"""
+    engines = [s["db_check"]["engine"] for s in scenarios if "engine" in s.get("db_check", {})]
+    if not engines:
+        return None
+    counts = Counter(engines)
+    max_count = max(counts.values())
+    candidates = [engine for engine, count in counts.items() if count == max_count]
+    return "postgres" if "postgres" in candidates else candidates[0]
 
 
 def _generate_scenarios(openapi: dict, operations_map: dict) -> list[dict]:

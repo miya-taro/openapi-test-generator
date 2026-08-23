@@ -204,6 +204,119 @@ def test_main_end_to_end(tmp_path):
     assert len(loaded) == 1
 
 
+# ---------- _dominant_engine ----------
+
+
+def test_dominant_engine_single_engine():
+    scenarios = [{"db_check": {"engine": "postgres"}}, {"db_check": {"engine": "postgres"}}]
+    assert gen_module._dominant_engine(scenarios) == "postgres"
+
+
+def test_dominant_engine_mixed_majority():
+    scenarios = [
+        {"db_check": {"engine": "postgres"}},
+        {"db_check": {"engine": "postgres"}},
+        {"db_check": {"engine": "influxdb"}},
+    ]
+    assert gen_module._dominant_engine(scenarios) == "postgres"
+
+
+def test_dominant_engine_tie_prefers_postgres():
+    scenarios = [{"db_check": {"engine": "influxdb"}}, {"db_check": {"engine": "postgres"}}]
+    assert gen_module._dominant_engine(scenarios) == "postgres"
+
+
+def test_dominant_engine_influxdb_majority():
+    scenarios = [
+        {"db_check": {"engine": "influxdb"}},
+        {"db_check": {"engine": "influxdb"}},
+        {"db_check": {"engine": "postgres"}},
+    ]
+    assert gen_module._dominant_engine(scenarios) == "influxdb"
+
+
+def test_dominant_engine_empty_list_returns_none():
+    assert gen_module._dominant_engine([]) is None
+
+
+# ---------- main(): scenarios.defaults/list 形式での出力 ----------
+
+
+def test_main_output_uses_defaults_list_structure(tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text(json.dumps(SAMPLE_OPENAPI), encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.yaml"
+    mapping_path.write_text(
+        yaml.dump({
+            "operations": {
+                "createPet": {"engine": "postgres", "table": "pets"},
+                "updatePet": {"engine": "postgres", "table": "pets"},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "out.yaml"
+    old_argv = sys.argv
+    try:
+        sys.argv = ["generate_db_scenarios.py", str(openapi_path), str(mapping_path), "-o", str(output_path)]
+        code = gen_module.main()
+    finally:
+        sys.argv = old_argv
+
+    assert code == 0
+    raw = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    assert raw["scenarios"]["defaults"] == {"engine": "postgres"}
+    scenario_list = raw["scenarios"]["list"]
+    assert len(scenario_list) == 2
+    # 全シナリオがdefaultsと同じengineなので、個別のdb_checkからは省略されている
+    assert all("engine" not in s["db_check"] for s in scenario_list)
+
+    loaded = load_scenarios(output_path)
+    assert len(loaded) == 2
+    assert all(s.db_check.engine == "postgres" for s in loaded)
+
+
+def test_main_output_keeps_explicit_engine_for_minority_engine(tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text(json.dumps(SAMPLE_OPENAPI), encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.yaml"
+    mapping_path.write_text(
+        yaml.dump({
+            "operations": {
+                "createPet": {"engine": "postgres", "table": "pets"},
+                "deletePet": {"engine": "postgres", "table": "pets"},
+                "updatePet": {"engine": "influxdb", "measurement": "pet_updates"},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "out.yaml"
+    old_argv = sys.argv
+    try:
+        sys.argv = ["generate_db_scenarios.py", str(openapi_path), str(mapping_path), "-o", str(output_path)]
+        code = gen_module.main()
+    finally:
+        sys.argv = old_argv
+
+    assert code == 0
+    raw = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    assert raw["scenarios"]["defaults"] == {"engine": "postgres"}
+    scenario_list = raw["scenarios"]["list"]
+
+    by_op = {s["request"]["operationId"]: s for s in scenario_list}
+    assert "engine" not in by_op["createPet"]["db_check"]
+    assert "engine" not in by_op["deletePet"]["db_check"]
+    assert by_op["updatePet"]["db_check"]["engine"] == "influxdb"
+
+    loaded = load_scenarios(output_path)
+    engines = {s.request.operation_id: s.db_check.engine for s in loaded}
+    assert engines == {"createPet": "postgres", "deletePet": "postgres", "updatePet": "influxdb"}
+
+
 def test_main_missing_mapping_file_returns_1(tmp_path):
     openapi_path = tmp_path / "openapi.json"
     openapi_path.write_text(json.dumps(SAMPLE_OPENAPI), encoding="utf-8")
