@@ -307,13 +307,19 @@ class GenerateRunTab(QWidget):
 
         self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
         self.openapi_field.set(settings["gen_openapi_path"])
+        self.openapi_field.line_edit.textChanged.connect(self._maybe_fill_base_url_from_openapi)
         layout.addWidget(self.openapi_field)
 
-        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field = PathField(
+            "出力先フォルダ", is_dir=True, placeholder="空欄可: openapi.jsonと同じフォルダに出力します",
+        )
         self.output_dir_field.set(settings["gen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
-        self.base_url_field = TextField("Base URL", settings["gen_base_url"])
+        self.base_url_field = TextField(
+            "Base URL", settings["gen_base_url"],
+            placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）",
+        )
         layout.addWidget(self.base_url_field)
 
         self.health_path_field = TextField("Health Path", settings["gen_health_path"])
@@ -327,19 +333,31 @@ class GenerateRunTab(QWidget):
         health_note.setWordWrap(True)
         layout.addWidget(health_note)
 
-        self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
+        self.auth_config_field = PathField(
+            "認証設定(任意)", name_filter=JSON_FILTER,
+            placeholder="ログイン認証が必要なAPIのみ。②認証設定タブで作成できます",
+        )
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
 
-        self.config_field = PathField("DB接続設定(任意)", name_filter=JSON_FILTER)
+        self.config_field = PathField(
+            "DB接続設定(任意)", name_filter=JSON_FILTER,
+            placeholder="DB検証やsetup/teardownを使う場合のみ。①DB接続設定タブで作成できます",
+        )
         self.config_field.set(settings["gen_config_path"])
         layout.addWidget(self.config_field)
 
-        self.setup_field = PathField("setup SQL(任意)", name_filter=SQL_FILTER)
+        self.setup_field = PathField(
+            "setup SQL(任意)", name_filter=SQL_FILTER,
+            placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など）",
+        )
         self.setup_field.set(settings["gen_setup_path"])
         layout.addWidget(self.setup_field)
 
-        self.teardown_field = PathField("teardown SQL(任意)", name_filter=SQL_FILTER)
+        self.teardown_field = PathField(
+            "teardown SQL(任意)", name_filter=SQL_FILTER,
+            placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど）",
+        )
         self.teardown_field.set(settings["gen_teardown_path"])
         layout.addWidget(self.teardown_field)
 
@@ -368,6 +386,21 @@ class GenerateRunTab(QWidget):
 
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
+
+    def _maybe_fill_base_url_from_openapi(self) -> None:
+        """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
+        if self.base_url_field.get():
+            return
+        path = self.openapi_field.get()
+        if not path or not Path(path).exists():
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            url = data["servers"][0]["url"]
+        except (json.JSONDecodeError, OSError, KeyError, IndexError, TypeError):
+            return
+        if isinstance(url, str) and url:
+            self.base_url_field.set(url)
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -794,14 +827,19 @@ class MappingGenTab(QWidget):
         self.openapi_field.set(settings["mapgen_openapi_path"])
         layout.addWidget(self.openapi_field)
 
-        self.config_field = PathField("DB接続設定", name_filter=JSON_FILTER)
+        self.config_field = PathField(
+            "DB接続設定", name_filter=JSON_FILTER,
+            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
+        )
         self.config_field.set(settings["mapgen_config_path"])
         layout.addWidget(self.config_field)
 
         self.schema_field = TextField("対象スキーマ", settings["mapgen_schema"])
         layout.addWidget(self.schema_field)
 
-        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field = PathField(
+            "出力先フォルダ", is_dir=True, placeholder="空欄可: openapi.jsonと同じフォルダに出力します",
+        )
         self.output_dir_field.set(settings["mapgen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
@@ -927,17 +965,25 @@ class SetupSqlGenTab(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.config_field = PathField("DB接続設定", name_filter=JSON_FILTER)
+        self.config_field = PathField(
+            "DB接続設定", name_filter=JSON_FILTER,
+            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
+        )
         self.config_field.set(settings["sqlgen_config_path"])
         layout.addWidget(self.config_field)
 
         self.schema_field = TextField("対象スキーマ", settings["sqlgen_schema"])
         layout.addWidget(self.schema_field)
 
-        self.tables_field = TextField("対象テーブル(任意, カンマ区切り)", settings["sqlgen_tables"])
+        self.tables_field = TextField(
+            "対象テーブル(任意, カンマ区切り)", settings["sqlgen_tables"],
+            placeholder="空欄可: スキーマ内の全テーブルが対象",
+        )
         layout.addWidget(self.tables_field)
 
-        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field = PathField(
+            "出力先フォルダ", is_dir=True, placeholder="空欄可: DB接続設定と同じフォルダに出力します",
+        )
         self.output_dir_field.set(settings["sqlgen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
@@ -1155,7 +1201,9 @@ class ScenarioGenTab(QWidget):
         self.mapping_field.set(settings["scengen_mapping_path"])
         layout.addWidget(self.mapping_field)
 
-        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field = PathField(
+            "出力先フォルダ", is_dir=True, placeholder="空欄可: openapi.jsonと同じフォルダに出力します",
+        )
         self.output_dir_field.set(settings["scengen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
@@ -1284,13 +1332,20 @@ class DBScenarioTab(QWidget):
 
         self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
         self.openapi_field.set(settings["db_openapi_path"])
+        self.openapi_field.line_edit.textChanged.connect(self._maybe_fill_base_url_from_openapi)
         layout.addWidget(self.openapi_field)
 
-        self.config_field = PathField("config.json", name_filter=JSON_FILTER)
+        self.config_field = PathField(
+            "DB接続設定", name_filter=JSON_FILTER,
+            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
+        )
         self.config_field.set(settings["db_config_path"])
         layout.addWidget(self.config_field)
 
-        self.base_url_field = TextField("Base URL", settings["db_base_url"])
+        self.base_url_field = TextField(
+            "Base URL", settings["db_base_url"],
+            placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）",
+        )
         layout.addWidget(self.base_url_field)
 
         self.health_path_field = TextField("Health Path", settings["db_health_path"])
@@ -1312,7 +1367,10 @@ class DBScenarioTab(QWidget):
         self.dry_run_checkbox.setChecked(bool(settings["db_dry_run"]))
         layout.addWidget(self.dry_run_checkbox)
 
-        self.report_dir_field = PathField("レポート出力先フォルダ(任意)", is_dir=True)
+        self.report_dir_field = PathField(
+            "レポート出力先フォルダ(任意)", is_dir=True,
+            placeholder="空欄可: 結果Excelレポートを出力しない場合",
+        )
         self.report_dir_field.set(settings["db_report_dir"])
         layout.addWidget(self.report_dir_field)
 
@@ -1330,11 +1388,26 @@ class DBScenarioTab(QWidget):
         self.panel = LogPanel("実行", self.on_run, open_result_label="結果Excelを開く")
         layout.addWidget(self.panel, stretch=1)
 
+    def _maybe_fill_base_url_from_openapi(self) -> None:
+        """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
+        if self.base_url_field.get():
+            return
+        path = self.openapi_field.get()
+        if not path or not Path(path).exists():
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            url = data["servers"][0]["url"]
+        except (json.JSONDecodeError, OSError, KeyError, IndexError, TypeError):
+            return
+        if isinstance(url, str) and url:
+            self.base_url_field.set(url)
+
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("シナリオYAML", validators.validate_scenarios_yaml(self.scenario_field.get())),
             ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
-            ("config.json", validators.validate_db_config(self.config_field.get())),
+            ("DB接続設定", validators.validate_db_config(self.config_field.get())),
             ("認証設定", validators.validate_auth_config(self.auth_config_field.get())),
         ])
 

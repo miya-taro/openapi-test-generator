@@ -153,6 +153,39 @@ QLineEdit:read-only {
     color: #6b7280;
 }
 
+QLineEdit::placeholder {
+    color: #9aa1ad;
+}
+
+QComboBox {
+    background: #ffffff;
+    border: 1px solid #d7dbe1;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+QComboBox:hover {
+    border: 1px solid #9aa1ad;
+}
+
+QComboBox:focus {
+    border: 1px solid #2563eb;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox QAbstractItemView {
+    background: #ffffff;
+    border: 1px solid #d7dbe1;
+    border-radius: 6px;
+    selection-background-color: #eef2ff;
+    selection-color: #2563eb;
+    outline: none;
+}
+
 QPushButton {
     background-color: #2563eb;
     color: #ffffff;

@@ -255,6 +255,43 @@ def test_gen_tab_new_fields_persisted_to_settings(window, tmp_path):
     assert window.settings["gen_fail_fast"] is True
 
 
+def test_gen_tab_base_url_autofilled_from_openapi_servers(window, tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text('{"servers": [{"url": "https://api.example.com"}]}', encoding="utf-8")
+
+    window.gen_tab.openapi_field.set(str(openapi_path))
+
+    assert window.gen_tab.base_url_field.get() == "https://api.example.com"
+
+
+def test_gen_tab_base_url_autofill_does_not_overwrite_existing_value(window, tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text('{"servers": [{"url": "https://api.example.com"}]}', encoding="utf-8")
+
+    window.gen_tab.base_url_field.set("http://localhost:8080")
+    window.gen_tab.openapi_field.set(str(openapi_path))
+
+    assert window.gen_tab.base_url_field.get() == "http://localhost:8080"
+
+
+def test_gen_tab_base_url_autofill_ignores_openapi_without_servers(window, tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text('{"paths": {}}', encoding="utf-8")
+
+    window.gen_tab.openapi_field.set(str(openapi_path))
+
+    assert window.gen_tab.base_url_field.get() == ""
+
+
+def test_gen_tab_base_url_autofill_ignores_invalid_json(window, tmp_path):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text("not json", encoding="utf-8")
+
+    window.gen_tab.openapi_field.set(str(openapi_path))
+
+    assert window.gen_tab.base_url_field.get() == ""
+
+
 def test_gen_tab_validate_button_calls_expected_validators(window, tmp_path, monkeypatch):
     window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
 
@@ -405,7 +442,7 @@ def test_db_tab_validate_button_calls_expected_validators(window, tmp_path, monk
     monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
     window.db_tab.on_validate()
     labels = [label for label, _ in shown[0]]
-    assert labels == ["シナリオYAML", "openapi.json", "config.json", "認証設定"]
+    assert labels == ["シナリオYAML", "openapi.json", "DB接続設定", "認証設定"]
 
 
 def test_db_tab_report_dir_persisted_to_settings(window, tmp_path):

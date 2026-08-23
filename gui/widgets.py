@@ -8,7 +8,7 @@ class PathField(QWidget):
 
     def __init__(
         self, label: str, is_dir: bool = False, name_filter: str = "すべてのファイル (*.*)",
-        for_saving: bool = False, parent=None,
+        for_saving: bool = False, placeholder: str = "", parent=None,
     ):
         super().__init__(parent)
         self.is_dir = is_dir
@@ -23,6 +23,8 @@ class PathField(QWidget):
         layout.addWidget(label_widget)
 
         self.line_edit = QLineEdit()
+        if placeholder:
+            self.line_edit.setPlaceholderText(placeholder)
         layout.addWidget(self.line_edit, stretch=1)
 
         browse_button = QPushButton("参照...")
@@ -50,7 +52,7 @@ class PathField(QWidget):
 class TextField(QWidget):
     """単純なテキスト入力欄。"""
 
-    def __init__(self, label: str, default: str = "", parent=None):
+    def __init__(self, label: str, default: str = "", placeholder: str = "", parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -60,6 +62,8 @@ class TextField(QWidget):
         layout.addWidget(label_widget)
 
         self.line_edit = QLineEdit(default)
+        if placeholder:
+            self.line_edit.setPlaceholderText(placeholder)
         layout.addWidget(self.line_edit, stretch=1)
 
     def get(self) -> str:
