@@ -125,9 +125,11 @@ def resolve_placeholders(value: Any, response: dict) -> Any:
 
 
 def resolve_db_check(db_check: DBCheck, response: dict) -> DBCheck:
-    """db_check 内の where/tags のプレースホルダをレスポンス値で解決した新しい DBCheck を返す。"""
+    """db_check 内の where/tags/expect(columns/fields含む) のプレースホルダを
+    レスポンス値で解決した新しい DBCheck を返す。"""
     return replace(
         db_check,
         where=resolve_placeholders(db_check.where, response) if db_check.where else db_check.where,
         tags=resolve_placeholders(db_check.tags, response) if db_check.tags else db_check.tags,
+        expect=resolve_placeholders(db_check.expect, response) if db_check.expect else db_check.expect,
     )

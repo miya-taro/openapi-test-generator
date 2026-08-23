@@ -196,3 +196,34 @@ def test_resolve_db_check_no_where_or_tags():
     resolved = resolve_db_check(check, {})
     assert resolved.where is None
     assert resolved.raw_sql == "SELECT 1"
+
+
+def test_resolve_db_check_substitutes_expect_columns():
+    # README で明言されている「columns にも {{response.xxx}} が使える」の実挙動を担保する
+    check = DBCheck(
+        engine="postgres", table="order_lines",
+        expect={"exists": True, "columns": {"order_id": "{{response.id}}", "quantity": 2}},
+    )
+    resolved = resolve_db_check(check, {"id": 42})
+    assert resolved.expect == {"exists": True, "columns": {"order_id": 42, "quantity": 2}}
+
+
+def test_resolve_db_check_substitutes_expect_fields():
+    check = DBCheck(
+        engine="influxdb", measurement="m",
+        expect={"exists": True, "fields": {"order_id": "{{response.id}}"}},
+    )
+    resolved = resolve_db_check(check, {"id": 7})
+    assert resolved.expect == {"exists": True, "fields": {"order_id": 7}}
+
+
+def test_resolve_db_check_expect_without_placeholders_unchanged():
+    check = DBCheck(engine="postgres", table="users", expect={"exists": True, "columns": {"name": "太郎"}})
+    resolved = resolve_db_check(check, {"id": 1})
+    assert resolved.expect == {"exists": True, "columns": {"name": "太郎"}}
+
+
+def test_resolve_db_check_empty_expect_stays_empty_dict():
+    check = DBCheck(engine="postgres", table="users", where={"id": "{{response.id}}"}, expect={})
+    resolved = resolve_db_check(check, {"id": 1})
+    assert resolved.expect == {}
