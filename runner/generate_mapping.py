@@ -31,7 +31,12 @@ _HEADER = (
     "# 自動生成された叩き台です（generate_mapping.py）。\n"
     "# table はフィールド名とDBカラム名の一致度から推定した「候補」であり、正しいとは限りません。\n"
     "# 確信度（高/中/低）のコメントを必ず確認し、「低」は特に人間の判断で修正してください。\n"
-    "# engine は現時点では全て postgres 前提で出力しています（influxdbは対象外）。\n\n"
+    "# engine は現時点では全て postgres 前提で出力しています（influxdbは対象外）。\n"
+    "# 【重要】外部キーで紐づく子テーブル（例: 注文とその明細行のような親子関係）は、\n"
+    "# 1 operation = 1 table 前提のこの自動推定では検出できません。生成後のシナリオYAML\n"
+    "# （generate_db_scenarios.py の出力）は子テーブル分のdb_checkが漏れているはずなので、\n"
+    "# 必要なら該当operationのtableの下に子テーブルの候補を手動で追記してください\n"
+    "# （書き方の実例は examples/mapping.yaml と examples/README.md を参照）。\n\n"
 )
 
 

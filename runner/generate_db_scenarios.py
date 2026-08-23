@@ -42,7 +42,11 @@ _HEADER_COMMENT = (
     "# update/delete 系の path_params は多くの場合、直前の作成シナリオのレスポンスから\n"
     "# {{response.id}} で引き継ぐ想定です（シナリオの順序を調整してください）。\n"
     "# scenarios.defaults.engine が大多数のシナリオの既定値です。異なるengineのシナリオのみ\n"
-    "# db_check.engine で個別に上書きしています。\n\n"
+    "# db_check.engine で個別に上書きしています。\n"
+    "# 【db_checkでは検証できないこと】db_check はAPI呼び出し後のDB変化しか見られません。\n"
+    "# 「DBに事前に仕込んだ値をGET系APIが正しく返すか」という逆方向の確認をしたい場合は、\n"
+    "# シナリオに response_check（requestと同じ階層）を使ってください（この叩き台には\n"
+    "# 出力されないため、書き方は examples/scenarios.yaml のgetOrderシナリオを参照）。\n\n"
 )
 
 

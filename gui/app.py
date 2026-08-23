@@ -16,6 +16,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox, QComboBox,
@@ -1131,7 +1132,11 @@ class ScenarioGenTab(QWidget):
 
         note = QLabel(
             "openapi.jsonとmapping.yamlから、シナリオYAML（scenarios.generated.yaml）の叩き台を"
-            "出力します。where/columns/tags等は必ず確認・修正してください。"
+            "出力します。where/columns/tags等は必ず確認・修正してください。\n"
+            "※ここで生成されるのは「API呼び出し後のDB変化」を見るdb_checkのみです。"
+            "「DBに事前に仕込んだ値をGET系APIが正しく返すか」を確認したい場合はresponse_check"
+            "（このタブでは生成されません）を手書きで追加する必要があります。詳しくはヘルプメニューの"
+            "examples/README.mdを参照してください。"
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -1361,6 +1366,7 @@ class MainWindow(QMainWindow):
         self.resize(960, 720)
 
         self.settings = load_settings()
+        self._build_help_menu()
 
         tabs = QTabWidget()
         self.gen_tab = GenerateRunTab(self.settings)
@@ -1408,6 +1414,29 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.addWidget(tabs)
         self.setCentralWidget(container)
+
+    def _build_help_menu(self) -> None:
+        """DB検証(Layer2)のDSL（response_check等）はGUIの案内文だけでは説明しきれないため、
+        リポジトリ内の詳細ドキュメントを開く導線をヘルプメニューとして用意する。"""
+        help_menu = self.menuBar().addMenu("ヘルプ")
+
+        examples_action = QAction("使い方の例（examples/README.md）を開く", self)
+        examples_action.triggered.connect(
+            lambda: self._open_doc(REPO_ROOT / "examples" / "README.md")
+        )
+        help_menu.addAction(examples_action)
+
+        runner_action = QAction("DB検証(Layer2)の詳細（runner/README.md）を開く", self)
+        runner_action.triggered.connect(
+            lambda: self._open_doc(REPO_ROOT / "runner" / "README.md")
+        )
+        help_menu.addAction(runner_action)
+
+    def _open_doc(self, path: Path) -> None:
+        if not path.exists():
+            QMessageBox.warning(self, "ファイルが見つかりません", f"{path} が見つかりませんでした。")
+            return
+        os.startfile(str(path))  # noqa: S606 - Windows専用ツールのため
 
     def _wire_cross_tab_propagation(self) -> None:
         """あるタブで生成・保存したファイルのパスを、次のステップのタブへ自動反映する。"""
