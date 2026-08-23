@@ -77,6 +77,29 @@ def test_build_guess_low_confidence_when_no_table_matches():
     assert guess["confidence"] == "低"
 
 
+def test_build_guess_downgrades_to_medium_confidence_on_near_tie():
+    # cart_itemsとorder_itemsが同一のカラム構成を持つ場合など、複数テーブルが
+    # 同点で一致する状況で「高」確信度を名乗らないこと（実際にaddOrderItemで発生した回帰）。
+    schema = {
+        "cart_items": table("cart_items", ["product_id", "quantity", "unit_price"]),
+        "order_items": table("order_items", ["product_id", "quantity", "unit_price"]),
+    }
+    scored = _score_tables(["productId", "quantity", "unitPrice"], schema)
+    guess = _build_guess({"operationId": "addOrderItem"}, scored)
+    assert guess["confidence"] == "中"
+    assert "僅差" in guess["note"]
+
+
+def test_build_guess_stays_high_confidence_when_runner_up_is_far_behind():
+    schema = {
+        "orders": table("orders", ["status", "total"]),
+        "order_lines": table("order_lines", ["status"]),
+    }
+    scored = _score_tables(["status", "total"], schema)
+    guess = _build_guess({"operationId": "createOrder"}, scored)
+    assert guess["confidence"] == "高"
+
+
 def test_build_guess_includes_runner_up_when_present():
     schema = {
         "orders": table("orders", ["status", "total"]),

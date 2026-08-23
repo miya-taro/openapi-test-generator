@@ -177,7 +177,10 @@ def _placeholder_value(col: ColumnInfo, check: "CheckConstraintInfo | None") -> 
     if dt == "boolean":
         return "true"
     if dt in _TEXT_TYPES:
-        return _sql_string(f"placeholder_{col.name}")
+        text = f"placeholder_{col.name}"
+        if col.character_maximum_length is not None:
+            text = text[: col.character_maximum_length]
+        return _sql_string(text)
     if dt == "date":
         return "CURRENT_DATE"
     if dt in ("timestamp without time zone", "timestamp with time zone"):

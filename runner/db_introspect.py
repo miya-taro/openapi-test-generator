@@ -27,6 +27,7 @@ class ColumnInfo:
     is_nullable: bool
     column_default: str | None
     enum_values: list[str] | None = None
+    character_maximum_length: int | None = None
 
     @property
     def is_auto_generated(self) -> bool:
@@ -124,7 +125,7 @@ def _load_table(cur, schema: str, name: str) -> TableInfo:
 
 def _load_columns(cur, schema: str, name: str) -> list[ColumnInfo]:
     cur.execute(
-        "SELECT column_name, data_type, udt_name, is_nullable, column_default "
+        "SELECT column_name, data_type, udt_name, is_nullable, column_default, character_maximum_length "
         "FROM information_schema.columns "
         "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
         (schema, name),
@@ -142,6 +143,7 @@ def _load_columns(cur, schema: str, name: str) -> list[ColumnInfo]:
                 is_nullable=row["is_nullable"] == "YES",
                 column_default=row["column_default"],
                 enum_values=enum_values,
+                character_maximum_length=row["character_maximum_length"],
             )
         )
     return columns

@@ -84,6 +84,21 @@ def test_placeholder_text_uses_column_name():
     assert _placeholder_value(col("name", "character varying"), None) == "'placeholder_name'"
 
 
+def test_placeholder_text_truncated_to_character_maximum_length():
+    c = ColumnInfo(
+        name="postal_code", data_type="character varying", udt_name="varchar",
+        is_nullable=False, column_default=None, character_maximum_length=10,
+    )
+    value = _placeholder_value(c, None)
+    assert value == "'placeholde'"  # "placeholder_postal_code" -> 先頭10文字に切り詰め
+    assert len(value) - 2 <= 10  # クォート2文字を除いた本体が上限以内
+
+
+def test_placeholder_text_no_truncation_when_length_unset():
+    c = col("description", "text")  # text型はcharacter_maximum_length無し
+    assert _placeholder_value(c, None) == "'placeholder_description'"
+
+
 def test_placeholder_escapes_single_quote_in_column_name():
     assert _sql_string("it's") == "'it''s'"
 

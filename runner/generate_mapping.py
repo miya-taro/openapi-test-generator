@@ -25,6 +25,7 @@ _MUTATING_METHODS = ("post", "put", "patch", "delete")
 _FUZZY_THRESHOLD = 0.75
 _EXACT_SCORE = 1.0
 _FUZZY_SCORE = 0.6
+_TIE_MARGIN = 0.05  # 次点候補とのスコア差がこれ未満なら「高」確信度を名乗らない
 
 _HEADER = (
     "# 自動生成された叩き台です（generate_mapping.py）。\n"
@@ -243,7 +244,13 @@ def _build_guess(op: dict, scored: list[TableScore]) -> dict:
     runner_up = None
     if len(scored) > 1 and scored[1].score > 0.0:
         ru = scored[1]
-        runner_up = f"{ru.table}（一致 {ru.matched}/{ru.total_fields}）"
+        runner_up = f"{ru.table}（一致 {ru.matched}/{ru.total_fields}, スコア{ru.score:.2f}）"
+        # 次点候補とスコアが僅差の場合、テーブル名を一意に決められていないということなので、
+        # 個々のフィールド一致度が高くても「高」確信度は名乗らない（複数テーブルが同じ列名を
+        # 持つ場合、例えばcart_itemsとorder_itemsが同一のカラム構成を持つ場合に発生する）。
+        if confidence == "高" and (best.score - ru.score) < _TIE_MARGIN:
+            confidence = "中"
+            note += " / 次点候補と僅差のためテーブルを一意に決められません"
 
     return {
         "operationId": op["operationId"],
