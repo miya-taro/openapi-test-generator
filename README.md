@@ -56,6 +56,19 @@ python gui/app.py
 内部では既存のCLIツール（`src/cli.py` / `runner/runner.py` / `runner/db_scenario_runner.py`）を
 そのままサブプロセスとして呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。
 
+### exe化して配布する
+
+Python未インストールの環境でも使えるよう、単体exeとしてビルドできる。
+
+```sh
+pip install pyinstaller
+python -m PyInstaller gui/openapi-test-tool.spec --noconfirm
+```
+
+（`gui/ビルド.bat` をダブルクリックしても同じ）。`dist/openapi-test-tool/` フォルダ一式ができるので、
+`openapi-test-tool.exe` を含むフォルダごと配布する（exeファイル単体ではなく、フォルダ単位で
+配布する必要がある）。
+
 ---
 
 ## 使用前に用意するファイル

@@ -11,6 +11,10 @@ __pycache__/
 # Build output (run `pnpm build` to regenerate)
 dist/
 
+# PyInstallerビルド出力（gui/openapi-test-tool.spec から再生成する）
+build/
+dist_pyinstaller/
+
 # Environment & secrets
 .env
 .env.*

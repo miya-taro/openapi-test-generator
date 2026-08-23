@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import runpy
 import sys
 import threading
 from pathlib import Path
@@ -15,11 +16,12 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox, QComboBox,
+    QListWidget, QListWidgetItem, QStackedWidget, QSplashScreen,
 )
 
 from settings import load_settings, save_settings
@@ -29,13 +31,40 @@ from progress_parser import ProgressTracker
 import validators
 from highlighters import YamlConfidenceHighlighter, SqlHighlighter
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# PyInstallerでexe化した場合、__file__基準のパスはexe内の一時展開先になってしまうため、
+# sys._MEIPASS（onefile/onedirどちらでもPyInstallerが設定する、バンドル同梱データの実体パス）
+# を使う。通常のpython実行時は今まで通り__file__基準。
+if getattr(sys, "frozen", False):
+    REPO_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    GUI_DIR = REPO_ROOT / "gui"
+else:
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    GUI_DIR = Path(__file__).resolve().parent
 CLI_PY = REPO_ROOT / "src" / "cli.py"
 RUNNER_PY = REPO_ROOT / "runner" / "runner.py"
 DB_SCENARIO_RUNNER_PY = REPO_ROOT / "runner" / "db_scenario_runner.py"
 GENERATE_MAPPING_PY = REPO_ROOT / "runner" / "generate_mapping.py"
 GENERATE_SETUP_SQL_PY = REPO_ROOT / "runner" / "generate_setup_sql.py"
 GENERATE_DB_SCENARIOS_PY = REPO_ROOT / "runner" / "generate_db_scenarios.py"
+
+ICON_PATH = GUI_DIR / "assets" / "icon.ico"
+SPLASH_PATH = GUI_DIR / "assets" / "splash.png"
+
+_EXEC_SCRIPT_FLAG = "--exec-script"
+
+
+def _script_cmd(script_path: Path) -> list[str]:
+    """CLIスクリプトをサブプロセスとして起動するためのコマンド先頭部分を組み立てる。
+
+    通常のpython実行時は `python -u script.py` と同じ。exe化した状態では
+    sys.executable自体が独立したpython.exeではなくこのアプリ自身のexeなので、
+    そのexeを`--exec-script script.py`付きで再起動し、main()側でscript.pyを
+    その場で実行するモードに分岐させる（サブプロセスとして起動する構造自体は
+    維持し、キャンセル/ストリーミング表示の仕組みをそのまま使う）。
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, _EXEC_SCRIPT_FLAG, str(script_path)]
+    return [sys.executable, "-u", str(script_path)]
 
 _GENERATOR_EXIT_MEANINGS = {0: "OK：生成完了", 1: "ERROR：生成に失敗しました"}
 
@@ -415,7 +444,7 @@ class GenerateRunTab(QWidget):
 
         def worker() -> None:
             gen_cmd = [
-                sys.executable, "-u", str(CLI_PY), openapi_path,
+                *_script_cmd(CLI_PY), openapi_path,
                 "-o", str(cases_path), "--excel-output", str(spec_path),
             ]
             code = run_streamed(gen_cmd, self.panel.log_queue, on_start=self.panel.register_process)
@@ -426,7 +455,7 @@ class GenerateRunTab(QWidget):
 
             self.panel.log_queue.put(("line", ""))
             run_cmd = [
-                sys.executable, "-u", str(RUNNER_PY), str(spec_path), openapi_path,
+                *_script_cmd(RUNNER_PY), str(spec_path), openapi_path,
                 "--base-url", base_url, "--health-path", health_path,
                 "--output", str(result_path),
             ]
@@ -878,7 +907,7 @@ class MappingGenTab(QWidget):
 
         def worker() -> None:
             cmd = [
-                sys.executable, "-u", str(GENERATE_MAPPING_PY), openapi_path,
+                *_script_cmd(GENERATE_MAPPING_PY), openapi_path,
                 "--config", config_path, "-o", str(output_path),
             ]
             if schema:
@@ -1095,7 +1124,7 @@ class SetupSqlGenTab(QWidget):
 
         def worker() -> None:
             cmd = [
-                sys.executable, "-u", str(GENERATE_SETUP_SQL_PY),
+                *_script_cmd(GENERATE_SETUP_SQL_PY),
                 "--config", config_path,
                 "--setup-output", str(setup_output), "--teardown-output", str(teardown_output),
             ]
@@ -1231,7 +1260,7 @@ class ScenarioGenTab(QWidget):
 
         def worker() -> None:
             cmd = [
-                sys.executable, "-u", str(GENERATE_DB_SCENARIOS_PY), openapi_path, mapping_path,
+                *_script_cmd(GENERATE_DB_SCENARIOS_PY), openapi_path, mapping_path,
                 "-o", str(output_path),
             ]
             code = run_streamed(cmd, self.panel.log_queue, on_start=self.panel.register_process)
@@ -1343,7 +1372,7 @@ class DBScenarioTab(QWidget):
 
         def worker() -> None:
             cmd = [
-                sys.executable, "-u", str(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
+                *_script_cmd(DB_SCENARIO_RUNNER_PY), scenario_path, openapi_path,
                 "--base-url", base_url, "--config", config_path, "--health-path", health_path,
             ]
             if auth_config_path:
@@ -1368,7 +1397,6 @@ class MainWindow(QMainWindow):
         self.settings = load_settings()
         self._build_help_menu()
 
-        tabs = QTabWidget()
         self.gen_tab = GenerateRunTab(self.settings)
         self.config_builder_tab = ConfigBuilderTab(self.settings)
         self.auth_builder_tab = AuthConfigBuilderTab(self.settings)
@@ -1399,20 +1427,40 @@ class MainWindow(QMainWindow):
         db_prep_layout.addWidget(intro_label)
         db_prep_layout.addWidget(db_prep_tabs)
 
-        tabs.addTab(self.gen_tab, "テスト生成・実行")
-        tabs.addTab(db_prep_container, "DB準備")
-        tabs.addTab(self.db_tab, "DBシナリオ")
-
         self._all_tabs = (
             self.gen_tab, self.config_builder_tab, self.auth_builder_tab,
             self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab,
         )
         self._wire_cross_tab_propagation()
 
+        self.nav_list = QListWidget()
+        self.nav_list.setObjectName("navList")
+        self.nav_stack = QStackedWidget()
+        nav_pages = [
+            ("テスト生成・実行", self.gen_tab),
+            ("DB準備", db_prep_container),
+            ("DBシナリオ", self.db_tab),
+        ]
+        for label, page in nav_pages:
+            self.nav_list.addItem(QListWidgetItem(label))
+            self.nav_stack.addWidget(page)
+        self.nav_list.setCurrentRow(0)
+        self.nav_list.currentRowChanged.connect(self.nav_stack.setCurrentIndex)
+        self.nav_list.setFixedWidth(196)
+        self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content_wrap = QWidget()
+        content_wrap.setObjectName("contentWrap")
+        content_layout = QVBoxLayout(content_wrap)
+        content_layout.setContentsMargins(20, 18, 20, 18)
+        content_layout.addWidget(self.nav_stack)
+
         container = QWidget()
-        outer = QVBoxLayout(container)
-        outer.setContentsMargins(12, 12, 12, 12)
-        outer.addWidget(tabs)
+        outer = QHBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self.nav_list)
+        outer.addWidget(content_wrap, stretch=1)
         self.setCentralWidget(container)
 
     def _build_help_menu(self) -> None:
@@ -1509,14 +1557,54 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _run_exec_script_mode(argv: list[str]) -> None:
+    """`--exec-script script.py [args...]` で起動された場合、そのスクリプトを
+    `python script.py args...` と等価にこのプロセス内でそのまま実行する。
+
+    exe化した状態でサブプロセスとして自分自身(exe)を`_script_cmd()`経由で
+    再起動する際の実体。スクリプト側は `sys.exit(main())` で終了コードを
+    決めるので、ここでは何もラップせずSystemExitをそのまま伝播させる。
+
+    `python script.py` と違い、runpy.run_path() はスクリプト自身のディレクトリを
+    sys.pathへ自動追加しない。runner/配下のスクリプトは`from auth_login import ...`
+    のような兄弟モジュールへのbare importを前提にしているため、ここで明示的に
+    追加しておかないと（exe化した状態では特に）ModuleNotFoundErrorになる。
+    """
+    script_path = argv[0]
+    sys.argv = [script_path, *argv[1:]]
+    sys.path.insert(0, str(Path(script_path).resolve().parent))
+    runpy.run_path(script_path, run_name="__main__")
+
+
 def main() -> None:
+    if len(sys.argv) >= 2 and sys.argv[1] == _EXEC_SCRIPT_FLAG:
+        _run_exec_script_mode(sys.argv[2:])
+        return
+
     app = QApplication(sys.argv)
-    qss_path = Path(__file__).resolve().parent / "style.qss"
+    app.setApplicationName("openapi-test-tool")
+    if ICON_PATH.exists():
+        app.setWindowIcon(QIcon(str(ICON_PATH)))
+
+    qss_path = GUI_DIR / "style.qss"
     if qss_path.exists():
         app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
 
+    splash = None
+    if SPLASH_PATH.exists():
+        splash = QSplashScreen(QPixmap(str(SPLASH_PATH)))
+        splash.show()
+        loop = QEventLoop()
+        QTimer.singleShot(700, loop.quit)
+        loop.exec()
+
     window = MainWindow()
+    if ICON_PATH.exists():
+        window.setWindowIcon(QIcon(str(ICON_PATH)))
     window.show()
+    if splash:
+        splash.finish(window)
+
     sys.exit(app.exec())
 
 
