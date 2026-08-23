@@ -1,11 +1,29 @@
 # operationId → テーブル/measurement の対応表。
 # generate_db_scenarios.py がこれを読んで、DBシナリオYAMLの叩き台を自動生成する。
 # POST/PUT/PATCH/DELETE（データを変更する操作）だけを書けばよい。
+#
+# examples/openapi.json（Example Shop API）に対応。実行例:
+#   python runner/generate_db_scenarios.py examples/openapi.json examples/mapping.yaml -o scenarios.generated.yaml
 
 operations:
   createUser:
     engine: postgres
     table: users
+
+  updateUser:
+    engine: postgres
+    table: users
+
+  deleteUser:
+    engine: postgres
+    table: users
+
+  createOrder:
+    engine: postgres
+    table: orders
+    # order_lines（注文明細）は別テーブルへの外部キー関係にあたるため自動では判断できない。
+    # 実際のシナリオ（examples/scenarios.yaml）では、createOrder の db_check とは別に
+    # order_lines 用のシナリオを追加で手書きしている。
 
   postSensorData:
     engine: influxdb

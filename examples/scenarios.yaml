@@ -1,26 +1,30 @@
 # DBシナリオ定義。db_scenario_runner.py が上から順に実行する。
-# mapping.yaml + generate_db_scenarios.py で叩き台を自動生成し、
-# 期待値（columns/fields の中身）を実際の業務仕様に合わせて手直しするのが基本の流れ。
+# examples/openapi.json（Example Shop API）+ examples/mapping.yaml から
+# generate_db_scenarios.py で自動生成した叩き台をもとに、期待値を確認・手直ししたもの。
 #
-# scenarios.defaults に書いた値は、各シナリオの db_check で省略した場合の既定値になる
-# （db_check側で明示すれば上書きできる。下のInfluxDBの例のように）。
-# 同じ値をシナリオごとに繰り返し書かずに済み、ファイルの分量を抑えられる。
+# 実行例:
+#   python runner/db_scenario_runner.py examples/scenarios.yaml examples/openapi.json \
+#     --base-url http://localhost:8080 --config examples/config.json \
+#     --auth-config examples/auth_config.yaml --dry-run
 
 scenarios:
   defaults:
     engine: postgres   # このファイルのシナリオはほとんどpostgresなので既定値にしている
 
   list:
-    - name: ユーザー作成でusersテーブルに1行増える
+    - name: ユーザー作成でusersテーブルに1行増える（複数カラムの確認例）
       request:
         operationId: createUser
         body: { name: "太郎", email: "taro@example.com" }
       db_check:
-        table: users   # engine は省略（defaults の postgres が適用される）
+        table: users
         where: { email: "taro@example.com" }
         expect:
           exists: true
-          columns: { name: "太郎" }
+          # columns には複数のカラムをまとめて書ける（辞書なので何個でも追加可能）
+          columns:
+            name: "太郎"
+            email: "taro@example.com"
 
     - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
       request:
@@ -42,6 +46,46 @@ scenarios:
         where: { id: "{{response.id}}" }
         expect:
           exists: false
+
+    - name: 注文作成でordersテーブルに1行増える（複数カラムの確認例）
+      request:
+        operationId: createOrder
+        body:
+          user_id: 1
+          status: pending
+          items:
+            - { product_name: "ダミー商品", quantity: 2, price: 500 }
+      db_check:
+        table: orders
+        where: { user_id: 1, status: pending }
+        expect:
+          exists: true
+          # 送信した user_id・status の両方が正しくDBに反映されているかを1つのシナリオで確認する
+          columns:
+            user_id: 1
+            status: pending
+
+    - name: 注文作成でorder_linesテーブルにも明細行が増える（親子テーブル・複数カラムの確認例）
+      # order_lines は orders への外部キー（order_id）を持つ子テーブルなので、
+      # generate_db_scenarios.py の自動生成では対応できない（mapping.yaml のコメント参照）。
+      # このシナリオは手動で追加したもの。直前のcreateOrderシナリオのレスポンスIDを
+      # order_id として使い、明細行が正しい内容で作成されたことを確認する。
+      request:
+        operationId: createOrder
+        body:
+          user_id: 1
+          status: pending
+          items:
+            - { product_name: "ダミー商品2", quantity: 3, price: 750 }
+      db_check:
+        table: order_lines
+        where: { order_id: "{{response.id}}" }
+        expect:
+          exists: true
+          columns:
+            product_name: "ダミー商品2"
+            quantity: 3
+            price: 750
 
     - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
       request:
