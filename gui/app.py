@@ -913,7 +913,9 @@ class SetupSqlGenTab(QWidget):
 
         note = QLabel(
             "実DBのスキーマから、外部キー順序を満たすsetup.sql.generated / teardown.sql.generated を"
-            "出力します。値の中身（実際に意味のあるテストデータかどうか）は必ず確認してください。"
+            "出力します。値の中身（実際に意味のあるテストデータかどうか）は必ず確認してください。\n"
+            "※ここで生成・保存しただけではDBには何も反映されません。プレビュー下部の"
+            "「setup.sqlを実行（DBに反映）」を別途押すまで、実DBへのデータ投入は行われません。"
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -1383,6 +1385,7 @@ class MainWindow(QMainWindow):
             "DB検証（Layer2）の準備はこの順番で進めます: "
             "①DB接続設定 → ②認証設定(任意) → ③mapping.yaml → ④setup.sql/teardown.sql → ⑤シナリオ雛形。"
             "各ステップで生成・保存したファイルは、次のステップの入力欄に自動で反映されます。"
+            "④は生成・保存しただけではDBに反映されません。「実行（DBに反映）」ボタンを別途押してください。"
             "完了したら「DBシナリオ」タブで実行してください。"
         )
         intro_label.setWordWrap(True)
