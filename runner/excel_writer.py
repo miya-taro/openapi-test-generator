@@ -41,7 +41,7 @@ def write_results(
         ws.cell(row=header_row_idx, column=start_col + i, value=h)
 
     # Build id → row index map (data starts at row 5)
-    id_col = _find_column(ws, header_row_idx, "No")
+    id_col = _find_column(ws, header_row_idx, "試験ID")
     id_to_row: dict[str, int] = {}
     for row_idx in range(header_row_idx + 1, ws.max_row + 1):
         cell_val = ws.cell(row=row_idx, column=id_col).value

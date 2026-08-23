@@ -4,13 +4,13 @@ import openpyxl
 from models import RunCase
 
 COLUMN_MAP = {
-    "No": "id",
+    "試験ID": "id",
     "operationId": "operation_id",
     "パス": "path",
     "メソッド": "method",
-    "パラメータ区分": "param_in",
+    "in": "param_in",
     "パラメータ名": "param_name",
-    "入力値": "input_value",
+    "入力/操作": "input_value",
     "期待ステータス": "expected_status",
     "期待レスポンスボディ": "expected_response_body",
     "期待レスポンスヘッダ": "expected_response_header",

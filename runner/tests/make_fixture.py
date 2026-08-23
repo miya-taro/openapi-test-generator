@@ -16,10 +16,10 @@ def make_sample():
     ws.append([None])
     ws.append([None])
 
-    # Row 4: headers
+    # Row 4: headers（openapi-test-gen（src/renderer/excel_output.py）が実際に出力する列名に合わせる）
     headers = [
-        "No", "operationId", "パス", "メソッド",
-        "パラメータ区分", "パラメータ名", "入力値",
+        "試験ID", "operationId", "パス", "メソッド",
+        "in", "パラメータ名", "入力/操作",
         "観点", "perspective", "概要", "備考",
         "期待ステータス", "期待レスポンスボディ", "期待レスポンスヘッダ", "期待応答時間", "期待結果",
     ]
