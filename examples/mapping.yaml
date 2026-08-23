@@ -1,0 +1,13 @@
+# operationId → テーブル/measurement の対応表。
+# generate_db_scenarios.py がこれを読んで、DBシナリオYAMLの叩き台を自動生成する。
+# POST/PUT/PATCH/DELETE（データを変更する操作）だけを書けばよい。
+
+operations:
+  createUser:
+    engine: postgres
+    table: users
+
+  postSensorData:
+    engine: influxdb
+    measurement: sensor_data
+    tags: [device_id]   # タグとして扱うフィールド（influxdbのみ、任意）

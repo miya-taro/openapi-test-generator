@@ -1,0 +1,11 @@
+{
+  "login_url": "/login",
+  "method": "POST",
+  "body": {
+    "username": "test-user",
+    "password": "test-pass"
+  },
+  "token_path": "access_token",
+  "header_name": "Authorization",
+  "header_format": "Bearer {token}"
+}

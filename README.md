@@ -58,6 +58,22 @@ python gui/app.py
 
 ---
 
+## 使用前に用意するファイル
+
+`openapi.json`（対象APIの定義）以外は全部オプションで、使う機能に応じて必要なものだけ
+用意すればよい。サンプルと詳しい説明は [`examples/`](examples/README.md) を参照。
+
+| ファイル | 必須/任意 | 必要になる場面 |
+|---|---|---|
+| `openapi.json` | 必須 | 常に |
+| `auth_config.json` | 任意 | ログイン方式の認証を使う場合 |
+| `config.json` | 任意 | `--setup`/`--teardown`、DB検証を使う場合 |
+| `setup.sql` / `teardown.sql` | 任意 | 試験前後にDBを初期化する場合 |
+| `mapping.yaml` | 任意 | DBシナリオの叩き台を自動生成する場合 |
+| `scenarios.yaml` | 任意 | DB検証（Layer 2）を行う場合 |
+
+---
+
 ## openapi-test-gen
 
 ### 前提
