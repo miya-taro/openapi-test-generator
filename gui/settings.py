@@ -24,6 +24,17 @@ DEFAULTS: dict[str, str | bool] = {
     "db_health_path": "/health",
     "db_auth_config_path": "",
     "db_dry_run": False,
+    "mapgen_openapi_path": "",
+    "mapgen_config_path": "",
+    "mapgen_schema": "public",
+    "mapgen_output_dir": "",
+    "sqlgen_config_path": "",
+    "sqlgen_schema": "public",
+    "sqlgen_tables": "",
+    "sqlgen_output_dir": "",
+    "scengen_openapi_path": "",
+    "scengen_mapping_path": "",
+    "scengen_output_dir": "",
 }
 
 

@@ -27,6 +27,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CLI_PY = REPO_ROOT / "src" / "cli.py"
 RUNNER_PY = REPO_ROOT / "runner" / "runner.py"
 DB_SCENARIO_RUNNER_PY = REPO_ROOT / "runner" / "db_scenario_runner.py"
+GENERATE_MAPPING_PY = REPO_ROOT / "runner" / "generate_mapping.py"
+GENERATE_SETUP_SQL_PY = REPO_ROOT / "runner" / "generate_setup_sql.py"
+GENERATE_DB_SCENARIOS_PY = REPO_ROOT / "runner" / "generate_db_scenarios.py"
+
+_GENERATOR_EXIT_MEANINGS = {0: "OK：生成完了", 1: "ERROR：生成に失敗しました"}
 
 JSON_FILTER = "JSON (*.json)"
 YAML_FILTER = "YAML (*.yaml *.yml)"
@@ -38,12 +43,17 @@ STATE_BY_CODE = {0: "ok", 1: "ng", 2: "warn"}
 class LogPanel(QWidget):
     """進捗バー・ステータス表示・ログ表示・実行ボタン群を持つ共通の下部パネル。"""
 
-    def __init__(self, run_label: str, on_run, show_open_result: bool = True, parent=None):
+    def __init__(
+        self, run_label: str, on_run, show_open_result: bool = True,
+        open_result_label: str = "結果Excelを開く", exit_code_meanings: dict[int, str] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.on_run = on_run
         self.log_queue: "queue.Queue[tuple]" = queue.Queue()
         self.progress = ProgressTracker()
         self.result_path: Path | None = None
+        self.exit_code_meanings = exit_code_meanings
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -53,7 +63,7 @@ class LogPanel(QWidget):
         self.run_button.clicked.connect(lambda: self.on_run())
         btn_row.addWidget(self.run_button)
 
-        self.open_result_button = QPushButton("結果Excelを開く")
+        self.open_result_button = QPushButton(open_result_label)
         self.open_result_button.setObjectName("secondaryButton")
         self.open_result_button.setEnabled(False)
         self.open_result_button.clicked.connect(self._open_result)
@@ -113,7 +123,12 @@ class LogPanel(QWidget):
                     self.progress_bar.setValue(self.progress.percent)
                 elif item[0] == "final":
                     code, result_path = item[1], item[2]
-                    self._set_status(exit_code_meaning(code), STATE_BY_CODE.get(code, "ng"))
+                    meaning = (
+                        self.exit_code_meanings.get(code, f"終了コード {code}")
+                        if self.exit_code_meanings is not None
+                        else exit_code_meaning(code)
+                    )
+                    self._set_status(meaning, STATE_BY_CODE.get(code, "ng"))
                     self.run_button.setEnabled(True)
                     self.result_path = result_path
                     if result_path and Path(result_path).exists():
@@ -264,6 +279,212 @@ class GenerateRunTab(QWidget):
         self.panel.start(worker)
 
 
+class MappingGenTab(QWidget):
+    """generate_mapping.py（mapping.yaml叩き台生成）を実行するタブ。"""
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
+        self.openapi_field.set(settings["mapgen_openapi_path"])
+        layout.addWidget(self.openapi_field)
+
+        self.config_field = PathField("DB接続設定", name_filter=JSON_FILTER)
+        self.config_field.set(settings["mapgen_config_path"])
+        layout.addWidget(self.config_field)
+
+        self.schema_field = TextField("対象スキーマ", settings["mapgen_schema"])
+        layout.addWidget(self.schema_field)
+
+        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field.set(settings["mapgen_output_dir"])
+        layout.addWidget(self.output_dir_field)
+
+        note = QLabel(
+            "実DBに接続し、operationIdごとにテーブル名の候補を推定してmapping.yaml.generatedを"
+            "出力します。確信度（高/中/低）を必ず確認し、特に「低」は手動で修正してください。"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.panel = LogPanel(
+            "mapping.yaml生成", self.on_run,
+            open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
+        )
+        layout.addWidget(self.panel, stretch=1)
+
+    def save_fields(self) -> None:
+        self.settings["mapgen_openapi_path"] = self.openapi_field.get()
+        self.settings["mapgen_config_path"] = self.config_field.get()
+        self.settings["mapgen_schema"] = self.schema_field.get()
+        self.settings["mapgen_output_dir"] = self.output_dir_field.get()
+
+    def on_run(self) -> None:
+        openapi_path = self.openapi_field.get()
+        config_path = self.config_field.get()
+        if not openapi_path or not config_path:
+            QMessageBox.critical(self, "入力エラー", "openapi.json と DB接続設定 を選択してください")
+            return
+
+        output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "mapping.yaml.generated"
+        schema = self.schema_field.get()
+
+        self.save_fields()
+
+        def worker() -> None:
+            cmd = [
+                sys.executable, "-u", str(GENERATE_MAPPING_PY), openapi_path,
+                "--config", config_path, "-o", str(output_path),
+            ]
+            if schema:
+                cmd += ["--schema", schema]
+            code = run_streamed(cmd, self.panel.log_queue)
+            self.panel.finish(code, output_path if code == 0 else None)
+
+        self.panel.start(worker)
+
+
+class SetupSqlGenTab(QWidget):
+    """generate_setup_sql.py（setup.sql/teardown.sql雛形生成）を実行するタブ。"""
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.config_field = PathField("DB接続設定", name_filter=JSON_FILTER)
+        self.config_field.set(settings["sqlgen_config_path"])
+        layout.addWidget(self.config_field)
+
+        self.schema_field = TextField("対象スキーマ", settings["sqlgen_schema"])
+        layout.addWidget(self.schema_field)
+
+        self.tables_field = TextField("対象テーブル(任意, カンマ区切り)", settings["sqlgen_tables"])
+        layout.addWidget(self.tables_field)
+
+        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field.set(settings["sqlgen_output_dir"])
+        layout.addWidget(self.output_dir_field)
+
+        note = QLabel(
+            "実DBのスキーマから、外部キー順序を満たすsetup.sql.generated / teardown.sql.generated を"
+            "出力します。値の中身（実際に意味のあるテストデータかどうか）は必ず確認してください。"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.panel = LogPanel(
+            "setup.sql/teardown.sql生成", self.on_run,
+            open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
+        )
+        layout.addWidget(self.panel, stretch=1)
+
+    def save_fields(self) -> None:
+        self.settings["sqlgen_config_path"] = self.config_field.get()
+        self.settings["sqlgen_schema"] = self.schema_field.get()
+        self.settings["sqlgen_tables"] = self.tables_field.get()
+        self.settings["sqlgen_output_dir"] = self.output_dir_field.get()
+
+    def on_run(self) -> None:
+        config_path = self.config_field.get()
+        if not config_path:
+            QMessageBox.critical(self, "入力エラー", "DB接続設定 を選択してください")
+            return
+
+        output_dir = Path(self.output_dir_field.get() or Path(config_path).resolve().parent)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        setup_output = output_dir / "setup.sql.generated"
+        teardown_output = output_dir / "teardown.sql.generated"
+        schema = self.schema_field.get()
+        tables = self.tables_field.get()
+
+        self.save_fields()
+
+        def worker() -> None:
+            cmd = [
+                sys.executable, "-u", str(GENERATE_SETUP_SQL_PY),
+                "--config", config_path,
+                "--setup-output", str(setup_output), "--teardown-output", str(teardown_output),
+            ]
+            if schema:
+                cmd += ["--schema", schema]
+            if tables:
+                cmd += ["--tables", tables]
+            code = run_streamed(cmd, self.panel.log_queue)
+            self.panel.finish(code, setup_output if code == 0 else None)
+
+        self.panel.start(worker)
+
+
+class ScenarioGenTab(QWidget):
+    """generate_db_scenarios.py（シナリオYAML雛形生成）を実行するタブ。"""
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.openapi_field = PathField("openapi.json", name_filter=JSON_FILTER)
+        self.openapi_field.set(settings["scengen_openapi_path"])
+        layout.addWidget(self.openapi_field)
+
+        self.mapping_field = PathField("mapping.yaml", name_filter=YAML_FILTER)
+        self.mapping_field.set(settings["scengen_mapping_path"])
+        layout.addWidget(self.mapping_field)
+
+        self.output_dir_field = PathField("出力先フォルダ", is_dir=True)
+        self.output_dir_field.set(settings["scengen_output_dir"])
+        layout.addWidget(self.output_dir_field)
+
+        note = QLabel(
+            "openapi.jsonとmapping.yamlから、シナリオYAML（scenarios.generated.yaml）の叩き台を"
+            "出力します。where/columns/tags等は必ず確認・修正してください。"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.panel = LogPanel(
+            "シナリオ雛形生成", self.on_run,
+            open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
+        )
+        layout.addWidget(self.panel, stretch=1)
+
+    def save_fields(self) -> None:
+        self.settings["scengen_openapi_path"] = self.openapi_field.get()
+        self.settings["scengen_mapping_path"] = self.mapping_field.get()
+        self.settings["scengen_output_dir"] = self.output_dir_field.get()
+
+    def on_run(self) -> None:
+        openapi_path = self.openapi_field.get()
+        mapping_path = self.mapping_field.get()
+        if not openapi_path or not mapping_path:
+            QMessageBox.critical(self, "入力エラー", "openapi.json と mapping.yaml を選択してください")
+            return
+
+        output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "scenarios.generated.yaml"
+
+        self.save_fields()
+
+        def worker() -> None:
+            cmd = [
+                sys.executable, "-u", str(GENERATE_DB_SCENARIOS_PY), openapi_path, mapping_path,
+                "-o", str(output_path),
+            ]
+            code = run_streamed(cmd, self.panel.log_queue)
+            self.panel.finish(code, output_path if code == 0 else None)
+
+        self.panel.start(worker)
+
+
 class DBScenarioTab(QWidget):
     """db_scenario_runner.py を実行するタブ。"""
 
@@ -353,8 +574,18 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         self.gen_tab = GenerateRunTab(self.settings)
+        self.mapping_gen_tab = MappingGenTab(self.settings)
+        self.sql_gen_tab = SetupSqlGenTab(self.settings)
+        self.scenario_gen_tab = ScenarioGenTab(self.settings)
         self.db_tab = DBScenarioTab(self.settings)
+
+        db_prep_tabs = QTabWidget()
+        db_prep_tabs.addTab(self.mapping_gen_tab, "mapping.yaml")
+        db_prep_tabs.addTab(self.sql_gen_tab, "setup.sql/teardown.sql")
+        db_prep_tabs.addTab(self.scenario_gen_tab, "シナリオ雛形")
+
         tabs.addTab(self.gen_tab, "テスト生成・実行")
+        tabs.addTab(db_prep_tabs, "DB準備")
         tabs.addTab(self.db_tab, "DBシナリオ")
 
         container = QWidget()
@@ -364,11 +595,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qtのオーバーライド規約
-        self.gen_tab.save_fields()
-        self.db_tab.save_fields()
+        for tab in (self.gen_tab, self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab):
+            tab.save_fields()
         save_settings(self.settings)
-        self.gen_tab.panel.stop()
-        self.db_tab.panel.stop()
+        for tab in (self.gen_tab, self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab):
+            tab.panel.stop()
         super().closeEvent(event)
 
 
