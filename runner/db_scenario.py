@@ -54,20 +54,34 @@ def load_scenarios(yaml_path: str | Path) -> list[DBScenario]:
         raise ScenarioError('YAML に "scenarios" キーがありません')
 
     scenarios_raw = raw["scenarios"]
-    if not isinstance(scenarios_raw, list):
-        raise ScenarioError('"scenarios" はリストである必要があります')
+
+    if isinstance(scenarios_raw, list):
+        # 旧形式: scenarios が直接シナリオのリスト（後方互換のため維持）
+        items = scenarios_raw
+        defaults: dict = {}
+    elif isinstance(scenarios_raw, dict):
+        # 新形式: scenarios.defaults に共通の既定値、scenarios.list にシナリオのリスト。
+        # 例えば同じファイル内で engine が全部同じ場合、シナリオごとに書かずに済む。
+        if not isinstance(scenarios_raw.get("list"), list):
+            raise ScenarioError('"scenarios.list" はリストである必要があります')
+        items = scenarios_raw["list"]
+        defaults = scenarios_raw.get("defaults") or {}
+        if not isinstance(defaults, dict):
+            raise ScenarioError('"scenarios.defaults" はオブジェクトである必要があります')
+    else:
+        raise ScenarioError('"scenarios" はリストまたは defaults/list を持つオブジェクトである必要があります')
 
     scenarios: list[DBScenario] = []
-    for i, item in enumerate(scenarios_raw):
+    for i, item in enumerate(items):
         try:
-            scenarios.append(_parse_scenario(item))
+            scenarios.append(_parse_scenario(item, defaults))
         except (KeyError, TypeError) as e:
             raise ScenarioError(f"scenarios[{i}] の形式が不正です: {e}") from e
 
     return scenarios
 
 
-def _parse_scenario(raw: dict) -> DBScenario:
+def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
     name = raw["name"]
 
     req_raw = raw["request"]
@@ -78,7 +92,11 @@ def _parse_scenario(raw: dict) -> DBScenario:
     )
 
     check_raw = raw["db_check"]
-    engine = check_raw["engine"]
+    engine = check_raw.get("engine") or defaults.get("engine")
+    if not engine:
+        raise ScenarioError(
+            "engine が指定されていません（db_check.engine か scenarios.defaults.engine のどちらかで指定してください）"
+        )
     if engine not in SUPPORTED_ENGINES:
         raise ScenarioError(
             f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"

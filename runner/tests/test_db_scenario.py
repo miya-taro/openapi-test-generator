@@ -93,6 +93,110 @@ def test_load_multiple_scenarios(tmp_path):
     assert len(scenarios) == 2
 
 
+# ---------- load_scenarios: defaults/list 形式（engineの重複記述を省略する） ----------
+
+
+def test_defaults_engine_applied_when_scenario_omits_engine(tmp_path):
+    data = {
+        "scenarios": {
+            "defaults": {"engine": "postgres"},
+            "list": [
+                {
+                    "name": "ユーザー作成",
+                    "request": {"operationId": "createUser", "body": {"name": "太郎"}},
+                    "db_check": {"table": "users", "where": {"name": "太郎"}, "expect": {"exists": True}},
+                }
+            ],
+        }
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    assert len(scenarios) == 1
+    assert scenarios[0].db_check.engine == "postgres"
+
+
+def test_scenario_level_engine_overrides_defaults(tmp_path):
+    data = {
+        "scenarios": {
+            "defaults": {"engine": "postgres"},
+            "list": [
+                {
+                    "name": "センサーデータ",
+                    "request": {"operationId": "postSensorData", "body": {}},
+                    "db_check": {"engine": "influxdb", "measurement": "m", "expect": {"exists": True}},
+                }
+            ],
+        }
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    assert scenarios[0].db_check.engine == "influxdb"
+
+
+def test_multiple_scenarios_share_defaults(tmp_path):
+    data = {
+        "scenarios": {
+            "defaults": {"engine": "postgres"},
+            "list": [
+                {
+                    "name": "A",
+                    "request": {"operationId": "createUser", "body": {}},
+                    "db_check": {"table": "users", "expect": {"exists": True}},
+                },
+                {
+                    "name": "B",
+                    "request": {"operationId": "createOrder", "body": {}},
+                    "db_check": {"table": "orders", "expect": {"exists": True}},
+                },
+            ],
+        }
+    }
+    path = _write_yaml(tmp_path, data)
+    scenarios = load_scenarios(path)
+    assert len(scenarios) == 2
+    assert all(s.db_check.engine == "postgres" for s in scenarios)
+
+
+def test_defaults_missing_engine_and_scenario_omits_engine_raises(tmp_path):
+    data = {
+        "scenarios": {
+            "defaults": {},
+            "list": [
+                {
+                    "name": "x",
+                    "request": {"operationId": "op", "body": {}},
+                    "db_check": {"table": "t", "expect": {}},
+                }
+            ],
+        }
+    }
+    path = _write_yaml(tmp_path, data)
+    with pytest.raises(ScenarioError, match="engine"):
+        load_scenarios(path)
+
+
+def test_scenarios_dict_without_list_key_raises(tmp_path):
+    data = {"scenarios": {"defaults": {"engine": "postgres"}}}
+    path = _write_yaml(tmp_path, data)
+    with pytest.raises(ScenarioError, match="list"):
+        load_scenarios(path)
+
+
+def test_scenarios_defaults_not_an_object_raises(tmp_path):
+    data = {"scenarios": {"defaults": "not-an-object", "list": []}}
+    path = _write_yaml(tmp_path, data)
+    with pytest.raises(ScenarioError, match="defaults"):
+        load_scenarios(path)
+
+
+def test_old_list_format_still_works_without_defaults_key(tmp_path):
+    # 旧形式（scenarios が直接リスト）は defaults なしでも従来通り動作する（後方互換）
+    path = _write_yaml(tmp_path, POSTGRES_SCENARIO)
+    scenarios = load_scenarios(path)
+    assert len(scenarios) == 1
+    assert scenarios[0].db_check.engine == "postgres"
+
+
 # ---------- load_scenarios: 異常系 ----------
 
 

@@ -1,52 +1,57 @@
 # DBシナリオ定義。db_scenario_runner.py が上から順に実行する。
 # mapping.yaml + generate_db_scenarios.py で叩き台を自動生成し、
 # 期待値（columns/fields の中身）を実際の業務仕様に合わせて手直しするのが基本の流れ。
+#
+# scenarios.defaults に書いた値は、各シナリオの db_check で省略した場合の既定値になる
+# （db_check側で明示すれば上書きできる。下のInfluxDBの例のように）。
+# 同じ値をシナリオごとに繰り返し書かずに済み、ファイルの分量を抑えられる。
 
 scenarios:
-  - name: ユーザー作成でusersテーブルに1行増える
-    request:
-      operationId: createUser
-      body: { name: "太郎", email: "taro@example.com" }
-    db_check:
-      engine: postgres
-      table: users
-      where: { email: "taro@example.com" }
-      expect:
-        exists: true
-        columns: { name: "太郎" }
+  defaults:
+    engine: postgres   # このファイルのシナリオはほとんどpostgresなので既定値にしている
 
-  - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
-    request:
-      operationId: updateUser
-      path_params: { id: "{{response.id}}" }
-      body: { name: "次郎" }
-    db_check:
-      engine: postgres
-      table: users
-      where: { id: "{{response.id}}" }
-      expect:
-        columns: { name: "次郎" }
+  list:
+    - name: ユーザー作成でusersテーブルに1行増える
+      request:
+        operationId: createUser
+        body: { name: "太郎", email: "taro@example.com" }
+      db_check:
+        table: users   # engine は省略（defaults の postgres が適用される）
+        where: { email: "taro@example.com" }
+        expect:
+          exists: true
+          columns: { name: "太郎" }
 
-  - name: ユーザー削除で行が消える
-    request:
-      operationId: deleteUser
-      path_params: { id: "{{response.id}}" }
-    db_check:
-      engine: postgres
-      table: users
-      where: { id: "{{response.id}}" }
-      expect:
-        exists: false
+    - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
+      request:
+        operationId: updateUser
+        path_params: { id: "{{response.id}}" }
+        body: { name: "次郎" }
+      db_check:
+        table: users
+        where: { id: "{{response.id}}" }
+        expect:
+          columns: { name: "次郎" }
 
-  - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
-    request:
-      operationId: postSensorData
-      body: { device_id: "abc123", temperature: 23.5 }
-    db_check:
-      engine: influxdb
-      measurement: sensor_data
-      tags: { device_id: "abc123" }
-      time_range: 5m
-      expect:
-        exists: true
-        fields: { temperature: 23.5 }
+    - name: ユーザー削除で行が消える
+      request:
+        operationId: deleteUser
+        path_params: { id: "{{response.id}}" }
+      db_check:
+        table: users
+        where: { id: "{{response.id}}" }
+        expect:
+          exists: false
+
+    - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
+      request:
+        operationId: postSensorData
+        body: { device_id: "abc123", temperature: 23.5 }
+      db_check:
+        engine: influxdb   # defaults(postgres)と異なるのでここで明示的に上書き
+        measurement: sensor_data
+        tags: { device_id: "abc123" }
+        time_range: 5m
+        expect:
+          exists: true
+          fields: { temperature: 23.5 }

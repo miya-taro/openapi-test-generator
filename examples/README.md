@@ -80,6 +80,6 @@ python runner/db_scenario_runner.py examples/scenarios.yaml openapi.json \
 
 まず`--dry-run`で内容を確認してから、`--dry-run`を外して実行することを推奨する。
 
-**分量について**: シナリオ数が増えると素直にYAMLも長くなる（1操作あたり10〜15行程度）。
-構造をこれ以上圧縮する余地は小さいため、「本当にDB整合性が心配な操作だけ書く」という
-運用で分量を抑えるのが現実的。参照系（GET）や、副作用のない単純な操作は対象外にしてよい。
+**分量について**: `scenarios.defaults`に共通の値（`engine`）をまとめて指定できる
+（`examples/scenarios.yaml`参照）。同じ値をシナリオごとに繰り返し書く必要がなくなり、
+可読性を落とさずに分量を抑えられる。`db_check`側で明示すれば個別に上書きも可能。

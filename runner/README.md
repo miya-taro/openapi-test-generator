@@ -219,44 +219,51 @@ Level 1 が NG の場合、Level 2〜4 は評価しない。
 
 ```yaml
 scenarios:
-  - name: ユーザー作成でusersテーブルに1行増える
-    request:
-      operationId: createUser
-      body: { name: "太郎", email: "taro@example.com" }
-    db_check:
-      engine: postgres
-      table: users
-      where: { email: "taro@example.com" }
-      expect:
-        exists: true
-        columns: { name: "太郎" }
+  defaults:
+    engine: postgres   # 個々の db_check で省略した場合の既定値。上書きも可能（下のInfluxDBの例）
 
-  - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
-    request:
-      operationId: updateUser
-      path_params: { id: "{{response.id}}" }
-      body: { name: "次郎" }
-    db_check:
-      engine: postgres
-      table: users
-      where: { id: "{{response.id}}" }
-      expect:
-        columns: { name: "次郎" }
+  list:
+    - name: ユーザー作成でusersテーブルに1行増える
+      request:
+        operationId: createUser
+        body: { name: "太郎", email: "taro@example.com" }
+      db_check:
+        table: users
+        where: { email: "taro@example.com" }
+        expect:
+          exists: true
+          columns: { name: "太郎" }
 
-  - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
-    request:
-      operationId: postSensorData
-      body: { device_id: "abc123", temperature: 23.5 }
-    db_check:
-      engine: influxdb
-      measurement: sensor_data
-      tags: { device_id: "abc123" }
-      time_range: 5m
-      expect:
-        exists: true
-        fields: { temperature: 23.5 }
+    - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
+      request:
+        operationId: updateUser
+        path_params: { id: "{{response.id}}" }
+        body: { name: "次郎" }
+      db_check:
+        table: users
+        where: { id: "{{response.id}}" }
+        expect:
+          columns: { name: "次郎" }
+
+    - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
+      request:
+        operationId: postSensorData
+        body: { device_id: "abc123", temperature: 23.5 }
+      db_check:
+        engine: influxdb   # defaults(postgres)と異なるのでここで明示的に上書き
+        measurement: sensor_data
+        tags: { device_id: "abc123" }
+        time_range: 5m
+        expect:
+          exists: true
+          fields: { temperature: 23.5 }
 ```
 
+- `scenarios.defaults` に書いた値（現状 `engine` のみ対応）は、各シナリオの `db_check` で
+  省略した場合の既定値になる。同じ値をシナリオごとに繰り返し書かずに済み、ファイルの分量を
+  抑えられる。`db_check` 側で明示すれば上書きできる
+- 旧形式（`scenarios:` の直下にシナリオのリストを書き、`db_check.engine` を毎回明示する形）も
+  後方互換で引き続き動作する
 - `where`/`tags`/`columns`/`fields` の値に `{{response.xxx}}` と書くと、直前のAPIレスポンスJSONの値
   （作成されたIDなど）に置き換わる（ネストしたパスは `{{response.user.id}}` のようにドット区切り）
 - `table`/`where`/`columns`（PostgreSQL）、`measurement`/`tags`/`fields`（InfluxDB）を指定するだけで
