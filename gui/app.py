@@ -30,6 +30,7 @@ DB_SCENARIO_RUNNER_PY = REPO_ROOT / "runner" / "db_scenario_runner.py"
 
 JSON_FILTER = "JSON (*.json)"
 YAML_FILTER = "YAML (*.yaml *.yml)"
+SQL_FILTER = "SQL (*.sql)"
 
 STATE_BY_CODE = {0: "ok", 1: "ng", 2: "warn"}
 
@@ -154,9 +155,29 @@ class GenerateRunTab(QWidget):
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
 
+        self.config_field = PathField("DB接続設定(任意)", name_filter=JSON_FILTER)
+        self.config_field.set(settings["gen_config_path"])
+        layout.addWidget(self.config_field)
+
+        self.setup_field = PathField("setup SQL(任意)", name_filter=SQL_FILTER)
+        self.setup_field.set(settings["gen_setup_path"])
+        layout.addWidget(self.setup_field)
+
+        self.teardown_field = PathField("teardown SQL(任意)", name_filter=SQL_FILTER)
+        self.teardown_field.set(settings["gen_teardown_path"])
+        layout.addWidget(self.teardown_field)
+
         self.dry_run_checkbox = QCheckBox("dry-run（実際にはリクエストを送信しない。生成内容の確認用）")
         self.dry_run_checkbox.setChecked(bool(settings["gen_dry_run"]))
         layout.addWidget(self.dry_run_checkbox)
+
+        self.full_body_checkbox = QCheckBox("full-body（結果Excelの実測ボディを省略せず全文出力する）")
+        self.full_body_checkbox.setChecked(bool(settings["gen_full_body"]))
+        layout.addWidget(self.full_body_checkbox)
+
+        self.fail_fast_checkbox = QCheckBox("fail-fast（最初のNGが出た時点で試験を打ち切る）")
+        self.fail_fast_checkbox.setChecked(bool(settings["gen_fail_fast"]))
+        layout.addWidget(self.fail_fast_checkbox)
 
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
@@ -168,6 +189,11 @@ class GenerateRunTab(QWidget):
         self.settings["gen_health_path"] = self.health_path_field.get()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
+        self.settings["gen_config_path"] = self.config_field.get()
+        self.settings["gen_setup_path"] = self.setup_field.get()
+        self.settings["gen_teardown_path"] = self.teardown_field.get()
+        self.settings["gen_full_body"] = self.full_body_checkbox.isChecked()
+        self.settings["gen_fail_fast"] = self.fail_fast_checkbox.isChecked()
 
     def on_run(self) -> None:
         openapi_path = self.openapi_field.get()
@@ -179,6 +205,15 @@ class GenerateRunTab(QWidget):
             QMessageBox.critical(self, "入力エラー", "Base URL を入力してください")
             return
 
+        config_path = self.config_field.get()
+        setup_path = self.setup_field.get()
+        teardown_path = self.teardown_field.get()
+        if (setup_path or teardown_path) and not config_path:
+            QMessageBox.critical(
+                self, "入力エラー", "setup SQL または teardown SQL を指定する場合は DB接続設定 が必要です"
+            )
+            return
+
         output_dir = Path(self.output_dir_field.get() or Path(openapi_path).resolve().parent)
         output_dir.mkdir(parents=True, exist_ok=True)
         spec_path = output_dir / "試験仕様.xlsx"
@@ -187,6 +222,8 @@ class GenerateRunTab(QWidget):
         health_path = self.health_path_field.get() or "/health"
         auth_config_path = self.auth_config_field.get()
         dry_run = self.dry_run_checkbox.isChecked()
+        full_body = self.full_body_checkbox.isChecked()
+        fail_fast = self.fail_fast_checkbox.isChecked()
 
         self.save_fields()
 
@@ -209,6 +246,16 @@ class GenerateRunTab(QWidget):
             ]
             if auth_config_path:
                 run_cmd += ["--auth-config", auth_config_path]
+            if config_path:
+                run_cmd += ["--config", config_path]
+            if setup_path:
+                run_cmd += ["--setup", setup_path]
+            if teardown_path:
+                run_cmd += ["--teardown", teardown_path]
+            if full_body:
+                run_cmd += ["--full-body"]
+            if fail_fast:
+                run_cmd += ["--fail-fast"]
             if dry_run:
                 run_cmd += ["--dry-run"]
             code = run_streamed(run_cmd, self.panel.log_queue)

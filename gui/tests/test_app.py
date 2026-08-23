@@ -124,6 +124,113 @@ def test_gen_tab_dry_run_persisted_to_settings(window):
     assert window.settings["gen_dry_run"] is True
 
 
+def _fill_gen_tab_required(window, tmp_path):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+
+
+def test_gen_tab_setup_without_config_shows_error_and_does_not_run(window, captured_cmds, tmp_path, monkeypatch):
+    _fill_gen_tab_required(window, tmp_path)
+    window.gen_tab.setup_field.set(str(tmp_path / "setup.sql"))
+    window.gen_tab.config_field.set("")
+
+    shown = []
+    monkeypatch.setattr(app_module.QMessageBox, "critical", lambda *a, **k: shown.append(a))
+
+    window.gen_tab.on_run()
+    assert len(shown) == 1
+    assert captured_cmds == []
+
+
+def test_gen_tab_teardown_without_config_shows_error_and_does_not_run(window, captured_cmds, tmp_path, monkeypatch):
+    _fill_gen_tab_required(window, tmp_path)
+    window.gen_tab.teardown_field.set(str(tmp_path / "teardown.sql"))
+    window.gen_tab.config_field.set("")
+
+    shown = []
+    monkeypatch.setattr(app_module.QMessageBox, "critical", lambda *a, **k: shown.append(a))
+
+    window.gen_tab.on_run()
+    assert len(shown) == 1
+    assert captured_cmds == []
+
+
+def test_gen_tab_setup_with_config_runs_and_passes_all_three_flags(window, captured_cmds, tmp_path):
+    _fill_gen_tab_required(window, tmp_path)
+    config_path = str(tmp_path / "config.json")
+    setup_path = str(tmp_path / "setup.sql")
+    teardown_path = str(tmp_path / "teardown.sql")
+    window.gen_tab.config_field.set(config_path)
+    window.gen_tab.setup_field.set(setup_path)
+    window.gen_tab.teardown_field.set(teardown_path)
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    run_cmd = captured_cmds[1]
+    assert run_cmd[run_cmd.index("--config") + 1] == config_path
+    assert run_cmd[run_cmd.index("--setup") + 1] == setup_path
+    assert run_cmd[run_cmd.index("--teardown") + 1] == teardown_path
+
+
+def test_gen_tab_config_alone_without_setup_or_teardown_is_allowed(window, captured_cmds, tmp_path):
+    # --config だけの指定はCLI側も許容している（--setup/--teardownの時だけ必須）
+    _fill_gen_tab_required(window, tmp_path)
+    config_path = str(tmp_path / "config.json")
+    window.gen_tab.config_field.set(config_path)
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    run_cmd = captured_cmds[1]
+    assert "--config" in run_cmd
+    assert "--setup" not in run_cmd
+    assert "--teardown" not in run_cmd
+
+
+def test_gen_tab_full_body_and_fail_fast_omitted_by_default(window, captured_cmds, tmp_path):
+    _fill_gen_tab_required(window, tmp_path)
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    run_cmd = captured_cmds[1]
+    assert "--full-body" not in run_cmd
+    assert "--fail-fast" not in run_cmd
+
+
+def test_gen_tab_full_body_and_fail_fast_included_when_checked(window, captured_cmds, tmp_path):
+    _fill_gen_tab_required(window, tmp_path)
+    window.gen_tab.full_body_checkbox.setChecked(True)
+    window.gen_tab.fail_fast_checkbox.setChecked(True)
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 2)
+
+    run_cmd = captured_cmds[1]
+    assert "--full-body" in run_cmd
+    assert "--fail-fast" in run_cmd
+
+
+def test_gen_tab_new_fields_persisted_to_settings(window, tmp_path):
+    config_path = str(tmp_path / "config.json")
+    setup_path = str(tmp_path / "setup.sql")
+    teardown_path = str(tmp_path / "teardown.sql")
+    window.gen_tab.config_field.set(config_path)
+    window.gen_tab.setup_field.set(setup_path)
+    window.gen_tab.teardown_field.set(teardown_path)
+    window.gen_tab.full_body_checkbox.setChecked(True)
+    window.gen_tab.fail_fast_checkbox.setChecked(True)
+    window.gen_tab.save_fields()
+
+    assert window.settings["gen_config_path"] == config_path
+    assert window.settings["gen_setup_path"] == setup_path
+    assert window.settings["gen_teardown_path"] == teardown_path
+    assert window.settings["gen_full_body"] is True
+    assert window.settings["gen_fail_fast"] is True
+
+
 # ---------- DBScenarioTab ----------
 
 
