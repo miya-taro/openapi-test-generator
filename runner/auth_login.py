@@ -9,6 +9,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import yaml
+
 CURL_TIMEOUT = 10
 
 
@@ -17,21 +19,25 @@ class AuthLoginError(Exception):
 
 
 def load_auth_config(path: str) -> dict:
-    """auth-config JSON を読み込み、必須キーを検証する。
+    """auth-config ファイル（JSON または YAML）を読み込み、必須キーを検証する。
 
     必須: login_url, method
     任意: body（ログインリクエストのJSONボディ）
           token_path（レスポンスJSON内のトークンの場所。ドット区切り。既定 "access_token"）
           header_name（付与するヘッダ名。既定 "Authorization"）
           header_format（トークンの埋め込み方。既定 "Bearer {token}"）
+
+    JSON は YAML の構文的な上位互換にあたるため、拡張子を問わず yaml.safe_load で
+    読み込む（既存の .json ファイルもそのまま読める）。YAML形式にすると、対応している
+    書き方のバリエーションをコメントで残しておける（examples/auth_config.yaml 参照）。
     """
     p = Path(path)
     if not p.exists():
         raise AuthLoginError(f"認証設定ファイルが見つかりません: {path}")
 
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
+        data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
         raise AuthLoginError(f"認証設定ファイルのパースに失敗しました: {e}") from e
 
     if not isinstance(data, dict):

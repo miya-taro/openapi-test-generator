@@ -66,7 +66,7 @@ python gui/app.py
 | ファイル | 必須/任意 | 必要になる場面 |
 |---|---|---|
 | `openapi.json` | 必須 | 常に |
-| `auth_config.json` | 任意 | ログイン方式の認証を使う場合 |
+| `auth_config.yaml` | 任意 | ログイン方式の認証を使う場合 |
 | `config.json` | 任意 | `--setup`/`--teardown`、DB検証を使う場合 |
 | `setup.sql` / `teardown.sql` | 任意 | 試験前後にDBを初期化する場合 |
 | `mapping.yaml` | 任意 | DBシナリオの叩き台を自動生成する場合 |

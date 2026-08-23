@@ -1,0 +1,40 @@
+# ログイン方式の認証設定。--auth-config で指定する。
+# JSON形式でも読み込めるが、対応している書き方のバリエーションをコメントで
+# 残しておけるようYAML形式で用意している（.json のままでも動作は変わらない）。
+#
+# 使い方: 有効にしたい設定だけ残し、他はコメントアウトのままにする。
+
+# ---- 必須項目 ----
+
+login_url: /login          # ログインAPIのパス（--base-url からの相対パス）
+method: POST                # HTTPメソッド（通常 POST）
+
+# ---- ログインリクエストのボディ（任意） ----
+# ボディが不要なログインAPI（クエリパラメータ認証等）の場合は body 自体を省略してよい。
+
+body:
+  username: test-user
+  password: test-pass
+
+# ---- レスポンスからのトークン取得場所（任意、既定 "access_token"） ----
+# 例1: レスポンスが {"access_token": "xxx"} のような素直な形（既定のままでOK、指定不要）
+# token_path: access_token
+#
+# 例2: レスポンスが {"data": {"token": "xxx"}} のようにネストしている場合
+# token_path: data.token
+#
+# 例3: レスポンスが {"result": {"auth": {"jwt": "xxx"}}} のように深くネストしている場合
+# token_path: result.auth.jwt
+
+# ---- 付与するヘッダの形式（任意） ----
+# 例1（既定・コメントアウト不要）: Authorization: Bearer xxx
+# header_name: Authorization
+# header_format: "Bearer {token}"
+#
+# 例2: APIキー形式のヘッダ（プレフィックスなし） X-Api-Key: xxx
+# header_name: X-Api-Key
+# header_format: "{token}"
+#
+# 例3: 独自プレフィックス Authorization: Token xxx
+# header_name: Authorization
+# header_format: "Token {token}"

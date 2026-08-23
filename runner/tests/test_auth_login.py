@@ -51,6 +51,40 @@ def test_load_auth_config_success(tmp_path):
     assert result == cfg
 
 
+def test_load_auth_config_yaml_with_comments(tmp_path):
+    # examples/auth_config.yaml のような、コメントと未使用項目を含むYAMLも読めること
+    p = tmp_path / "auth.yaml"
+    p.write_text(
+        """
+# これはコメント。ログイン方式の認証設定。
+login_url: /login
+method: POST
+body:
+  username: test-user
+  password: test-pass
+
+# 以下は未使用の代替設定（コメントアウト）
+# token_path: data.token
+# header_name: X-Api-Key
+# header_format: "{token}"
+""",
+        encoding="utf-8",
+    )
+    result = load_auth_config(str(p))
+    assert result == {
+        "login_url": "/login",
+        "method": "POST",
+        "body": {"username": "test-user", "password": "test-pass"},
+    }
+
+
+def test_load_auth_config_invalid_yaml_syntax(tmp_path):
+    p = tmp_path / "auth.yaml"
+    p.write_text("login_url: /login\n  bad_indent: [1, 2\nmethod: POST", encoding="utf-8")
+    with pytest.raises(AuthLoginError, match="パースに失敗"):
+        load_auth_config(str(p))
+
+
 # --- perform_login ---
 
 def mock_curl(body_and_status: str, returncode: int = 0):

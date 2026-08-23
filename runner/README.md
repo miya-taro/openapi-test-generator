@@ -79,17 +79,18 @@ python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080
 ログインAPIを叩いてトークンを発行する方式の場合は `--auth-config` を使う。ヘルスチェックの直後・試験実行前に
 1回だけログインを行い、取得したトークンを以降の全リクエストに自動で付与する。
 
-`auth.json` の例:
+`auth_config.yaml` の例（JSON形式でも動作するが、YAMLならコメントで書き方の
+バリエーションを残せるためYAML形式を推奨。サンプル: [`examples/auth_config.yaml`](../examples/auth_config.yaml)）:
 
-```json
-{
-  "login_url": "/login",
-  "method": "POST",
-  "body": { "username": "test-user", "password": "test-pass" },
-  "token_path": "access_token",
-  "header_name": "Authorization",
-  "header_format": "Bearer {token}"
-}
+```yaml
+login_url: /login
+method: POST
+body:
+  username: test-user
+  password: test-pass
+# token_path: data.token          # レスポンスがネストしている場合のみ指定
+# header_name: X-Api-Key          # Authorization以外のヘッダを使う場合のみ指定
+# header_format: "{token}"        # Bearer形式でない場合のみ指定
 ```
 
 | キー | 必須 | 説明 |
@@ -102,7 +103,7 @@ python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080
 | `header_format` | | トークンの埋め込み方。`{token}` がトークン文字列に置換される。省略時 `Bearer {token}` |
 
 ```sh
-python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080 --auth-config auth.json
+python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080 --auth-config auth_config.yaml
 ```
 
 DBシナリオランナー（`db_scenario_runner.py`）でも同じ `--auth-config` オプションが使える。
@@ -269,7 +270,7 @@ scenarios:
 python db_scenario_runner.py scenarios.yaml openapi.json \
   --base-url http://192.168.1.100:8080 \
   --config config.json \
-  --auth-config auth.json
+  --auth-config auth_config.yaml
 ```
 
 `config.json` は `--setup`/`--teardown` と同じファイルを使う。`postgres` シナリオのみなら
