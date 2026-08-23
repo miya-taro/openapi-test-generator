@@ -13,6 +13,7 @@ scenarios:
 
   list:
     - name: ユーザー作成でusersテーブルに1行増える（複数カラムの確認例）
+      # POST /users （examples/openapi.json 参照）
       request:
         operationId: createUser
         body: { name: "太郎", email: "taro@example.com" }
@@ -27,6 +28,7 @@ scenarios:
             email: "taro@example.com"
 
     - name: 作成したユーザーを更新する（前のシナリオのレスポンスから id を引き継ぐ）
+      # PUT /users/{id}
       request:
         operationId: updateUser
         path_params: { id: "{{response.id}}" }
@@ -38,6 +40,7 @@ scenarios:
           columns: { name: "次郎" }
 
     - name: ユーザー削除で行が消える
+      # DELETE /users/{id}
       request:
         operationId: deleteUser
         path_params: { id: "{{response.id}}" }
@@ -48,6 +51,7 @@ scenarios:
           exists: false
 
     - name: 注文作成でordersテーブルに1行増える（複数カラムの確認例）
+      # POST /orders
       request:
         operationId: createOrder
         body:
@@ -66,6 +70,7 @@ scenarios:
             status: pending
 
     - name: 注文作成でorder_linesテーブルにも明細行が増える（親子テーブル・複数カラムの確認例）
+      # POST /orders （上のシナリオと同じエンドポイント。DB側で見るテーブルが違うだけ）
       # order_lines は orders への外部キー（order_id）を持つ子テーブルなので、
       # generate_db_scenarios.py の自動生成では対応できない（mapping.yaml のコメント参照）。
       # このシナリオは手動で追加したもの。直前のcreateOrderシナリオのレスポンスIDを
@@ -88,6 +93,7 @@ scenarios:
             price: 750
 
     - name: センサーデータ送信でInfluxDBにポイントが書き込まれる
+      # POST /sensor-data
       request:
         operationId: postSensorData
         body: { device_id: "abc123", temperature: 23.5 }
