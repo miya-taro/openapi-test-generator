@@ -161,6 +161,104 @@ def test_validate_sql_file_valid(tmp_path):
     assert "2" in result
 
 
+# --- check_db_connectivity ---
+
+
+def test_check_db_connectivity_blank_path():
+    assert validators.check_db_connectivity("") == "（未入力）"
+
+
+def test_check_db_connectivity_missing_file(tmp_path):
+    result = validators.check_db_connectivity(str(tmp_path / "missing.json"))
+    assert result.startswith("NG")
+
+
+def test_check_db_connectivity_no_known_sections(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({}), encoding="utf-8")
+    result = validators.check_db_connectivity(str(path))
+    assert result.startswith("NG")
+
+
+def test_check_db_connectivity_postgres_success(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    class FakeConn:
+        def close(self):
+            pass
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+
+    result = validators.check_db_connectivity(str(path))
+    assert result == "postgres: OK（接続できました）"
+
+
+def test_check_db_connectivity_postgres_failure(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"}}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    import psycopg2
+
+    def fake_connect(**kwargs):
+        raise psycopg2.OperationalError("connection refused")
+
+    monkeypatch.setattr(psycopg2, "connect", fake_connect)
+
+    result = validators.check_db_connectivity(str(path))
+    assert "postgres: NG" in result
+    assert "connection refused" in result
+
+
+def test_check_db_connectivity_reports_both_engines(tmp_path, monkeypatch):
+    cfg = {
+        "postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"},
+        "influxdb": {"host": "ih", "port": 8086, "database": "idb"},
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    class FakeConn:
+        def close(self):
+            pass
+
+    class FakeInfluxClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def ping(self):
+            pass
+
+        def close(self):
+            pass
+
+    import psycopg2
+    import influxdb
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: FakeConn())
+    monkeypatch.setattr(influxdb, "InfluxDBClient", FakeInfluxClient)
+
+    result = validators.check_db_connectivity(str(path))
+    assert "postgres: OK" in result
+    assert "influxdb: OK" in result
+
+
+def test_check_db_connectivity_postgres_missing_required_key_does_not_attempt_connect(tmp_path, monkeypatch):
+    cfg = {"postgres": {"host": "h"}}  # 必須キー不足
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    called = []
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kwargs: called.append(1))
+
+    result = validators.check_db_connectivity(str(path))
+    assert "postgres: NG" in result
+    assert called == []
+
+
 def test_validate_sql_file_empty(tmp_path):
     path = tmp_path / "setup.sql"
     path.write_text("", encoding="utf-8")

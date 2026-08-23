@@ -82,6 +82,10 @@ class LogPanel(QWidget):
         # 完了時(mainスレッド上、_poll_queue経由)に呼ばれる任意のフック。
         # 生成結果のプレビュー表示や、他タブへのパス連携に使う。
         self.on_finish = None
+        # 実行中のサブプロセス（キャンセル/GUI終了時に強制終了するため保持する）。
+        # run_streamed()のon_startコールバック経由でバックグラウンドスレッドから設定される。
+        self.current_process = None
+        self._cancelled = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -90,6 +94,12 @@ class LogPanel(QWidget):
         self.run_button = QPushButton(run_label)
         self.run_button.clicked.connect(lambda: self.on_run())
         btn_row.addWidget(self.run_button)
+
+        self.cancel_button = QPushButton("キャンセル")
+        self.cancel_button.setObjectName("secondaryButton")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel)
+        btn_row.addWidget(self.cancel_button)
 
         self.open_result_button = QPushButton(open_result_label)
         self.open_result_button.setObjectName("secondaryButton")
@@ -120,19 +130,38 @@ class LogPanel(QWidget):
 
     def stop(self) -> None:
         self._timer.stop()
+        self.cancel()  # GUI終了時にも実行中のサブプロセスを残さないよう終了させる
 
     def start(self, worker) -> None:
         self.log_widget.clear()
         self.progress.reset()
         self.progress_bar.setValue(0)
         self.run_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
         self.open_result_button.setEnabled(False)
         self.result_path = None
+        self.current_process = None
+        self._cancelled = False
         self._set_status("実行中...", "running")
         threading.Thread(target=worker, daemon=True).start()
 
     def finish(self, code: int, result_path: Path | None) -> None:
         self.log_queue.put(("final", code, result_path))
+
+    def is_running(self) -> bool:
+        return self.current_process is not None and self.current_process.poll() is None
+
+    def register_process(self, proc) -> None:
+        """run_streamed()のon_startから呼ばれる。バックグラウンドスレッド側から実行される想定。"""
+        self.current_process = proc
+
+    def cancel(self) -> None:
+        if self.is_running():
+            self._cancelled = True
+            try:
+                self.current_process.terminate()
+            except OSError:
+                pass
 
     def _set_status(self, text: str, state: str) -> None:
         self.status_label.setText(text)
@@ -151,13 +180,19 @@ class LogPanel(QWidget):
                     self.progress_bar.setValue(self.progress.percent)
                 elif item[0] == "final":
                     code, result_path = item[1], item[2]
-                    meaning = (
-                        self.exit_code_meanings.get(code, f"終了コード {code}")
-                        if self.exit_code_meanings is not None
-                        else exit_code_meaning(code)
-                    )
-                    self._set_status(meaning, STATE_BY_CODE.get(code, "ng"))
+                    if self._cancelled:
+                        meaning, state = "キャンセルしました", "warn"
+                    else:
+                        meaning = (
+                            self.exit_code_meanings.get(code, f"終了コード {code}")
+                            if self.exit_code_meanings is not None
+                            else exit_code_meaning(code)
+                        )
+                        state = STATE_BY_CODE.get(code, "ng")
+                    self._set_status(meaning, state)
                     self.run_button.setEnabled(True)
+                    self.cancel_button.setEnabled(False)
+                    self.current_process = None
                     self.result_path = result_path
                     if result_path and Path(result_path).exists():
                         self.open_result_button.setEnabled(True)
@@ -171,6 +206,63 @@ class LogPanel(QWidget):
     def _open_result(self) -> None:
         if self.result_path and self.result_path.exists():
             os.startfile(str(self.result_path))  # noqa: S606 - Windows専用ツールのため
+
+
+class ConnectivityCheckRow(QWidget):
+    """DB接続設定(config.json)が実際にPostgreSQL/InfluxDBへ接続できるかを確認するボタン+ステータス表示。
+
+    validators.validate_db_config はファイルの形式（必須キーの有無）しか見ないため、
+    「形式は正しいが実際には繋がらない」場合を検知できない。ここではネットワーク越しに
+    実接続を試みる。ハングする可能性があるため、必ずバックグラウンドスレッドで実行し、
+    UIをブロックしない。
+    """
+
+    def __init__(self, get_config_path, parent=None):
+        super().__init__(parent)
+        self.get_config_path = get_config_path
+        self._queue: "queue.Queue[str]" = queue.Queue()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.check_button = QPushButton("DB接続を確認")
+        self.check_button.setObjectName("secondaryButton")
+        self.check_button.clicked.connect(self.on_check)
+        layout.addWidget(self.check_button)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label, stretch=1)
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll)
+        self._timer.start(150)
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def on_check(self) -> None:
+        path = self.get_config_path()
+        if not path:
+            self.status_label.setText("DB接続設定が未入力です")
+            return
+        self.check_button.setEnabled(False)
+        self.status_label.setText("確認中...")
+
+        def worker() -> None:
+            result = validators.check_db_connectivity(path)
+            self._queue.put(result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _poll(self) -> None:
+        try:
+            while True:
+                result = self._queue.get_nowait()
+                self.status_label.setText(result)
+                self.check_button.setEnabled(True)
+        except queue.Empty:
+            pass
 
 
 class GenerateRunTab(QWidget):
@@ -231,6 +323,9 @@ class GenerateRunTab(QWidget):
         validate_row.addWidget(self.validate_button)
         validate_row.addStretch(1)
         layout.addLayout(validate_row)
+
+        self.connectivity_row = ConnectivityCheckRow(self.config_field.get)
+        layout.addWidget(self.connectivity_row)
 
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
@@ -294,7 +389,7 @@ class GenerateRunTab(QWidget):
                 sys.executable, "-u", str(CLI_PY), openapi_path,
                 "-o", str(cases_path), "--excel-output", str(spec_path),
             ]
-            code = run_streamed(gen_cmd, self.panel.log_queue)
+            code = run_streamed(gen_cmd, self.panel.log_queue, on_start=self.panel.register_process)
             if code != 0:
                 self.panel.log_queue.put(("line", f"[ERROR] テスト仕様の生成に失敗しました（終了コード {code}）"))
                 self.panel.finish(code, None)
@@ -320,7 +415,7 @@ class GenerateRunTab(QWidget):
                 run_cmd += ["--fail-fast"]
             if dry_run:
                 run_cmd += ["--dry-run"]
-            code = run_streamed(run_cmd, self.panel.log_queue)
+            code = run_streamed(run_cmd, self.panel.log_queue, on_start=self.panel.register_process)
             self.panel.finish(code, result_path)
 
         self.panel.start(worker)
@@ -390,6 +485,10 @@ class ConfigBuilderTab(QWidget):
         self.status_label.setObjectName("statusLabel")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+
+        self.connectivity_row = ConnectivityCheckRow(self.output_path_field.get)
+        layout.addWidget(self.connectivity_row)
+
         layout.addStretch(1)
 
     def save_fields(self) -> None:
@@ -663,6 +762,9 @@ class MappingGenTab(QWidget):
         validate_row.addStretch(1)
         layout.addLayout(validate_row)
 
+        self.connectivity_row = ConnectivityCheckRow(self.config_field.get)
+        layout.addWidget(self.connectivity_row)
+
         self.panel = LogPanel(
             "mapping.yaml生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
@@ -720,7 +822,7 @@ class MappingGenTab(QWidget):
             ]
             if schema:
                 cmd += ["--schema", schema]
-            code = run_streamed(cmd, self.panel.log_queue)
+            code = run_streamed(cmd, self.panel.log_queue, on_start=self.panel.register_process)
             self.panel.finish(code, output_path if code == 0 else None)
 
         self.panel.start(worker)
@@ -763,6 +865,9 @@ class SetupSqlGenTab(QWidget):
         validate_row.addWidget(self.validate_button)
         validate_row.addStretch(1)
         layout.addLayout(validate_row)
+
+        self.connectivity_row = ConnectivityCheckRow(self.config_field.get)
+        layout.addWidget(self.connectivity_row)
 
         self.panel = LogPanel(
             "setup.sql/teardown.sql生成", self.on_run,
@@ -824,7 +929,7 @@ class SetupSqlGenTab(QWidget):
                 cmd += ["--schema", schema]
             if tables:
                 cmd += ["--tables", tables]
-            code = run_streamed(cmd, self.panel.log_queue)
+            code = run_streamed(cmd, self.panel.log_queue, on_start=self.panel.register_process)
             self.panel.finish(code, setup_output if code == 0 else None)
 
         self.panel.start(worker)
@@ -919,7 +1024,7 @@ class ScenarioGenTab(QWidget):
                 sys.executable, "-u", str(GENERATE_DB_SCENARIOS_PY), openapi_path, mapping_path,
                 "-o", str(output_path),
             ]
-            code = run_streamed(cmd, self.panel.log_queue)
+            code = run_streamed(cmd, self.panel.log_queue, on_start=self.panel.register_process)
             self.panel.finish(code, output_path if code == 0 else None)
 
         self.panel.start(worker)
@@ -971,6 +1076,9 @@ class DBScenarioTab(QWidget):
         validate_row.addWidget(self.validate_button)
         validate_row.addStretch(1)
         layout.addLayout(validate_row)
+
+        self.connectivity_row = ConnectivityCheckRow(self.config_field.get)
+        layout.addWidget(self.connectivity_row)
 
         self.panel = LogPanel("実行", self.on_run, open_result_label="結果Excelを開く")
         layout.addWidget(self.panel, stretch=1)
@@ -1027,7 +1135,7 @@ class DBScenarioTab(QWidget):
             if report_path:
                 Path(report_dir).mkdir(parents=True, exist_ok=True)
                 cmd += ["--report-output", str(report_path)]
-            code = run_streamed(cmd, self.panel.log_queue)
+            code = run_streamed(cmd, self.panel.log_queue, on_start=self.panel.register_process)
             self.panel.finish(code, report_path if (report_path and code in (0, 1)) else None)
 
         self.panel.start(worker)
@@ -1133,12 +1241,26 @@ class MainWindow(QMainWindow):
         panel.on_finish = combined
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qtのオーバーライド規約
+        running_panels = [tab.panel for tab in self._all_tabs if hasattr(tab, "panel") and tab.panel.is_running()]
+        if running_panels:
+            reply = QMessageBox.question(
+                self, "実行中の処理があります",
+                "実行中の処理があります。終了すると処理が強制終了されます。終了してもよろしいですか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+
         for tab in self._all_tabs:
             tab.save_fields()
         save_settings(self.settings)
         for tab in self._all_tabs:
             if hasattr(tab, "panel"):
                 tab.panel.stop()
+            if hasattr(tab, "connectivity_row"):
+                tab.connectivity_row.stop()
         super().closeEvent(event)
 
 

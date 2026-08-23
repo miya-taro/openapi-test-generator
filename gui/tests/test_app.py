@@ -34,7 +34,7 @@ def _wait_for(predicate, timeout=2.0):
 def captured_cmds(monkeypatch):
     calls = []
 
-    def fake_run_streamed(cmd, log_queue):
+    def fake_run_streamed(cmd, log_queue, **kwargs):
         calls.append(cmd)
         return 0
 
@@ -53,6 +53,8 @@ def window(tmp_path, monkeypatch):
     for tab in w._all_tabs:
         if hasattr(tab, "panel"):
             tab.panel.stop()
+        if hasattr(tab, "connectivity_row"):
+            tab.connectivity_row.stop()
 
 
 # ---------- GenerateRunTab ----------
@@ -346,12 +348,12 @@ def test_db_tab_result_path_set_on_ok_and_ng_but_not_on_error(window, tmp_path, 
     window.db_tab.base_url_field.set("http://localhost")
     window.db_tab.report_dir_field.set(str(tmp_path))
 
-    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 1)  # 1 = 一部NG（レポート自体は出る）
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **kwargs: 1)  # 1 = 一部NG（レポート自体は出る）
     window.db_tab.on_run()
     assert _wait_for(lambda: window.db_tab.panel.status_label.text() != "実行中...")
     assert window.db_tab.panel.result_path == tmp_path / "db_scenario_result.xlsx"
 
-    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 3)  # 3 = 実行エラー（レポートは出ない想定）
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **kwargs: 3)  # 3 = 実行エラー（レポートは出ない想定）
     window.db_tab.on_run()
     assert _wait_for(lambda: window.db_tab.panel.status_label.text() != "実行中...")
     assert window.db_tab.panel.result_path is None

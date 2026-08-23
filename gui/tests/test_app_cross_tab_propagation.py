@@ -33,6 +33,8 @@ def window(monkeypatch):
     for tab in w._all_tabs:
         if hasattr(tab, "panel"):
             tab.panel.stop()
+        if hasattr(tab, "connectivity_row"):
+            tab.connectivity_row.stop()
 
 
 def test_config_builder_save_propagates_to_all_config_consumers(window, tmp_path):
@@ -71,7 +73,7 @@ def test_mapping_gen_success_propagates_to_scenario_gen_tab(window, tmp_path, mo
     window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
     window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
 
-    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 0)
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **kwargs: 0)
     window.mapping_gen_tab.on_run()
 
     expected = str(tmp_path / "mapping.yaml.generated")
@@ -83,7 +85,7 @@ def test_mapping_gen_failure_does_not_propagate(window, tmp_path, monkeypatch):
     window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
     window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
 
-    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 1)
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **kwargs: 1)
     window.mapping_gen_tab.on_run()
     assert _wait_for(lambda: window.mapping_gen_tab.panel.status_label.text() != "実行中...")
 
@@ -94,7 +96,7 @@ def test_sqlgen_success_propagates_setup_and_teardown_to_gen_tab(window, tmp_pat
     window.sql_gen_tab.config_field.set(str(tmp_path / "config.json"))
     window.sql_gen_tab.output_dir_field.set(str(tmp_path))
 
-    def fake_run(cmd, q):
+    def fake_run(cmd, q, **kwargs):
         (tmp_path / "setup.sql.generated").write_text("x", encoding="utf-8")
         (tmp_path / "teardown.sql.generated").write_text("y", encoding="utf-8")
         return 0
@@ -113,7 +115,7 @@ def test_scengen_success_propagates_to_db_tab(window, tmp_path, monkeypatch):
     window.scenario_gen_tab.mapping_field.set(str(tmp_path / "mapping.yaml"))
     window.scenario_gen_tab.output_dir_field.set(str(tmp_path))
 
-    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q: 0)
+    monkeypatch.setattr(app_module, "run_streamed", lambda cmd, q, **kwargs: 0)
     window.scenario_gen_tab.on_run()
 
     expected = str(tmp_path / "scenarios.generated.yaml")
@@ -126,7 +128,7 @@ def test_mapping_gen_preview_still_populated_after_propagation_wiring(window, tm
     window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
     window.mapping_gen_tab.output_dir_field.set(str(tmp_path))
 
-    def fake_run(cmd, q):
+    def fake_run(cmd, q, **kwargs):
         (tmp_path / "mapping.yaml.generated").write_text("operations: {}\n", encoding="utf-8")
         return 0
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import queue
 import subprocess
+from typing import Callable
 
 EXIT_CODE_MEANINGS: dict[int, str] = {
     0: "OK：全ケース成功",
@@ -16,8 +17,14 @@ def exit_code_meaning(code: int) -> str:
     return EXIT_CODE_MEANINGS.get(code, f"終了コード {code}")
 
 
-def run_streamed(cmd: list[str], log_queue: "queue.Queue[tuple]") -> int:
+def run_streamed(
+    cmd: list[str], log_queue: "queue.Queue[tuple]",
+    on_start: "Callable[[subprocess.Popen], None] | None" = None,
+) -> int:
     """コマンドを実行し、標準出力/標準エラーを1行ずつ ("line", text) として log_queue に流す。
+
+    on_start が指定されていれば、プロセス起動直後（Popenオブジェクトを渡して）呼び出す。
+    GUI側がプロセスハンドルを保持してキャンセルできるようにするためのフック。
 
     戻り値は終了コード（起動自体に失敗した場合は -1）。
     """
@@ -35,6 +42,9 @@ def run_streamed(cmd: list[str], log_queue: "queue.Queue[tuple]") -> int:
     except OSError as e:
         log_queue.put(("line", f"[ERROR] コマンド起動に失敗しました: {e}"))
         return -1
+
+    if on_start:
+        on_start(proc)
 
     assert proc.stdout is not None
     for line in proc.stdout:

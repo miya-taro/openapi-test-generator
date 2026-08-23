@@ -40,6 +40,42 @@ def test_run_streamed_real_subprocess_nonzero_exit_code():
     assert code == 3
 
 
+def test_run_streamed_calls_on_start_with_popen_object():
+    log_queue: queue.Queue = queue.Queue()
+    cmd = [sys.executable, "-c", "print('x')"]
+    captured = []
+
+    code = run_streamed(cmd, log_queue, on_start=lambda proc: captured.append(proc))
+
+    assert code == 0
+    assert len(captured) == 1
+    assert captured[0].pid > 0
+
+
+def test_run_streamed_on_start_not_called_when_process_fails_to_launch():
+    log_queue: queue.Queue = queue.Queue()
+    cmd = ["this-command-does-not-exist-12345"]
+    captured = []
+
+    run_streamed(cmd, log_queue, on_start=lambda proc: captured.append(proc))
+
+    assert captured == []
+
+
+def test_run_streamed_terminated_process_returns_nonzero_and_stops_early(monkeypatch):
+    """on_start経由でハンドルを受け取り、途中でterminate()した場合の挙動を確認する
+    （GUI側のキャンセル機能が使う経路）。"""
+    log_queue: queue.Queue = queue.Queue()
+    cmd = [sys.executable, "-c", "import time; [print(i) or time.sleep(0.05) for i in range(100)]"]
+
+    def on_start(proc):
+        proc.terminate()
+
+    code = run_streamed(cmd, log_queue, on_start=on_start)
+
+    assert code != 0
+
+
 def test_run_streamed_missing_executable_returns_negative_one():
     log_queue: queue.Queue = queue.Queue()
     cmd = ["this-command-does-not-exist-12345"]
