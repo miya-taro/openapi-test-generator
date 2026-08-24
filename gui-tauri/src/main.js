@@ -15,7 +15,6 @@ async function loadSettingsIntoForm() {
   $("openapi-path").value = settings.shared_openapi_path || "";
   $("output-dir").value = settings.gen_output_dir || "";
   $("base-url").value = settings.gen_base_url || "";
-  $("auth-config-path").value = settings.gen_auth_config_path || "";
   $("setup-sql-path").value = settings.gen_setup_path || "";
   $("teardown-sql-path").value = settings.gen_teardown_path || "";
   $("dry-run").checked = !!settings.gen_dry_run;
@@ -34,17 +33,26 @@ async function loadSettingsIntoForm() {
   $("influx-port").value = settings.cfg_influx_port || "";
   $("influx-database").value = settings.cfg_influx_database || "";
   $("influx-username").value = settings.cfg_influx_username || "";
+
+  $("auth-enabled").checked = !!settings.auth_enabled;
+  $("auth-token-path").value = settings.auth_token_path || "";
+  $("auth-header-name").value = settings.auth_header_name || "";
+  $("auth-header-format").value = settings.auth_header_format || "";
+  // ボディは認証情報を含みうるため、設定ファイルに平文保存しない（起動時は毎回未入力）
+
   updateActiveOpenapiText();
+  updateActiveBaseUrlText();
   updateActiveDbConfigText();
 
   await refreshOperationsList({ keepExcluded: true });
+  // ログイン操作の選択はoperation一覧に依存するため、一覧更新後に復元する。
+  if (settings.auth_login_op) $("auth-login-op").value = settings.auth_login_op;
 }
 
 async function persistSettings() {
   settings.shared_openapi_path = $("openapi-path").value.trim();
   settings.gen_output_dir = $("output-dir").value.trim();
   settings.gen_base_url = $("base-url").value.trim();
-  settings.gen_auth_config_path = $("auth-config-path").value.trim();
   settings.gen_setup_path = $("setup-sql-path").value.trim();
   settings.gen_teardown_path = $("teardown-sql-path").value.trim();
   settings.gen_dry_run = $("dry-run").checked;
@@ -64,6 +72,13 @@ async function persistSettings() {
   settings.cfg_influx_database = $("influx-database").value.trim();
   settings.cfg_influx_username = $("influx-username").value.trim();
   // password は意図的に保存しない（設定ファイルへの平文保存を避けるため）
+
+  settings.auth_enabled = $("auth-enabled").checked;
+  settings.auth_login_op = $("auth-login-op").value;
+  settings.auth_token_path = $("auth-token-path").value.trim();
+  settings.auth_header_name = $("auth-header-name").value.trim();
+  settings.auth_header_format = $("auth-header-format").value.trim();
+  // ボディ（認証情報を含みうる）は意図的に保存しない
 
   await invoke("save_settings", { data: settings });
 }
@@ -100,6 +115,15 @@ function updateActiveOpenapiText() {
   const path = $("openapi-path").value.trim();
   const name = path ? path.split(/[\\/]/).pop() : "未設定";
   $("active-openapi-text").textContent = `openapi.json: ${name}`;
+}
+
+function updateActiveBaseUrlText() {
+  const url = $("base-url").value.trim();
+  $("active-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
+}
+
+for (const evt of ["input", "change"]) {
+  $("base-url").addEventListener(evt, updateActiveBaseUrlText);
 }
 
 $("goto-settings").addEventListener("click", () => showPage("settings"));
@@ -190,18 +214,104 @@ $("db-config-save").addEventListener("click", async () => {
   }
 });
 
-// ---------- 出力先フォルダ / 認証設定 / setup・teardown SQL ----------
+// ---------- 出力先フォルダ / setup・teardown SQL ----------
 
 $("browse-output-dir").addEventListener("click", () => browseDir("output-dir"));
-$("browse-auth-config").addEventListener("click", () =>
-  browseFile("auth-config-path", [{ name: "JSON", extensions: ["json"] }]),
-);
 $("browse-setup-sql").addEventListener("click", () =>
   browseFile("setup-sql-path", [{ name: "SQL", extensions: ["sql"] }]),
 );
 $("browse-teardown-sql").addEventListener("click", () =>
   browseFile("teardown-sql-path", [{ name: "SQL", extensions: ["sql"] }]),
 );
+
+// ---------- 認証設定（対象APIの中からログイン操作を選ぶだけでURL/メソッドを自動で使う） ----------
+
+function authConfigEnabled() {
+  return $("auth-enabled").checked;
+}
+
+function populateAuthLoginOpSelect() {
+  const select = $("auth-login-op");
+  const previous = select.value;
+  select.innerHTML = "";
+
+  if (lastOperations.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "「設定」画面でopenapi.jsonを選択すると一覧から選べます";
+    select.appendChild(opt);
+    return;
+  }
+
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "（選択してください）";
+  select.appendChild(empty);
+
+  for (const op of lastOperations) {
+    const opt = document.createElement("option");
+    opt.value = op.operationId;
+    opt.textContent = `${op.method} ${op.path} (${op.operationId})`;
+    select.appendChild(opt);
+  }
+
+  if (previous && lastOperations.some((op) => op.operationId === previous)) {
+    select.value = previous;
+  }
+}
+
+function collectAuthConfig() {
+  const operationId = $("auth-login-op").value;
+  const op = lastOperations.find((o) => o.operationId === operationId);
+  if (!op) {
+    throw new Error("ログイン操作を選択してください（対象APIの一覧から選べます）");
+  }
+
+  const bodyText = $("auth-body").value.trim();
+  let body;
+  if (bodyText) {
+    try {
+      body = JSON.parse(bodyText);
+    } catch (e) {
+      throw new Error(`ログインリクエストのボディがJSONとして解析できません: ${e.message}`);
+    }
+  }
+
+  const data = { login_url: op.path, method: op.method };
+  if (body !== undefined) data.body = body;
+  const tokenPath = $("auth-token-path").value.trim();
+  if (tokenPath) data.token_path = tokenPath;
+  const headerName = $("auth-header-name").value.trim();
+  if (headerName) data.header_name = headerName;
+  const headerFormat = $("auth-header-format").value.trim();
+  if (headerFormat) data.header_format = headerFormat;
+  return data;
+}
+
+function setAuthConfigStatus(text, state) {
+  const el = $("auth-config-status");
+  el.textContent = text;
+  el.classList.remove("error", "ok");
+  if (state) el.classList.add(state);
+}
+
+$("auth-config-save").addEventListener("click", async () => {
+  let data;
+  try {
+    data = collectAuthConfig();
+  } catch (e) {
+    setAuthConfigStatus(e.message, "error");
+    return;
+  }
+  const savePath = await save({ filters: [{ name: "YAML/JSON", extensions: ["yaml", "yml", "json"] }], defaultPath: "auth_config.yaml" });
+  if (!savePath) return;
+  try {
+    await invoke("write_config_file", { path: savePath, data });
+    setAuthConfigStatus(`保存しました: ${savePath}`, "ok");
+  } catch (e) {
+    setAuthConfigStatus(`保存に失敗しました: ${e}`, "error");
+  }
+});
 
 // ---------- 対象APIチェックリスト ----------
 
@@ -213,6 +323,7 @@ async function refreshOperationsList({ keepExcluded }) {
   if (!path) {
     container.innerHTML = '<div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div>';
     lastOperations = [];
+    populateAuthLoginOpSelect();
     return;
   }
 
@@ -222,10 +333,12 @@ async function refreshOperationsList({ keepExcluded }) {
   } catch (e) {
     container.innerHTML = `<div class="op-empty">読み込みに失敗しました: ${e}</div>`;
     lastOperations = [];
+    populateAuthLoginOpSelect();
     return;
   }
 
   lastOperations = ops || [];
+  populateAuthLoginOpSelect();
   if (lastOperations.length === 0) {
     container.innerHTML = '<div class="op-empty">operationが見つかりませんでした</div>';
     return;
@@ -299,6 +412,7 @@ let currentRunId = null;
 let pendingSecondStage = null;
 let currentResultPath = null;
 let tempDbConfigPath = null;
+let tempAuthConfigPath = null;
 let progressTotal = 0;
 let progressDone = 0;
 
@@ -388,13 +502,13 @@ $("run-button").addEventListener("click", async () => {
     return;
   }
   if (!baseUrl) {
-    showGenError("Base URL を入力してください（「1. 対象API」）");
+    showGenError("Base URL を入力してください（「設定」画面）");
     return;
   }
 
   const unchecked = getUncheckedOperationIds();
   if (lastOperations.length > 0 && unchecked.length === lastOperations.length) {
-    showGenError("対象APIを少なくとも1つ選択してください（「1. 対象API」）");
+    showGenError("対象APIを少なくとも1つ選択してください（サイドバーの「対象API」）");
     return;
   }
 
@@ -423,6 +537,24 @@ $("run-button").addEventListener("click", async () => {
   }
   tempDbConfigPath = configPath || null;
 
+  let authConfigPath = "";
+  if (authConfigEnabled()) {
+    let authConfigData;
+    try {
+      authConfigData = collectAuthConfig();
+    } catch (e) {
+      showGenError(e.message);
+      return;
+    }
+    try {
+      authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
+    } catch (e) {
+      showGenError(`認証設定の準備に失敗しました: ${e}`);
+      return;
+    }
+  }
+  tempAuthConfigPath = authConfigPath || null;
+
   await persistSettings();
 
   const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
@@ -435,7 +567,6 @@ $("run-button").addEventListener("click", async () => {
 
   const runArgs = [specPath, openapiPath, "--base-url", baseUrl, "--output", resultPath];
   if (!$("health-check-enabled").checked) runArgs.push("--skip-health-check");
-  const authConfigPath = $("auth-config-path").value.trim();
   if (authConfigPath) runArgs.push("--auth-config", authConfigPath);
   if (configPath) runArgs.push("--config", configPath);
   if (setupPath) runArgs.push("--setup", setupPath);
@@ -490,6 +621,10 @@ listen("proc-done", async (event) => {
   if (tempDbConfigPath) {
     invoke("delete_file", { path: tempDbConfigPath }).catch(() => {});
     tempDbConfigPath = null;
+  }
+  if (tempAuthConfigPath) {
+    invoke("delete_file", { path: tempAuthConfigPath }).catch(() => {});
+    tempAuthConfigPath = null;
   }
 });
 

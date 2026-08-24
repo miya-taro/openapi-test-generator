@@ -107,6 +107,8 @@ body {
 }
 
 #top-nav {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: stretch;
   justify-content: space-between;
@@ -114,6 +116,7 @@ body {
   border-bottom: 1px solid var(--border-light);
   padding: 0 20px;
   flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
 #top-nav .tabs {
@@ -126,21 +129,15 @@ body {
   border: none;
   border-bottom: 3px solid transparent;
   border-radius: 0;
-  padding: 13px 16px 11px;
+  min-width: 132px;
+  height: 46px;
+  padding: 0 16px;
   font-weight: 600;
   font-size: 10pt;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.12s ease, color 0.12s ease;
-}
-
-.tab-hint {
-  font-size: 7.5pt;
-  font-weight: 400;
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
 .tab:hover:not(.active) {
@@ -155,11 +152,6 @@ body {
 
 .tab.active:hover {
   background: transparent;
-}
-
-.tab.active .tab-hint {
-  color: var(--accent);
-  opacity: 0.75;
 }
 
 .tab .badge {
@@ -198,7 +190,9 @@ body {
 /* ---------- フォーム部品 ---------- */
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+select,
+textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -207,22 +201,33 @@ input[type="password"] {
   font-size: inherit;
   color: var(--text);
   transition: border-color 0.12s ease;
+  width: 100%;
+}
+
+textarea {
+  font-family: "Consolas", "Cascadia Mono", monospace;
+  font-size: 9.5pt;
+  resize: vertical;
 }
 
 input[type="text"]:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 input[type="text"]::placeholder,
-input[type="password"]::placeholder {
+input[type="password"]::placeholder,
+textarea::placeholder {
   color: #9aa1ad;
 }
 
 input[type="text"]:disabled,
-input[type="password"]:disabled {
+input[type="password"]:disabled,
+select:disabled {
   background: #f1f2f5;
   color: var(--text-muted);
 }

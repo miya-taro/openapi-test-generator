@@ -23,20 +23,10 @@
         <div id="main-area">
           <header id="top-nav">
             <div class="tabs">
-              <button class="tab active" data-page="gen">
-                テスト生成・実行
-                <span class="tab-hint">openapi.jsonから自動生成し、レスポンスを検証</span>
-              </button>
-              <button class="tab" data-page="db-prep">
-                DB準備<span class="badge">準備中</span>
-              </button>
-              <button class="tab" data-page="db-scenario">
-                DBシナリオ<span class="badge">準備中</span>
-                <span class="tab-hint">シナリオを手動定義し、API呼び出し後のDB状態を検証</span>
-              </button>
-              <button class="tab" data-page="health-check">
-                ヘルスチェック<span class="badge">準備中</span>
-              </button>
+              <button class="tab active" data-page="gen">テスト生成・実行</button>
+              <button class="tab" data-page="db-prep">DB準備<span class="badge">準備中</span></button>
+              <button class="tab" data-page="db-scenario">DBシナリオ<span class="badge">準備中</span></button>
+              <button class="tab" data-page="health-check">ヘルスチェック<span class="badge">準備中</span></button>
             </div>
             <div class="tabs tabs-secondary">
               <button class="tab" data-page="settings">設定</button>
@@ -49,37 +39,38 @@
 
               <div class="active-config-status">
                 <span id="active-openapi-text">openapi.json: 未設定</span>
+                <span id="active-baseurl-text">Base URL: 未設定</span>
                 <span id="active-dbconfig-text">DB接続設定: 未設定</span>
                 <button class="secondary" id="goto-settings">設定を変更</button>
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">1. 接続先</h3>
-
-                <div class="form-field">
-                  <label>Base URL</label>
-                  <input id="base-url" type="text" placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）" />
-                </div>
-
-                <label class="checkbox">
-                  <input type="checkbox" id="health-check-enabled" />
-                  実行前にヘルスチェック（疎通確認）を行う（詳細は「ヘルスチェック」メニュー）
-                </label>
-              </div>
-
-              <div class="form-section">
-                <h3 class="form-section-title">2. 認証・DBデータ準備<span class="optional-tag">任意</span></h3>
+                <h3 class="form-section-title">1. 認証・DBデータ準備<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">ログイン認証が必要なAPI、またはDBへのデータ投入・後片付けが必要な試験でのみ入力してください。</p>
 
+                <label class="checkbox"><input type="checkbox" id="auth-enabled" /> ログイン認証を行う</label>
                 <div class="form-field">
-                  <label>認証設定</label>
-                  <div class="row">
-                    <input id="auth-config-path" type="text" placeholder="ログイン認証が必要なAPIのみ。auth_config.yaml（未作成の場合は空欄でOK）" />
-                    <button class="secondary" id="browse-auth-config">参照...</button>
-                  </div>
+                  <label>ログイン操作</label>
+                  <select id="auth-login-op">
+                    <option value="">「設定」画面でopenapi.jsonを選択すると一覧から選べます</option>
+                  </select>
+                  <p class="field-caption">対象APIの中から、ログインを行う操作（例: POST /api/v1/auth/login）を選んでください。URLとHTTPメソッドはここから自動で使われます。</p>
                 </div>
-
                 <div class="form-field">
+                  <label>ログインリクエストのボディ</label>
+                  <textarea id="auth-body" rows="3" placeholder='{"username": "test", "password": "test1234"}'></textarea>
+                </div>
+                <div class="db-fields-grid">
+                  <input id="auth-token-path" type="text" placeholder="token_path（既定: access_token）" />
+                  <input id="auth-header-name" type="text" placeholder="header_name（既定: Authorization）" />
+                  <input id="auth-header-format" type="text" placeholder="header_format（既定: Bearer {token}）" />
+                </div>
+                <div class="btn-row">
+                  <button class="secondary" id="auth-config-save">ファイルに保存(任意・外部共有用)</button>
+                </div>
+                <div id="auth-config-status" class="field-caption status-message"></div>
+
+                <div class="form-field" style="margin-top: 14px">
                   <label>試験前SQL</label>
                   <div class="row">
                     <input id="setup-sql-path" type="text" placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）" />
@@ -96,7 +87,12 @@
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">3. 実行設定</h3>
+                <h3 class="form-section-title">2. 実行設定</h3>
+
+                <label class="checkbox">
+                  <input type="checkbox" id="health-check-enabled" />
+                  実行前にヘルスチェック（疎通確認）を行う（詳細は「ヘルスチェック」メニュー）
+                </label>
 
                 <div class="form-field">
                   <label>出力先フォルダ</label>
@@ -104,6 +100,7 @@
                     <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
                     <button class="secondary" id="browse-output-dir">参照...</button>
                   </div>
+                  <p class="field-caption">生成される試験仕様Excel・結果Excel・test_cases.jsonの出力先フォルダです。</p>
                 </div>
 
                 <label class="checkbox"><input type="checkbox" id="dry-run" /> dry-run（実際にはリクエストを送信しない。生成内容の確認用）</label>
@@ -112,7 +109,7 @@
               </div>
 
               <div id="run-panel">
-                <h3 class="form-section-title">4. 実行</h3>
+                <h3 class="form-section-title">3. 実行</h3>
                 <div class="btn-row">
                   <button id="run-button">生成して実行</button>
                   <button class="secondary" id="cancel-button" disabled>キャンセル</button>
@@ -131,7 +128,7 @@
               <div class="page-placeholder">
                 DBシナリオタブは準備中です。<br />
                 （実装後は、手動定義したシナリオでAPIを呼び出し、DBが期待通り変化したかを検証できるようになります。
-                「テスト生成・実行」とは別レイヤーの試験です）
+                「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）
               </div>
             </section>
             <section id="page-health-check" class="page">
@@ -147,6 +144,14 @@
                     <input id="openapi-path" type="text" placeholder="openapi.jsonのパス" />
                     <button class="secondary" id="browse-openapi">参照...</button>
                   </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">Base URL</h3>
+                <p class="form-section-desc">試験対象サーバーのURL。openapi.jsonにserversがあれば自動入力されます。</p>
+                <div class="form-field">
+                  <input id="base-url" type="text" placeholder="例: https://api.example.com" />
                 </div>
               </div>
 
