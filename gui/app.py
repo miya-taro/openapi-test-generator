@@ -296,10 +296,56 @@ class ConnectivityCheckRow(QWidget):
             pass
 
 
+class HealthCheckSettingsTab(QWidget):
+    """試験実行前のヘルスチェック（疎通確認）設定。
+
+    「テスト生成・実行」「DBシナリオ」の両方の実行に共通で使われる設定
+    （Base URLは各タブ固有だが、疎通確認をするかどうか・確認先パスは共通）なので、
+    片方のタブだけに置くと分かりにくいという指摘を受けて独立したメニューにした。
+    """
+
+    def __init__(self, settings: dict, parent=None):
+        super().__init__(parent)
+        self.settings = settings
+
+        layout = QVBoxLayout(self)
+
+        self.health_check_checkbox = QCheckBox("実行前にヘルスチェック（疎通確認）を行う")
+        self.health_check_checkbox.setChecked(bool(settings["shared_health_check_enabled"]))
+        self.health_check_checkbox.toggled.connect(self._on_toggled)
+        layout.addWidget(self.health_check_checkbox)
+
+        self.health_path_field = TextField("Health Path", settings["shared_health_path"])
+        layout.addWidget(self.health_path_field)
+
+        note = QLabel(
+            "「テスト生成・実行」「DBシナリオ」どちらの実行にも共通で使われる設定です。"
+            "チェックすると、各タブのBase URL + Health PathへGETを送り、200番台が返るか"
+            "試験開始前に確認します（本文は見ません）。200番台以外だと試験は1件も実行されず"
+            "即座に中断するため、毎回の実行で必須にしたくない場合はチェックを外したままに"
+            "してください（既定でオフです）。"
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        self.health_path_field.setEnabled(self.health_check_checkbox.isChecked())
+
+        layout.addStretch(1)
+
+    def _on_toggled(self, checked: bool) -> None:
+        self.health_path_field.setEnabled(checked)
+
+    def save_fields(self) -> None:
+        self.settings["shared_health_check_enabled"] = self.health_check_checkbox.isChecked()
+        self.settings["shared_health_path"] = self.health_path_field.get()
+
+
 class GenerateRunTab(QWidget):
     """openapi-test-gen で生成 → openapi-test-run で実行、を1クリックで行うタブ。"""
 
-    def __init__(self, settings: dict, openapi_field: "PathField", config_field: "PathField", parent=None):
+    def __init__(
+        self, settings: dict, openapi_field: "PathField", config_field: "PathField",
+        health_check_checkbox: QCheckBox, health_path_field: "TextField", parent=None,
+    ):
         super().__init__(parent)
         self.settings = settings
 
@@ -321,22 +367,10 @@ class GenerateRunTab(QWidget):
         )
         layout.addWidget(self.base_url_field)
 
-        self.health_check_checkbox = QCheckBox("実行前にヘルスチェック（疎通確認）を行う")
-        self.health_check_checkbox.setChecked(bool(settings["gen_health_check_enabled"]))
-        self.health_check_checkbox.toggled.connect(self._on_health_check_toggled)
-        layout.addWidget(self.health_check_checkbox)
-
-        self.health_path_field = TextField("Health Path", settings["gen_health_path"])
-        layout.addWidget(self.health_path_field)
-
-        health_note = QLabel(
-            "チェックすると、試験開始前にBase URL + Health PathへGETを送り、200番台が返るか"
-            "確認します（本文は見ません）。200番台以外だと試験は1件も実行されず即座に中断するため、"
-            "毎回の実行で必須にしたくない場合はチェックを外したままにしてください（既定でオフです）。"
-        )
-        health_note.setWordWrap(True)
-        layout.addWidget(health_note)
-        self.health_path_field.setEnabled(self.health_check_checkbox.isChecked())
+        # ヘルスチェックのON/OFF・Health Pathは「ヘルスチェック」メニューで共通設定する
+        # （Layer1/Layer2どちらの実行にも使う設定のため、片方のタブに置くと分かりにくい）。
+        self.health_check_checkbox = health_check_checkbox
+        self.health_path_field = health_path_field
 
         self.auth_config_field = PathField(
             "認証設定(任意)", name_filter=JSON_FILTER,
@@ -391,9 +425,6 @@ class GenerateRunTab(QWidget):
         self.panel = LogPanel("生成して実行", self.on_run)
         layout.addWidget(self.panel, stretch=1)
 
-    def _on_health_check_toggled(self, checked: bool) -> None:
-        self.health_path_field.setEnabled(checked)
-
     def _maybe_fill_base_url_from_openapi(self) -> None:
         """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
         if self.base_url_field.get():
@@ -421,8 +452,6 @@ class GenerateRunTab(QWidget):
     def save_fields(self) -> None:
         self.settings["gen_output_dir"] = self.output_dir_field.get()
         self.settings["gen_base_url"] = self.base_url_field.get()
-        self.settings["gen_health_path"] = self.health_path_field.get()
-        self.settings["gen_health_check_enabled"] = self.health_check_checkbox.isChecked()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
         self.settings["gen_setup_path"] = self.setup_field.get()
@@ -1313,7 +1342,10 @@ class ScenarioGenTab(QWidget):
 class DBScenarioTab(QWidget):
     """db_scenario_runner.py を実行するタブ。"""
 
-    def __init__(self, settings: dict, openapi_field: "PathField", config_field: "PathField", parent=None):
+    def __init__(
+        self, settings: dict, openapi_field: "PathField", config_field: "PathField",
+        health_check_checkbox: QCheckBox, health_path_field: "TextField", parent=None,
+    ):
         super().__init__(parent)
         self.settings = settings
 
@@ -1333,22 +1365,9 @@ class DBScenarioTab(QWidget):
         )
         layout.addWidget(self.base_url_field)
 
-        self.health_check_checkbox = QCheckBox("実行前にヘルスチェック（疎通確認）を行う")
-        self.health_check_checkbox.setChecked(bool(settings["db_health_check_enabled"]))
-        self.health_check_checkbox.toggled.connect(self._on_health_check_toggled)
-        layout.addWidget(self.health_check_checkbox)
-
-        self.health_path_field = TextField("Health Path", settings["db_health_path"])
-        layout.addWidget(self.health_path_field)
-
-        health_note = QLabel(
-            "チェックすると、試験開始前にBase URL + Health PathへGETを送り、200番台が返るか"
-            "確認します（本文は見ません）。200番台以外だと試験は1件も実行されず即座に中断するため、"
-            "毎回の実行で必須にしたくない場合はチェックを外したままにしてください（既定でオフです）。"
-        )
-        health_note.setWordWrap(True)
-        layout.addWidget(health_note)
-        self.health_path_field.setEnabled(self.health_check_checkbox.isChecked())
+        # ヘルスチェックのON/OFF・Health Pathは「ヘルスチェック」メニューで共通設定する。
+        self.health_check_checkbox = health_check_checkbox
+        self.health_path_field = health_path_field
 
         self.auth_config_field = PathField("認証設定(任意)", name_filter=JSON_FILTER)
         self.auth_config_field.set(settings["db_auth_config_path"])
@@ -1394,9 +1413,6 @@ class DBScenarioTab(QWidget):
         if isinstance(url, str) and url:
             self.base_url_field.set(url)
 
-    def _on_health_check_toggled(self, checked: bool) -> None:
-        self.health_path_field.setEnabled(checked)
-
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("シナリオYAML", validators.validate_scenarios_yaml(self.scenario_field.get())),
@@ -1408,8 +1424,6 @@ class DBScenarioTab(QWidget):
     def save_fields(self) -> None:
         self.settings["db_scenario_path"] = self.scenario_field.get()
         self.settings["db_base_url"] = self.base_url_field.get()
-        self.settings["db_health_path"] = self.health_path_field.get()
-        self.settings["db_health_check_enabled"] = self.health_check_checkbox.isChecked()
         self.settings["db_auth_config_path"] = self.auth_config_field.get()
         self.settings["db_dry_run"] = self.dry_run_checkbox.isChecked()
         self.settings["db_report_dir"] = self.report_dir_field.get()
@@ -1482,16 +1496,26 @@ class MainWindow(QMainWindow):
         )
         self.config_field.set(self.settings["shared_config_path"])
 
-        self.gen_tab = GenerateRunTab(self.settings, self.openapi_field, self.config_field)
+        # ヘルスチェックのON/OFF・Health Pathも、Layer1/Layer2どちらの実行にも共通の
+        # 設定として独立したメニューにまとめ、両タブから同じインスタンスを共有する。
+        self.health_check_tab = HealthCheckSettingsTab(self.settings)
+
+        self.gen_tab = GenerateRunTab(
+            self.settings, self.openapi_field, self.config_field,
+            self.health_check_tab.health_check_checkbox, self.health_check_tab.health_path_field,
+        )
         self.config_builder_tab = ConfigBuilderTab(self.settings)
         self.auth_builder_tab = AuthConfigBuilderTab(self.settings)
         self.mapping_gen_tab = MappingGenTab(self.settings, self.openapi_field, self.config_field)
         self.sql_gen_tab = SetupSqlGenTab(self.settings, self.config_field)
         self.scenario_gen_tab = ScenarioGenTab(self.settings, self.openapi_field)
-        self.db_tab = DBScenarioTab(self.settings, self.openapi_field, self.config_field)
+        self.db_tab = DBScenarioTab(
+            self.settings, self.openapi_field, self.config_field,
+            self.health_check_tab.health_check_checkbox, self.health_check_tab.health_path_field,
+        )
 
         db_prep_tabs = QTabWidget()
-        db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定")
+        db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定を作成")
         db_prep_tabs.addTab(self.auth_builder_tab, "②認証設定(任意)")
         db_prep_tabs.addTab(self.mapping_gen_tab, "③テーブル対応表")
         db_prep_tabs.addTab(self.sql_gen_tab, "④試験データSQL")
@@ -1502,9 +1526,10 @@ class MainWindow(QMainWindow):
         db_prep_layout.setContentsMargins(0, 0, 0, 0)
         intro_label = QLabel(
             "DB検証（Layer2）の準備はこの順番で進めます: "
-            "①DB接続設定 → ②認証設定(任意) → ③テーブル対応表（operationIdとDBテーブルの対応、"
+            "①DB接続設定を作成 → ②認証設定(任意) → ③テーブル対応表（operationIdとDBテーブルの対応、"
             "mapping.yaml） → ④試験データSQL（試験前後にDBへ流すsetup.sql/teardown.sql） → ⑤シナリオ雛形。"
-            "各ステップで生成・保存したファイルは、次のステップの入力欄に自動で反映されます。"
+            "①で作成したファイルは画面上部のDB接続設定欄に自動で反映され、以降そこから他のステップにも"
+            "反映されます。"
             "④は生成・保存しただけではDBに反映されません。「実行（DBに反映）」ボタンを別途押してください。"
             "完了したら「DBシナリオ」タブで実行してください。"
         )
@@ -1516,6 +1541,7 @@ class MainWindow(QMainWindow):
         self._all_tabs = (
             self.gen_tab, self.config_builder_tab, self.auth_builder_tab,
             self.mapping_gen_tab, self.sql_gen_tab, self.scenario_gen_tab, self.db_tab,
+            self.health_check_tab,
         )
         self._wire_cross_tab_propagation()
 
@@ -1526,6 +1552,7 @@ class MainWindow(QMainWindow):
             ("テスト生成・実行", self.gen_tab),
             ("DB準備", db_prep_container),
             ("DBシナリオ", self.db_tab),
+            ("ヘルスチェック", self.health_check_tab),
         ]
         for label, page in nav_pages:
             self.nav_list.addItem(QListWidgetItem(label))

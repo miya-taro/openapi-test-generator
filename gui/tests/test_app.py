@@ -161,10 +161,12 @@ def test_gen_tab_health_path_field_disabled_until_health_check_checked(window):
     assert window.gen_tab.health_path_field.isEnabled() is True
 
 
-def test_gen_tab_health_check_persisted_to_settings(window):
+def test_gen_tab_health_check_checkbox_is_shared_with_health_check_tab(window):
+    # ヘルスチェックのON/OFFは「ヘルスチェック」メニューの共有インスタンス。
+    assert window.gen_tab.health_check_checkbox is window.health_check_tab.health_check_checkbox
     window.gen_tab.health_check_checkbox.setChecked(True)
-    window.gen_tab.save_fields()
-    assert window.settings["gen_health_check_enabled"] is True
+    window.health_check_tab.save_fields()
+    assert window.settings["shared_health_check_enabled"] is True
 
 
 def _fill_gen_tab_required(window, tmp_path):
@@ -437,10 +439,11 @@ def test_db_tab_health_check_checked_omits_skip_flag(window, captured_cmds, tmp_
     assert "--skip-health-check" not in captured_cmds[0]
 
 
-def test_db_tab_health_check_persisted_to_settings(window):
+def test_db_tab_health_check_checkbox_is_shared_with_health_check_tab(window):
+    assert window.db_tab.health_check_checkbox is window.health_check_tab.health_check_checkbox
     window.db_tab.health_check_checkbox.setChecked(True)
-    window.db_tab.save_fields()
-    assert window.settings["db_health_check_enabled"] is True
+    window.health_check_tab.save_fields()
+    assert window.settings["shared_health_check_enabled"] is True
 
 
 def test_db_tab_report_output_omitted_when_report_dir_blank(window, captured_cmds, tmp_path):

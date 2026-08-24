@@ -8,10 +8,10 @@ SETTINGS_PATH = Path.home() / ".openapi_test_gui_settings.json"
 DEFAULTS: dict[str, str | bool] = {
     "shared_openapi_path": "",
     "shared_config_path": "",
+    "shared_health_path": "/health",
+    "shared_health_check_enabled": False,
     "gen_output_dir": "",
     "gen_base_url": "",
-    "gen_health_path": "/health",
-    "gen_health_check_enabled": False,
     "gen_auth_config_path": "",
     "gen_dry_run": False,
     "gen_setup_path": "",
@@ -20,8 +20,6 @@ DEFAULTS: dict[str, str | bool] = {
     "gen_fail_fast": False,
     "db_scenario_path": "",
     "db_base_url": "",
-    "db_health_path": "/health",
-    "db_health_check_enabled": False,
     "db_auth_config_path": "",
     "db_dry_run": False,
     "db_report_dir": "",
@@ -74,12 +72,35 @@ def _migrate_legacy_shared_paths(merged: dict) -> dict:
     return merged
 
 
+# ヘルスチェックも過去バージョンではタブごとに独立していた。ON/OFFはどちらかが
+# ONだったならONを引き継ぎ（見落としを防ぐ安全側）、Health Pathは既定値"/health"から
+# 変更されている方を優先する。
+_LEGACY_HEALTH_CHECK_ENABLED_KEYS = ("gen_health_check_enabled", "db_health_check_enabled")
+_LEGACY_HEALTH_PATH_KEYS = ("gen_health_path", "db_health_path")
+
+
+def _migrate_legacy_health_check(merged: dict) -> dict:
+    if not merged.get("shared_health_check_enabled") and any(
+        merged.get(key) for key in _LEGACY_HEALTH_CHECK_ENABLED_KEYS
+    ):
+        merged["shared_health_check_enabled"] = True
+
+    if merged.get("shared_health_path", DEFAULTS["shared_health_path"]) == DEFAULTS["shared_health_path"]:
+        for key in _LEGACY_HEALTH_PATH_KEYS:
+            value = merged.get(key)
+            if value and value != DEFAULTS["shared_health_path"]:
+                merged["shared_health_path"] = value
+                break
+    return merged
+
+
 def load_settings() -> dict:
     if SETTINGS_PATH.exists():
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return _migrate_legacy_shared_paths({**DEFAULTS, **data})
+                merged = _migrate_legacy_shared_paths({**DEFAULTS, **data})
+                return _migrate_legacy_health_check(merged)
         except (json.JSONDecodeError, OSError):
             pass
     return dict(DEFAULTS)

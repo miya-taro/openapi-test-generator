@@ -31,7 +31,7 @@ def test_load_settings_merges_missing_keys_with_defaults(tmp_path, monkeypatch):
 
     loaded = load_settings()
     assert loaded["gen_base_url"] == "http://only-this-key.example"
-    assert loaded["gen_health_path"] == DEFAULTS["gen_health_path"]  # 欠けているキーはデフォルトで補完
+    assert loaded["shared_health_path"] == DEFAULTS["shared_health_path"]  # 欠けているキーはデフォルトで補完
 
 
 def test_load_settings_falls_back_to_defaults_on_invalid_json(tmp_path, monkeypatch):
@@ -78,3 +78,21 @@ def test_load_settings_migrates_legacy_per_tab_config_path(tmp_path, monkeypatch
 
     loaded = load_settings()
     assert loaded["shared_config_path"] == "C:/legacy/config.json"
+
+
+def test_load_settings_migrates_legacy_health_check_enabled_if_either_tab_was_on(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text('{"db_health_check_enabled": true}', encoding="utf-8")
+    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
+
+    loaded = load_settings()
+    assert loaded["shared_health_check_enabled"] is True
+
+
+def test_load_settings_migrates_legacy_health_path_when_customized(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text('{"gen_health_path": "/status", "db_health_path": "/health"}', encoding="utf-8")
+    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
+
+    loaded = load_settings()
+    assert loaded["shared_health_path"] == "/status"
