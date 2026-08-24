@@ -250,6 +250,35 @@ $("db-config-save").addEventListener("click", async () => {
   }
 });
 
+$("db-config-check").addEventListener("click", async () => {
+  let data;
+  try {
+    data = collectDbConfig();
+  } catch (e) {
+    setDbConfigStatus(e.message, "error");
+    return;
+  }
+  if (Object.keys(data).length === 0) {
+    setDbConfigStatus("PostgreSQL/InfluxDBのいずれかを有効にしてください", "error");
+    return;
+  }
+
+  $("db-config-check").disabled = true;
+  setDbConfigStatus("接続確認中...", null);
+  let tempPath = null;
+  try {
+    tempPath = await invoke("write_config_file", { path: null, data });
+    const result = await invoke("bridge_call", { command: "check_db_connectivity", args: { path: tempPath } });
+    const ok = !result.includes("NG");
+    setDbConfigStatus(result, ok ? "ok" : "error");
+  } catch (e) {
+    setDbConfigStatus(`接続確認に失敗しました: ${e}`, "error");
+  } finally {
+    if (tempPath) invoke("delete_file", { path: tempPath }).catch(() => {});
+    $("db-config-check").disabled = false;
+  }
+});
+
 // ---------- 出力先フォルダ / setup・teardown SQL ----------
 
 $("browse-output-dir").addEventListener("click", () => browseDir("output-dir"));
