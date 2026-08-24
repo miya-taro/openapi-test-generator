@@ -58,7 +58,7 @@ def perform_login(base_url: str, auth_config: dict) -> str:
     body = auth_config.get("body") or {}
 
     cmd = [
-        "curl.exe", "-s", "-X", method,
+        "curl.exe", "-s", "-S", "-X", method,
         "-w", "\n%{http_code}",
         "--max-time", str(CURL_TIMEOUT),
         url,
@@ -72,7 +72,8 @@ def perform_login(base_url: str, auth_config: dict) -> str:
         raise AuthLoginError("curl.exe が見つかりません")
 
     if result.returncode != 0:
-        raise AuthLoginError(f"ログインリクエストの実行に失敗しました: {result.stderr}")
+        detail = result.stderr.strip() or f"curl exited with code {result.returncode}（{url} に接続できませんでした）"
+        raise AuthLoginError(f"ログインリクエストの実行に失敗しました: {detail}")
 
     body_text, _, status_text = result.stdout.rpartition("\n")
     try:
