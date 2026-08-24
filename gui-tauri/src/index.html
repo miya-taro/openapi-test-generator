@@ -133,7 +133,7 @@
                   FK制約を満たす順序は自動計算されますが、値の中身は必ず確認・修正してから使ってください。
                 </p>
                 <div class="db-fields-grid">
-                  <input id="dbprep-sql-schema" type="text" placeholder="対象スキーマ（既定: public）" />
+                  <input id="dbprep-sql-schema" type="text" placeholder="対象スキーマ（既定: public。スキーマを分けていなければ空欄でOK）" />
                   <input id="dbprep-sql-tables" type="text" placeholder="対象テーブル（任意・カンマ区切り。空欄で全テーブル）" />
                 </div>
                 <div class="form-field">
@@ -157,8 +157,8 @@
                   確信度が「低」の項目は必ず確認・修正してください。
                 </p>
                 <div class="form-field">
-                  <label>対象スキーマ</label>
-                  <input id="dbprep-mapping-schema" type="text" placeholder="public" />
+                  <label>対象スキーマ<span class="optional-tag">任意</span></label>
+                  <input id="dbprep-mapping-schema" type="text" placeholder="既定: public（スキーマを分けていなければ空欄でOK）" />
                 </div>
                 <div class="form-field">
                   <label>出力先</label>
