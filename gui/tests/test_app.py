@@ -129,6 +129,43 @@ def test_gen_tab_dry_run_persisted_to_settings(window):
     assert window.settings["gen_dry_run"] is True
 
 
+def test_gen_tab_operations_omitted_by_default(window, captured_cmds, tmp_path):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+    gen_cmd = captured_cmds[0]
+    assert "--operations" not in gen_cmd
+    assert "--exclude-ops" not in gen_cmd
+
+
+def test_gen_tab_operations_and_exclude_ops_passed_to_generator(window, captured_cmds, tmp_path):
+    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+    window.gen_tab.operations_field.set("createUser,getUser")
+    window.gen_tab.exclude_ops_field.set("logout")
+
+    window.gen_tab.on_run()
+    assert _wait_for(lambda: len(captured_cmds) >= 1)
+
+    gen_cmd = captured_cmds[0]
+    assert gen_cmd[gen_cmd.index("--operations") + 1] == "createUser,getUser"
+    assert gen_cmd[gen_cmd.index("--exclude-ops") + 1] == "logout"
+
+
+def test_gen_tab_operations_and_exclude_ops_persisted_to_settings(window, tmp_path):
+    window.gen_tab.operations_field.set("createUser")
+    window.gen_tab.exclude_ops_field.set("logout")
+    window.gen_tab.save_fields()
+
+    assert window.settings["gen_operations"] == "createUser"
+    assert window.settings["gen_exclude_ops"] == "logout"
+
+
 def test_gen_tab_health_check_unchecked_by_default_adds_skip_flag(window, captured_cmds, tmp_path):
     window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
     window.gen_tab.base_url_field.set("http://localhost")

@@ -11,6 +11,8 @@ DEFAULTS: dict[str, str | bool] = {
     "shared_health_path": "/health",
     "shared_health_check_enabled": False,
     "gen_output_dir": "",
+    "gen_operations": "",
+    "gen_exclude_ops": "",
     "gen_base_url": "",
     "gen_auth_config_path": "",
     "gen_dry_run": False,

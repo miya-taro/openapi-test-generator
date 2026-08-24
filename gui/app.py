@@ -389,6 +389,27 @@ class GenerateRunTab(QWidget):
         self.output_dir_field.set(settings["gen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
+        self.operations_field = TextField(
+            "対象operationId(任意)", settings["gen_operations"],
+            placeholder="空欄可: 指定するとこのAPIだけ生成・実行します（カンマ区切り、openapi.json記載のoperationId）",
+        )
+        layout.addWidget(self.operations_field)
+
+        self.exclude_ops_field = TextField(
+            "除外operationId(任意)", settings["gen_exclude_ops"],
+            placeholder="空欄可: 指定するとこのAPIだけ除外します（カンマ区切り。例: logout等、実行すると"
+                        "以降の試験を巻き込んで失敗させるAPI）",
+        )
+        layout.addWidget(self.exclude_ops_field)
+
+        ops_note = QLabel(
+            "openapi.json内の全operationをまとめて試験したくない場合はこちらで絞り込めます。"
+            "両方指定した場合、対象operationIdで絞り込んだ後に除外operationIdを取り除きます。"
+        )
+        ops_note.setObjectName("captionLabel")
+        ops_note.setWordWrap(True)
+        layout.addWidget(ops_note)
+
         self.base_url_field = TextField(
             "Base URL", settings["gen_base_url"],
             placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）",
@@ -470,6 +491,8 @@ class GenerateRunTab(QWidget):
 
     def save_fields(self) -> None:
         self.settings["gen_output_dir"] = self.output_dir_field.get()
+        self.settings["gen_operations"] = self.operations_field.get()
+        self.settings["gen_exclude_ops"] = self.exclude_ops_field.get()
         self.settings["gen_base_url"] = self.base_url_field.get()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
@@ -527,6 +550,8 @@ class GenerateRunTab(QWidget):
         dry_run = self.dry_run_checkbox.isChecked()
         full_body = self.full_body_checkbox.isChecked()
         fail_fast = self.fail_fast_checkbox.isChecked()
+        operations = self.operations_field.get()
+        exclude_ops = self.exclude_ops_field.get()
 
         self.save_fields()
 
@@ -535,6 +560,10 @@ class GenerateRunTab(QWidget):
                 *_script_cmd(CLI_PY), openapi_path,
                 "-o", str(cases_path), "--excel-output", str(spec_path),
             ]
+            if operations:
+                gen_cmd += ["--operations", operations]
+            if exclude_ops:
+                gen_cmd += ["--exclude-ops", exclude_ops]
             code = run_streamed(gen_cmd, self.panel.log_queue, on_start=self.panel.register_process)
             if code != 0:
                 self.panel.log_queue.put(("line", f"[ERROR] テスト仕様の生成に失敗しました（終了コード {code}）"))
