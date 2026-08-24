@@ -26,7 +26,6 @@
               <button class="tab active" data-page="gen">テスト生成・実行</button>
               <button class="tab" data-page="db-prep">DB準備<span class="badge">準備中</span></button>
               <button class="tab" data-page="db-scenario">DBシナリオ<span class="badge">準備中</span></button>
-              <button class="tab" data-page="health-check">ヘルスチェック</button>
             </div>
             <div class="tabs tabs-secondary">
               <button class="tab" data-page="settings">設定</button>
@@ -129,29 +128,6 @@
                 「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）
               </div>
             </section>
-            <section id="page-health-check" class="page">
-              <div class="active-config-status">
-                <span id="hc-baseurl-text">Base URL: 未設定</span>
-                <button class="secondary" id="hc-goto-settings">設定を変更</button>
-              </div>
-
-              <div class="form-section">
-                <h3 class="form-section-title">疎通確認</h3>
-                <p class="form-section-desc">
-                  「設定」画面のBase URLに対して指定したパスへGETリクエストを送り、2xxが返るか確認します。
-                  「テスト生成・実行」の試験実行そのものには影響しません（試験実行前の疎通確認をしたい場合はここで確認してください）。
-                </p>
-                <div class="form-field">
-                  <label>ヘルスチェックパス</label>
-                  <input id="hc-path" type="text" placeholder="/health" />
-                </div>
-                <div class="btn-row">
-                  <button id="hc-run-button">疎通確認を実行</button>
-                </div>
-                <div id="hc-status" class="field-caption status-message"></div>
-              </div>
-            </section>
-
             <section id="page-settings" class="page">
               <div class="form-section">
                 <h3 class="form-section-title">openapi.json</h3>
@@ -169,6 +145,16 @@
                 <p class="form-section-desc">試験対象サーバーのURL。openapi.jsonにserversがあれば自動入力されます。</p>
                 <div class="form-field">
                   <input id="base-url" type="text" placeholder="例: https://api.example.com" />
+                </div>
+
+                <div class="form-field" style="margin-top: 14px">
+                  <label>API疎通確認<span class="optional-tag">任意</span></label>
+                  <p class="field-caption">上のBase URLに対して指定したパスへGETリクエストを送り、2xxが返るか確認します。試験実行そのものには影響しません。</p>
+                  <div class="row">
+                    <input id="hc-path" type="text" placeholder="/health" />
+                    <button class="secondary" id="hc-run-button">確認する</button>
+                  </div>
+                  <div id="hc-status" class="field-caption status-message"></div>
                 </div>
               </div>
 

@@ -42,7 +42,6 @@ async function loadSettingsIntoForm() {
 
   updateActiveOpenapiText();
   updateActiveBaseUrlText();
-  updateHcBaseUrlText();
   updateActiveDbConfigText();
 
   await refreshOperationsList({ keepExcluded: true });
@@ -123,20 +122,13 @@ function updateActiveBaseUrlText() {
   $("active-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
 }
 
-function updateHcBaseUrlText() {
-  const url = $("base-url").value.trim();
-  $("hc-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
-}
-
 for (const evt of ["input", "change"]) {
   $("base-url").addEventListener(evt, updateActiveBaseUrlText);
-  $("base-url").addEventListener(evt, updateHcBaseUrlText);
 }
 
 $("goto-settings").addEventListener("click", () => showPage("settings"));
-$("hc-goto-settings").addEventListener("click", () => showPage("settings"));
 
-// ---------- ヘルスチェック（試験実行とは独立した、任意の疎通確認） ----------
+// ---------- API疎通確認（「設定」画面、DB接続設定の「接続確認」と対になる任意の疎通確認） ----------
 
 function setHcStatus(text, state) {
   const el = $("hc-status");
@@ -148,7 +140,7 @@ function setHcStatus(text, state) {
 $("hc-run-button").addEventListener("click", async () => {
   const baseUrl = $("base-url").value.trim();
   if (!baseUrl) {
-    setHcStatus("Base URL が未設定です（「設定」画面）", "error");
+    setHcStatus("Base URL を入力してください", "error");
     return;
   }
   const healthPath = $("hc-path").value.trim() || "/health";
