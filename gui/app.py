@@ -389,26 +389,30 @@ class GenerateRunTab(QWidget):
         self.output_dir_field.set(settings["gen_output_dir"])
         layout.addWidget(self.output_dir_field)
 
-        self.operations_field = TextField(
-            "対象operationId(任意)", settings["gen_operations"],
-            placeholder="空欄可: 指定するとこのAPIだけ生成・実行します（カンマ区切り、openapi.json記載のoperationId）",
-        )
-        layout.addWidget(self.operations_field)
+        ops_label = QLabel("対象API（チェックを外すと今回の試験から除外されます）")
+        layout.addWidget(ops_label)
 
-        self.exclude_ops_field = TextField(
-            "除外operationId(任意)", settings["gen_exclude_ops"],
-            placeholder="空欄可: 指定するとこのAPIだけ除外します（カンマ区切り。例: logout等、実行すると"
-                        "以降の試験を巻き込んで失敗させるAPI）",
-        )
-        layout.addWidget(self.exclude_ops_field)
+        self.operations_list = QListWidget()
+        self.operations_list.setMaximumHeight(220)
+        layout.addWidget(self.operations_list)
 
-        ops_note = QLabel(
-            "openapi.json内の全operationをまとめて試験したくない場合はこちらで絞り込めます。"
-            "両方指定した場合、対象operationIdで絞り込んだ後に除外operationIdを取り除きます。"
+        ops_btn_row = QHBoxLayout()
+        self.select_all_ops_button = QPushButton("すべて選択")
+        self.select_all_ops_button.setObjectName("secondaryButton")
+        self.select_all_ops_button.clicked.connect(lambda: self._set_all_operations_checked(True))
+        ops_btn_row.addWidget(self.select_all_ops_button)
+        self.select_none_ops_button = QPushButton("すべて解除")
+        self.select_none_ops_button.setObjectName("secondaryButton")
+        self.select_none_ops_button.clicked.connect(lambda: self._set_all_operations_checked(False))
+        ops_btn_row.addWidget(self.select_none_ops_button)
+        ops_btn_row.addStretch(1)
+        layout.addLayout(ops_btn_row)
+
+        self._excluded_operations_on_load = set(
+            s.strip() for s in settings["gen_excluded_operations"].split(",") if s.strip()
         )
-        ops_note.setObjectName("captionLabel")
-        ops_note.setWordWrap(True)
-        layout.addWidget(ops_note)
+        self.openapi_field.line_edit.textChanged.connect(self._refresh_operations_list)
+        self._refresh_operations_list()
 
         self.base_url_field = TextField(
             "Base URL", settings["gen_base_url"],
@@ -480,6 +484,36 @@ class GenerateRunTab(QWidget):
     def _maybe_fill_base_url_from_openapi(self) -> None:
         _fill_base_url_from_openapi(self.openapi_field, self.base_url_field)
 
+    def _refresh_operations_list(self) -> None:
+        """openapi.jsonが変わるたびに対象API一覧を作り直す。
+
+        起動直後（設定復元）の1回だけは前回除外されていたoperationIdを引き継いでチェックを外し、
+        それ以降（openapi.jsonを選び直した場合）は毎回全選択から始める。
+        """
+        excluded = self._excluded_operations_on_load
+        self._excluded_operations_on_load = set()
+
+        self.operations_list.clear()
+        for op in validators.list_operations(self.openapi_field.get()):
+            item = QListWidgetItem(f"{op['method']:6} {op['path']}  ({op['operationId']})")
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            checked = op["operationId"] not in excluded
+            item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            item.setData(Qt.ItemDataRole.UserRole, op["operationId"])
+            self.operations_list.addItem(item)
+
+    def _set_all_operations_checked(self, checked: bool) -> None:
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        for i in range(self.operations_list.count()):
+            self.operations_list.item(i).setCheckState(state)
+
+    def _unchecked_operation_ids(self) -> list[str]:
+        return [
+            self.operations_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.operations_list.count())
+            if self.operations_list.item(i).checkState() == Qt.CheckState.Unchecked
+        ]
+
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
@@ -491,8 +525,7 @@ class GenerateRunTab(QWidget):
 
     def save_fields(self) -> None:
         self.settings["gen_output_dir"] = self.output_dir_field.get()
-        self.settings["gen_operations"] = self.operations_field.get()
-        self.settings["gen_exclude_ops"] = self.exclude_ops_field.get()
+        self.settings["gen_excluded_operations"] = ",".join(self._unchecked_operation_ids())
         self.settings["gen_base_url"] = self.base_url_field.get()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
@@ -550,8 +583,12 @@ class GenerateRunTab(QWidget):
         dry_run = self.dry_run_checkbox.isChecked()
         full_body = self.full_body_checkbox.isChecked()
         fail_fast = self.fail_fast_checkbox.isChecked()
-        operations = self.operations_field.get()
-        exclude_ops = self.exclude_ops_field.get()
+
+        unchecked_ops = self._unchecked_operation_ids()
+        if self.operations_list.count() > 0 and len(unchecked_ops) == self.operations_list.count():
+            QMessageBox.critical(self, "入力エラー", "対象APIを少なくとも1つ選択してください")
+            return
+        exclude_ops = ",".join(unchecked_ops)
 
         self.save_fields()
 
@@ -560,8 +597,6 @@ class GenerateRunTab(QWidget):
                 *_script_cmd(CLI_PY), openapi_path,
                 "-o", str(cases_path), "--excel-output", str(spec_path),
             ]
-            if operations:
-                gen_cmd += ["--operations", operations]
             if exclude_ops:
                 gen_cmd += ["--exclude-ops", exclude_ops]
             code = run_streamed(gen_cmd, self.panel.log_queue, on_start=self.panel.register_process)

@@ -48,6 +48,40 @@ def validate_openapi(path: str, required: bool = True) -> str:
     return f"OK（operation数: {op_count}）"
 
 
+_HTTP_METHODS = ("get", "post", "put", "patch", "delete")
+
+
+def list_operations(path: str) -> list[dict]:
+    """openapi.jsonに定義されているoperation一覧を返す（GUIのAPI選択リスト用）。
+
+    [{"operationId": ..., "method": "GET", "path": "/users/{id}"}, ...] の形。
+    operationIdが無いoperationは、--operations/--exclude-opsで指定しようがないため除く。
+    パースできない場合は空リストを返す（呼び出し側はエラーダイアログを別途出す）。
+    """
+    if not path or not Path(path).exists():
+        return []
+
+    from src.parser import parse_openapi, OpenAPIParseError
+
+    try:
+        openapi = parse_openapi(path)
+    except OpenAPIParseError:
+        return []
+
+    operations: list[dict] = []
+    for p, item in (openapi.get("paths") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        for method, op in item.items():
+            if method not in _HTTP_METHODS or not isinstance(op, dict):
+                continue
+            op_id = op.get("operationId")
+            if not op_id:
+                continue
+            operations.append({"operationId": op_id, "method": method.upper(), "path": p})
+    return operations
+
+
 def validate_db_config(path: str, required: bool = True) -> str:
     err = _missing_or_blank(path, required)
     if err is not None:

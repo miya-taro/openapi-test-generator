@@ -45,6 +45,43 @@ def test_validate_openapi_rejects_v2(tmp_path):
     assert result.startswith("NG")
 
 
+# --- list_operations ---
+
+
+def test_list_operations_blank_returns_empty():
+    assert validators.list_operations("") == []
+
+
+def test_list_operations_missing_file_returns_empty(tmp_path):
+    assert validators.list_operations(str(tmp_path / "missing.json")) == []
+
+
+def test_list_operations_returns_method_path_and_operation_id(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {
+            "/users": {"get": {"operationId": "listUsers"}, "post": {"operationId": "createUser"}},
+            "/users/{id}": {"delete": {"operationId": "deleteUser"}},
+        },
+    }
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    ops = validators.list_operations(str(path))
+
+    assert {o["operationId"] for o in ops} == {"listUsers", "createUser", "deleteUser"}
+    listed = next(o for o in ops if o["operationId"] == "listUsers")
+    assert listed == {"operationId": "listUsers", "method": "GET", "path": "/users"}
+
+
+def test_list_operations_skips_operations_without_operation_id(tmp_path):
+    doc = {"openapi": "3.0.3", "paths": {"/health": {"get": {}}}}
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    assert validators.list_operations(str(path)) == []
+
+
 # --- validate_db_config ---
 
 

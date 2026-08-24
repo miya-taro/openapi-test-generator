@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 import app as app_module
@@ -142,28 +143,76 @@ def test_gen_tab_operations_omitted_by_default(window, captured_cmds, tmp_path):
     assert "--exclude-ops" not in gen_cmd
 
 
-def test_gen_tab_operations_and_exclude_ops_passed_to_generator(window, captured_cmds, tmp_path):
-    window.gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
+_TWO_OP_OPENAPI = """{
+  "openapi": "3.0.3",
+  "info": {"title": "t", "version": "1.0.0"},
+  "paths": {
+    "/users": {"post": {"operationId": "createUser", "responses": {"200": {"description": "ok"}}}},
+    "/logout": {"post": {"operationId": "logout", "responses": {"200": {"description": "ok"}}}}
+  }
+}"""
+
+
+def _write_two_op_openapi(tmp_path):
+    path = tmp_path / "openapi.json"
+    path.write_text(_TWO_OP_OPENAPI, encoding="utf-8")
+    return path
+
+
+def test_gen_tab_operations_list_populated_and_all_checked_by_default(window, tmp_path):
+    openapi_path = _write_two_op_openapi(tmp_path)
+    window.gen_tab.openapi_field.set(str(openapi_path))
+
+    assert window.gen_tab.operations_list.count() == 2
+    assert window.gen_tab._unchecked_operation_ids() == []
+
+
+def test_gen_tab_unchecked_operation_excluded_from_generator(window, captured_cmds, tmp_path):
+    openapi_path = _write_two_op_openapi(tmp_path)
+    window.gen_tab.openapi_field.set(str(openapi_path))
     window.gen_tab.base_url_field.set("http://localhost")
     window.gen_tab.output_dir_field.set(str(tmp_path))
-    window.gen_tab.operations_field.set("createUser,getUser")
-    window.gen_tab.exclude_ops_field.set("logout")
+
+    logout_item = next(
+        window.gen_tab.operations_list.item(i)
+        for i in range(window.gen_tab.operations_list.count())
+        if window.gen_tab.operations_list.item(i).data(Qt.ItemDataRole.UserRole) == "logout"
+    )
+    logout_item.setCheckState(Qt.CheckState.Unchecked)
 
     window.gen_tab.on_run()
     assert _wait_for(lambda: len(captured_cmds) >= 1)
 
     gen_cmd = captured_cmds[0]
-    assert gen_cmd[gen_cmd.index("--operations") + 1] == "createUser,getUser"
     assert gen_cmd[gen_cmd.index("--exclude-ops") + 1] == "logout"
 
 
-def test_gen_tab_operations_and_exclude_ops_persisted_to_settings(window, tmp_path):
-    window.gen_tab.operations_field.set("createUser")
-    window.gen_tab.exclude_ops_field.set("logout")
+def test_gen_tab_unchecked_operations_persisted_to_settings(window, tmp_path):
+    openapi_path = _write_two_op_openapi(tmp_path)
+    window.gen_tab.openapi_field.set(str(openapi_path))
+    window.gen_tab._set_all_operations_checked(False)
+
     window.gen_tab.save_fields()
 
-    assert window.settings["gen_operations"] == "createUser"
-    assert window.settings["gen_exclude_ops"] == "logout"
+    saved = set(window.settings["gen_excluded_operations"].split(","))
+    assert saved == {"createUser", "logout"}
+
+
+def test_gen_tab_deselecting_all_operations_shows_error_and_does_not_run(
+    window, captured_cmds, tmp_path, monkeypatch,
+):
+    openapi_path = _write_two_op_openapi(tmp_path)
+    window.gen_tab.openapi_field.set(str(openapi_path))
+    window.gen_tab.base_url_field.set("http://localhost")
+    window.gen_tab.output_dir_field.set(str(tmp_path))
+    window.gen_tab._set_all_operations_checked(False)
+
+    shown = []
+    monkeypatch.setattr(app_module.QMessageBox, "critical", lambda *a, **k: shown.append(a))
+
+    window.gen_tab.on_run()
+    assert len(shown) == 1
+    assert captured_cmds == []
 
 
 def test_gen_tab_health_check_unchecked_by_default_adds_skip_flag(window, captured_cmds, tmp_path):
