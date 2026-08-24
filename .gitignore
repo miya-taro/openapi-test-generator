@@ -15,6 +15,9 @@ dist/
 build/
 dist_pyinstaller/
 
+# Tauri(Rust)版GUIのビルド出力
+gui-tauri/src-tauri/target/
+
 # Environment & secrets
 .env
 .env.*

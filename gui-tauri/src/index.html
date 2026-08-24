@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>openapi-test-gen / openapi-test-run</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="shared-header">
+        <div class="field-row">
+          <label>openapi.json</label>
+          <input id="openapi-path" type="text" placeholder="試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます" />
+          <button class="secondary" id="browse-openapi">参照...</button>
+        </div>
+        <div class="field-row">
+          <label>DB接続設定</label>
+          <input id="config-path" type="text" placeholder="DB検証を行う場合に必要。①DB接続設定タブで作成、または既存のconfig.jsonを選択" />
+          <button class="secondary" id="browse-config">参照...</button>
+        </div>
+        <p class="caption">DB検証を行う場合に必要（任意）。①DB接続設定タブで作成すると自動で反映されます。</p>
+      </header>
+
+      <div id="body">
+        <nav id="sidebar">
+          <ul>
+            <li data-page="gen" class="active">テスト生成・実行</li>
+            <li data-page="db-prep">DB準備</li>
+            <li data-page="db-scenario">DBシナリオ</li>
+            <li data-page="health-check">ヘルスチェック</li>
+          </ul>
+          <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner (Tauri版・開発中)</div>
+        </nav>
+
+        <main id="content">
+          <section id="page-gen" class="page active">
+            <div class="form-field">
+              <label>出力先フォルダ</label>
+              <div class="row">
+                <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
+                <button class="secondary" id="browse-output-dir">参照...</button>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label>対象API（チェックを外すと今回の試験から除外されます）</label>
+              <div id="operations-list"><div class="op-empty">openapi.jsonを選択すると一覧が表示されます</div></div>
+              <div class="btn-row">
+                <button class="secondary" id="ops-select-all">すべて選択</button>
+                <button class="secondary" id="ops-select-none">すべて解除</button>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label>Base URL</label>
+              <input id="base-url" type="text" placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）" />
+            </div>
+
+            <label class="checkbox">
+              <input type="checkbox" id="health-check-enabled" />
+              実行前にヘルスチェック（疎通確認）を行う（詳細は「ヘルスチェック」メニュー）
+            </label>
+
+            <div class="form-field">
+              <label>認証設定(任意)</label>
+              <div class="row">
+                <input id="auth-config-path" type="text" placeholder="ログイン認証が必要なAPIのみ。②認証設定タブで作成できます" />
+                <button class="secondary" id="browse-auth-config">参照...</button>
+              </div>
+              <p class="field-caption">ログイン認証が必要なAPIのみ（任意）。②認証設定タブで作成できます。</p>
+            </div>
+
+            <div class="form-field">
+              <label>試験前SQL(任意)</label>
+              <div class="row">
+                <input id="setup-sql-path" type="text" placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）" />
+                <button class="secondary" id="browse-setup-sql">参照...</button>
+              </div>
+            </div>
+            <div class="form-field">
+              <label>試験後SQL(任意)</label>
+              <div class="row">
+                <input id="teardown-sql-path" type="text" placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど。teardown.sql）" />
+                <button class="secondary" id="browse-teardown-sql">参照...</button>
+              </div>
+            </div>
+
+            <label class="checkbox"><input type="checkbox" id="dry-run" /> dry-run（実際にはリクエストを送信しない。生成内容の確認用）</label>
+            <label class="checkbox"><input type="checkbox" id="full-body" /> full-body（結果Excelの実測ボディを省略せず全文出力する）</label>
+            <label class="checkbox"><input type="checkbox" id="fail-fast" /> fail-fast（最初のNGが出た時点で試験を打ち切る）</label>
+
+            <div id="run-panel">
+              <div class="btn-row">
+                <button id="run-button">生成して実行</button>
+                <button class="secondary" id="cancel-button" disabled>キャンセル</button>
+                <button class="secondary" id="open-result-button" disabled>結果Excelを開く</button>
+              </div>
+              <div id="run-status"></div>
+              <div id="run-progress"><div id="run-progress-bar"></div></div>
+              <div id="run-log"></div>
+            </div>
+          </section>
+
+          <section id="page-db-prep" class="page">
+            <div class="page-placeholder">DB準備タブは準備中です（PySide6版で先行提供中）。</div>
+          </section>
+          <section id="page-db-scenario" class="page">
+            <div class="page-placeholder">DBシナリオタブは準備中です（PySide6版で先行提供中）。</div>
+          </section>
+          <section id="page-health-check" class="page">
+            <div class="page-placeholder">ヘルスチェックタブは準備中です（PySide6版で先行提供中）。</div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
