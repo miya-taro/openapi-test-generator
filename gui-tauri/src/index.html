@@ -24,8 +24,8 @@
           <header id="top-nav">
             <div class="tabs">
               <button class="tab active" data-page="gen">テスト生成・実行</button>
-              <button class="tab" data-page="db-prep">DB準備<span class="badge">準備中</span></button>
-              <button class="tab" data-page="db-scenario">DBシナリオ<span class="badge">準備中</span></button>
+              <button class="tab" data-page="db-prep">DB準備</button>
+              <button class="tab" data-page="db-scenario">DBシナリオ</button>
             </div>
             <div class="tabs tabs-secondary">
               <button class="tab" data-page="settings">設定</button>
@@ -37,10 +37,10 @@
               <div id="gen-error" class="banner warning" hidden></div>
 
               <div class="active-config-status">
-                <span id="active-openapi-text">openapi.json: 未設定</span>
-                <span id="active-baseurl-text">Base URL: 未設定</span>
-                <span id="active-dbconfig-text">DB接続設定: 未設定</span>
-                <button class="secondary" id="goto-settings">設定を変更</button>
+                <span id="active-openapi-text" class="status-openapi-text">openapi.json: 未設定</span>
+                <span id="active-baseurl-text" class="status-baseurl-text">Base URL: 未設定</span>
+                <span id="active-dbconfig-text" class="status-dbconfig-text">DB接続設定: 未設定</span>
+                <button class="secondary goto-settings-btn" id="goto-settings">設定を変更</button>
               </div>
 
               <div class="form-section">
@@ -105,27 +105,148 @@
                 <label class="checkbox"><input type="checkbox" id="fail-fast" /> fail-fast（最初のNGが出た時点で試験を打ち切る）</label>
               </div>
 
-              <div id="run-panel">
+              <div id="run-panel" class="run-panel">
                 <h3 class="form-section-title">3. 実行</h3>
                 <div class="btn-row">
                   <button id="run-button">生成して実行</button>
                   <button class="secondary" id="cancel-button" disabled>キャンセル</button>
                   <button class="secondary" id="open-result-button" disabled>結果Excelを開く</button>
                 </div>
-                <div id="run-status"></div>
+                <div id="run-status" class="run-status-line"></div>
                 <div id="run-progress"><div id="run-progress-bar"></div></div>
-                <div id="run-log"></div>
+                <div id="run-log" class="run-log"></div>
               </div>
             </section>
 
             <section id="page-db-prep" class="page">
-              <div class="page-placeholder">DB準備タブは準備中です。</div>
+              <div class="active-config-status">
+                <span id="dbprep-openapi-text" class="status-openapi-text">openapi.json: 未設定</span>
+                <span id="dbprep-dbconfig-text" class="status-dbconfig-text">DB接続設定: 未設定</span>
+                <button class="secondary goto-settings-btn" id="dbprep-goto-settings">設定を変更</button>
+              </div>
+              <div id="dbprep-error" class="banner warning" hidden></div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">1. setup.sql / teardown.sql の生成<span class="optional-tag">任意</span></h3>
+                <p class="form-section-desc">
+                  「設定」画面のDB接続設定を使って、実際のテーブル定義からINSERT/TRUNCATEの雛形を生成します（PostgreSQLのみ対応）。
+                  FK制約を満たす順序は自動計算されますが、値の中身は必ず確認・修正してから使ってください。
+                </p>
+                <div class="db-fields-grid">
+                  <input id="dbprep-sql-schema" type="text" placeholder="対象スキーマ（既定: public）" />
+                  <input id="dbprep-sql-tables" type="text" placeholder="対象テーブル（任意・カンマ区切り。空欄で全テーブル）" />
+                </div>
+                <div class="form-field">
+                  <label>出力先フォルダ</label>
+                  <div class="row">
+                    <input id="dbprep-sql-output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
+                    <button class="secondary" id="dbprep-browse-sql-output-dir">参照...</button>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button id="dbprep-gen-sql-button">setup.sql / teardown.sql を生成</button>
+                </div>
+                <div id="dbprep-sql-status" class="field-caption status-message"></div>
+                <div id="dbprep-sql-log" class="mini-log" hidden></div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">2. mapping.yaml の生成<span class="optional-tag">任意</span></h3>
+                <p class="form-section-desc">
+                  openapi.jsonのリクエストボディとDBのカラム名を突き合わせ、operationId→テーブルの対応表の叩き台を作ります（名前ベースの推定です）。
+                  確信度が「低」の項目は必ず確認・修正してください。
+                </p>
+                <div class="form-field">
+                  <label>対象スキーマ</label>
+                  <input id="dbprep-mapping-schema" type="text" placeholder="public" />
+                </div>
+                <div class="form-field">
+                  <label>出力先</label>
+                  <div class="row">
+                    <input id="dbprep-mapping-output" type="text" placeholder="空欄可: mapping.yaml.generated として出力" />
+                    <button class="secondary" id="dbprep-browse-mapping-output">参照...</button>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button id="dbprep-gen-mapping-button">mapping.yaml を生成</button>
+                </div>
+                <div id="dbprep-mapping-status" class="field-caption status-message"></div>
+                <div id="dbprep-mapping-log" class="mini-log" hidden></div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">3. DBシナリオYAMLの生成<span class="optional-tag">任意</span></h3>
+                <p class="form-section-desc">
+                  openapi.jsonと上のmapping.yamlから、「DBシナリオ」タブで実行するシナリオYAMLの叩き台を作ります。
+                  where/columns等の検証条件は必ず確認・修正してください。
+                </p>
+                <div class="form-field">
+                  <label>mapping.yaml</label>
+                  <div class="row">
+                    <input id="dbprep-scenario-mapping-path" type="text" placeholder="上で生成したmapping.yaml、または既存のファイル" />
+                    <button class="secondary" id="dbprep-browse-scenario-mapping">参照...</button>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>出力先</label>
+                  <div class="row">
+                    <input id="dbprep-scenario-output" type="text" placeholder="空欄可: scenarios.generated.yaml として出力" />
+                    <button class="secondary" id="dbprep-browse-scenario-output">参照...</button>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <button id="dbprep-gen-scenario-button">シナリオYAMLを生成</button>
+                </div>
+                <div id="dbprep-scenario-status" class="field-caption status-message"></div>
+                <div id="dbprep-scenario-log" class="mini-log" hidden></div>
+              </div>
             </section>
+
             <section id="page-db-scenario" class="page">
-              <div class="page-placeholder">
-                DBシナリオタブは準備中です。<br />
-                （実装後は、手動定義したシナリオでAPIを呼び出し、DBが期待通り変化したかを検証できるようになります。
-                「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）
+              <div class="active-config-status">
+                <span id="dbscenario-openapi-text" class="status-openapi-text">openapi.json: 未設定</span>
+                <span id="dbscenario-baseurl-text" class="status-baseurl-text">Base URL: 未設定</span>
+                <span id="dbscenario-dbconfig-text" class="status-dbconfig-text">DB接続設定: 未設定</span>
+                <button class="secondary goto-settings-btn" id="dbscenario-goto-settings">設定を変更</button>
+              </div>
+              <div id="dbscenario-error" class="banner warning" hidden></div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">1. シナリオファイル</h3>
+                <p class="form-section-desc">
+                  「DB準備」タブで生成・確認・修正したシナリオYAMLを選んでください。認証設定は「テスト生成・実行」タブの内容を共有して使います
+                  （「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）。
+                </p>
+                <div class="form-field">
+                  <label>シナリオYAML</label>
+                  <div class="row">
+                    <input id="dbscenario-path" type="text" placeholder="scenarios.yaml のパス" />
+                    <button class="secondary" id="dbscenario-browse">参照...</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">2. 実行設定</h3>
+                <label class="checkbox"><input type="checkbox" id="dbscenario-dry-run" /> dry-run（実際のHTTP送信・DB接続を行わない。シナリオ/openapi/configの読み込み確認用）</label>
+                <div class="form-field">
+                  <label>結果Excel出力先<span class="optional-tag">任意</span></label>
+                  <div class="row">
+                    <input id="dbscenario-report-output" type="text" placeholder="空欄可: レポートを出力しない" />
+                    <button class="secondary" id="dbscenario-browse-report">参照...</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="dbscenario-run-panel" class="run-panel">
+                <h3 class="form-section-title">3. 実行</h3>
+                <div class="btn-row">
+                  <button id="dbscenario-run-button">シナリオを実行</button>
+                  <button class="secondary" id="dbscenario-cancel-button" disabled>キャンセル</button>
+                  <button class="secondary" id="dbscenario-open-result-button" disabled>結果Excelを開く</button>
+                </div>
+                <div id="dbscenario-status" class="run-status-line"></div>
+                <div id="dbscenario-log" class="run-log"></div>
               </div>
             </section>
             <section id="page-settings" class="page">

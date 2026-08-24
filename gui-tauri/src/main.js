@@ -40,6 +40,17 @@ async function loadSettingsIntoForm() {
   $("auth-header-format").value = settings.auth_header_format || "";
   // ボディは認証情報を含みうるため、設定ファイルに平文保存しない（起動時は毎回未入力）
 
+  $("dbprep-sql-schema").value = settings.dbprep_sql_schema || "";
+  $("dbprep-sql-tables").value = settings.dbprep_sql_tables || "";
+  $("dbprep-sql-output-dir").value = settings.dbprep_sql_output_dir || "";
+  $("dbprep-mapping-schema").value = settings.dbprep_mapping_schema || "";
+  $("dbprep-mapping-output").value = settings.dbprep_mapping_output || "";
+  $("dbprep-scenario-mapping-path").value = settings.dbprep_scenario_mapping_path || "";
+  $("dbprep-scenario-output").value = settings.dbprep_scenario_output || "";
+  $("dbscenario-path").value = settings.dbscenario_path || "";
+  $("dbscenario-report-output").value = settings.dbscenario_report_output || "";
+  $("dbscenario-dry-run").checked = !!settings.dbscenario_dry_run;
+
   updateActiveOpenapiText();
   updateActiveBaseUrlText();
   updateActiveDbConfigText();
@@ -85,6 +96,17 @@ async function persistSettings() {
   settings.auth_header_format = $("auth-header-format").value.trim();
   // ボディ（認証情報を含みうる）は意図的に保存しない
 
+  settings.dbprep_sql_schema = $("dbprep-sql-schema").value.trim();
+  settings.dbprep_sql_tables = $("dbprep-sql-tables").value.trim();
+  settings.dbprep_sql_output_dir = $("dbprep-sql-output-dir").value.trim();
+  settings.dbprep_mapping_schema = $("dbprep-mapping-schema").value.trim();
+  settings.dbprep_mapping_output = $("dbprep-mapping-output").value.trim();
+  settings.dbprep_scenario_mapping_path = $("dbprep-scenario-mapping-path").value.trim();
+  settings.dbprep_scenario_output = $("dbprep-scenario-output").value.trim();
+  settings.dbscenario_path = $("dbscenario-path").value.trim();
+  settings.dbscenario_report_output = $("dbscenario-report-output").value.trim();
+  settings.dbscenario_dry_run = $("dbscenario-dry-run").checked;
+
   await invoke("save_settings", { data: settings });
 }
 
@@ -100,6 +122,11 @@ async function browseFile(inputId, filters, onPicked) {
 
 async function browseDir(inputId) {
   const picked = await open({ directory: true });
+  if (picked) $(inputId).value = picked;
+}
+
+async function browseSaveFile(inputId, filters, defaultPath) {
+  const picked = await save({ filters, defaultPath });
   if (picked) $(inputId).value = picked;
 }
 
@@ -119,19 +146,21 @@ for (const tab of document.querySelectorAll("#top-nav .tab[data-page]")) {
 function updateActiveOpenapiText() {
   const path = $("openapi-path").value.trim();
   const name = path ? path.split(/[\\/]/).pop() : "未設定";
-  $("active-openapi-text").textContent = `openapi.json: ${name}`;
+  document.querySelectorAll(".status-openapi-text").forEach((el) => (el.textContent = `openapi.json: ${name}`));
 }
 
 function updateActiveBaseUrlText() {
   const url = $("base-url").value.trim();
-  $("active-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
+  document.querySelectorAll(".status-baseurl-text").forEach((el) => (el.textContent = `Base URL: ${url || "未設定"}`));
 }
 
 for (const evt of ["input", "change"]) {
   $("base-url").addEventListener(evt, updateActiveBaseUrlText);
 }
 
-$("goto-settings").addEventListener("click", () => showPage("settings"));
+for (const btn of document.querySelectorAll(".goto-settings-btn")) {
+  btn.addEventListener("click", () => showPage("settings"));
+}
 
 // ---------- API疎通確認（「設定」画面、DB接続設定の「接続確認」と対になる任意の疎通確認） ----------
 
@@ -217,7 +246,8 @@ function updateActiveDbConfigText() {
   const parts = [];
   if ($("pg-enabled").checked) parts.push(`PostgreSQL(${$("pg-host").value.trim() || "?"})`);
   if ($("influx-enabled").checked) parts.push(`InfluxDB(${$("influx-host").value.trim() || "?"})`);
-  $("active-dbconfig-text").textContent = `DB接続設定: ${parts.length ? parts.join(" / ") : "未設定"}`;
+  const text = `DB接続設定: ${parts.length ? parts.join(" / ") : "未設定"}`;
+  document.querySelectorAll(".status-dbconfig-text").forEach((el) => (el.textContent = text));
 }
 
 for (const id of ["pg-enabled", "pg-host", "influx-enabled", "influx-host"]) {
@@ -510,6 +540,350 @@ function dirName(path) {
   return idx >= 0 ? path.slice(0, idx) : "";
 }
 
+// ---------- 汎用: 1本のスクリプトを実行してログ欄に流し込む（DB準備の生成系スクリプト用） ----------
+// テスト生成・実行/DBシナリオの「2段階・キャンセル可能」な実行とは別に、単発で終わる
+// 生成スクリプト（generate_mapping.py等）を使い回すための軽量な仕組み。同じ
+// run_script/proc-line/proc-doneイベントを共有するため、下のリスナーでrunIdを見て振り分ける。
+
+const simpleRuns = new Map();
+
+function runSimpleScript(script, args, { logEl, statusEl, doneMessage } = {}) {
+  return new Promise((resolve) => {
+    const runId = `simple-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (logEl) {
+      logEl.hidden = false;
+      logEl.textContent = "";
+    }
+    if (statusEl) {
+      statusEl.textContent = "実行中...";
+      statusEl.classList.remove("error", "ok");
+    }
+    simpleRuns.set(runId, { logEl, statusEl, doneMessage, resolve });
+    invoke("run_script", { runId, script, args });
+  });
+}
+
+// ---------- DB準備（setup.sql/teardown.sql・mapping.yaml・シナリオYAMLの生成） ----------
+
+function showDbPrepError(message) {
+  const el = $("dbprep-error");
+  el.textContent = message;
+  el.hidden = false;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function hideDbPrepError() {
+  $("dbprep-error").hidden = true;
+}
+
+async function ensureDirForOutput(outputPath, openapiPath) {
+  const dir = dirName(outputPath) || dirName(openapiPath);
+  if (!dir) return;
+  await invoke("ensure_output_dir", { path: dir });
+}
+
+$("dbprep-goto-settings").addEventListener("click", () => showPage("settings"));
+$("dbprep-browse-sql-output-dir").addEventListener("click", () => browseDir("dbprep-sql-output-dir"));
+$("dbprep-browse-mapping-output").addEventListener("click", () =>
+  browseSaveFile("dbprep-mapping-output", [{ name: "YAML", extensions: ["yaml", "yml"] }], "mapping.yaml"),
+);
+$("dbprep-browse-scenario-mapping").addEventListener("click", () =>
+  browseFile("dbprep-scenario-mapping-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
+);
+$("dbprep-browse-scenario-output").addEventListener("click", () =>
+  browseSaveFile("dbprep-scenario-output", [{ name: "YAML", extensions: ["yaml", "yml"] }], "scenarios.yaml"),
+);
+
+$("dbprep-gen-sql-button").addEventListener("click", async () => {
+  hideDbPrepError();
+  if (!$("pg-enabled").checked) {
+    showDbPrepError("PostgreSQLのDB接続設定が必要です（「設定」画面。setup.sql/teardown.sqlの生成はPostgreSQLのみ対応）");
+    return;
+  }
+  let dbConfigData;
+  try {
+    dbConfigData = collectDbConfig();
+  } catch (e) {
+    showDbPrepError(e.message);
+    return;
+  }
+
+  const openapiPath = $("openapi-path").value.trim();
+  const outputDir = $("dbprep-sql-output-dir").value.trim() || dirName(openapiPath);
+  try {
+    await invoke("ensure_output_dir", { path: outputDir });
+  } catch (e) {
+    showDbPrepError(String(e));
+    return;
+  }
+
+  let configPath;
+  try {
+    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+  } catch (e) {
+    showDbPrepError(`DB接続設定の準備に失敗しました: ${e}`);
+    return;
+  }
+
+  await persistSettings();
+
+  const setupOutput = joinPath(outputDir, "setup.sql");
+  const teardownOutput = joinPath(outputDir, "teardown.sql");
+  const args = ["--config", configPath, "--setup-output", setupOutput, "--teardown-output", teardownOutput];
+  const schema = $("dbprep-sql-schema").value.trim();
+  if (schema) args.push("--schema", schema);
+  const tables = $("dbprep-sql-tables").value.trim();
+  if (tables) args.push("--tables", tables);
+
+  $("dbprep-gen-sql-button").disabled = true;
+  const code = await runSimpleScript("runner/generate_setup_sql.py", args, {
+    logEl: $("dbprep-sql-log"),
+    statusEl: $("dbprep-sql-status"),
+    doneMessage: `生成しました: ${setupOutput} / ${teardownOutput}`,
+  });
+  $("dbprep-gen-sql-button").disabled = false;
+  invoke("delete_file", { path: configPath }).catch(() => {});
+  if (code === 0) {
+    // 生成したファイルを「テスト生成・実行」の試験前SQL/試験後SQLへそのまま連携する。
+    $("setup-sql-path").value = setupOutput;
+    $("teardown-sql-path").value = teardownOutput;
+  }
+});
+
+$("dbprep-gen-mapping-button").addEventListener("click", async () => {
+  hideDbPrepError();
+  const openapiPath = $("openapi-path").value.trim();
+  if (!openapiPath) {
+    showDbPrepError("openapi.json を選択してください（「設定」画面）");
+    return;
+  }
+  if (!$("pg-enabled").checked) {
+    showDbPrepError("PostgreSQLのDB接続設定が必要です（「設定」画面。mapping.yamlの生成はPostgreSQLのみ対応）");
+    return;
+  }
+  let dbConfigData;
+  try {
+    dbConfigData = collectDbConfig();
+  } catch (e) {
+    showDbPrepError(e.message);
+    return;
+  }
+
+  const outputPath = $("dbprep-mapping-output").value.trim() || joinPath(dirName(openapiPath), "mapping.yaml");
+  try {
+    await ensureDirForOutput(outputPath, openapiPath);
+  } catch (e) {
+    showDbPrepError(String(e));
+    return;
+  }
+
+  let configPath;
+  try {
+    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+  } catch (e) {
+    showDbPrepError(`DB接続設定の準備に失敗しました: ${e}`);
+    return;
+  }
+
+  await persistSettings();
+
+  const args = [openapiPath, "--config", configPath, "-o", outputPath];
+  const schema = $("dbprep-mapping-schema").value.trim();
+  if (schema) args.push("--schema", schema);
+
+  $("dbprep-gen-mapping-button").disabled = true;
+  const code = await runSimpleScript("runner/generate_mapping.py", args, {
+    logEl: $("dbprep-mapping-log"),
+    statusEl: $("dbprep-mapping-status"),
+    doneMessage: `生成しました: ${outputPath}（確信度の低い項目は必ず確認してください）`,
+  });
+  $("dbprep-gen-mapping-button").disabled = false;
+  invoke("delete_file", { path: configPath }).catch(() => {});
+  if (code === 0) {
+    // 次のステップ（シナリオYAML生成）へそのまま連携する。
+    $("dbprep-scenario-mapping-path").value = outputPath;
+  }
+});
+
+$("dbprep-gen-scenario-button").addEventListener("click", async () => {
+  hideDbPrepError();
+  const openapiPath = $("openapi-path").value.trim();
+  if (!openapiPath) {
+    showDbPrepError("openapi.json を選択してください（「設定」画面）");
+    return;
+  }
+  const mappingPath = $("dbprep-scenario-mapping-path").value.trim();
+  if (!mappingPath) {
+    showDbPrepError("mapping.yaml を指定してください（上の手順2で生成するか、既存のファイルを選んでください）");
+    return;
+  }
+
+  const outputPath = $("dbprep-scenario-output").value.trim() || joinPath(dirName(openapiPath), "scenarios.yaml");
+  try {
+    await ensureDirForOutput(outputPath, openapiPath);
+  } catch (e) {
+    showDbPrepError(String(e));
+    return;
+  }
+
+  await persistSettings();
+
+  const args = [openapiPath, mappingPath, "-o", outputPath];
+  $("dbprep-gen-scenario-button").disabled = true;
+  const code = await runSimpleScript("runner/generate_db_scenarios.py", args, {
+    logEl: $("dbprep-scenario-log"),
+    statusEl: $("dbprep-scenario-status"),
+    doneMessage: `生成しました: ${outputPath}（where/columns等は必ず確認・修正してください）`,
+  });
+  $("dbprep-gen-scenario-button").disabled = false;
+  if (code === 0) {
+    // 「DBシナリオ」タブへそのまま連携する。
+    $("dbscenario-path").value = outputPath;
+  }
+});
+
+// ---------- DBシナリオ（生成したシナリオYAMLの実行） ----------
+
+let dbScenarioRunId = null;
+let dbScenarioResultPath = null;
+let dbScenarioTempDbConfigPath = null;
+let dbScenarioTempAuthConfigPath = null;
+
+function showDbScenarioError(message) {
+  const el = $("dbscenario-error");
+  el.textContent = message;
+  el.hidden = false;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function hideDbScenarioError() {
+  $("dbscenario-error").hidden = true;
+}
+
+function setDbScenarioStatus(text, state) {
+  const el = $("dbscenario-status");
+  el.textContent = text;
+  el.dataset.state = state || "";
+}
+
+function appendDbScenarioLog(line) {
+  const log = $("dbscenario-log");
+  log.textContent += (log.textContent ? "\n" : "") + line;
+  log.scrollTop = log.scrollHeight;
+}
+
+function finishDbScenarioRunUi(code) {
+  const meaning = { 0: "OK：全シナリオ成功", 1: "NG：1件以上失敗", 3: "ERROR：実行エラー" }[code] || `終了コード ${code}`;
+  const state = { 0: "ok", 1: "ng" }[code] || "ng";
+  setDbScenarioStatus(meaning, state);
+  $("dbscenario-run-button").disabled = false;
+  $("dbscenario-cancel-button").disabled = true;
+  if (code === 0 && dbScenarioResultPath) {
+    $("dbscenario-open-result-button").disabled = false;
+  }
+}
+
+$("dbscenario-goto-settings").addEventListener("click", () => showPage("settings"));
+$("dbscenario-browse").addEventListener("click", () =>
+  browseFile("dbscenario-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
+);
+$("dbscenario-browse-report").addEventListener("click", () =>
+  browseSaveFile("dbscenario-report-output", [{ name: "Excel", extensions: ["xlsx"] }], "DBシナリオ結果.xlsx"),
+);
+
+$("dbscenario-run-button").addEventListener("click", async () => {
+  hideDbScenarioError();
+
+  const openapiPath = $("openapi-path").value.trim();
+  const baseUrl = $("base-url").value.trim();
+  const scenarioPath = $("dbscenario-path").value.trim();
+
+  if (!openapiPath) {
+    showDbScenarioError("openapi.json を選択してください（「設定」画面）");
+    return;
+  }
+  if (!baseUrl) {
+    showDbScenarioError("Base URL を入力してください（「設定」画面）");
+    return;
+  }
+  if (!scenarioPath) {
+    showDbScenarioError("シナリオYAML を選択してください（「DB準備」タブで生成できます）");
+    return;
+  }
+  if (!dbConfigEnabled()) {
+    showDbScenarioError("DB接続設定（「設定」画面）が必要です");
+    return;
+  }
+
+  let dbConfigData;
+  try {
+    dbConfigData = collectDbConfig();
+  } catch (e) {
+    showDbScenarioError(e.message);
+    return;
+  }
+  let configPath;
+  try {
+    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+  } catch (e) {
+    showDbScenarioError(`DB接続設定の準備に失敗しました: ${e}`);
+    return;
+  }
+  dbScenarioTempDbConfigPath = configPath;
+
+  let authConfigPath = "";
+  if (authConfigEnabled()) {
+    let authConfigData;
+    try {
+      authConfigData = collectAuthConfig();
+    } catch (e) {
+      showDbScenarioError(e.message);
+      invoke("delete_file", { path: configPath }).catch(() => {});
+      dbScenarioTempDbConfigPath = null;
+      return;
+    }
+    try {
+      authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
+    } catch (e) {
+      showDbScenarioError(`認証設定の準備に失敗しました: ${e}`);
+      invoke("delete_file", { path: configPath }).catch(() => {});
+      dbScenarioTempDbConfigPath = null;
+      return;
+    }
+  }
+  dbScenarioTempAuthConfigPath = authConfigPath || null;
+
+  await persistSettings();
+
+  const reportOutput = $("dbscenario-report-output").value.trim();
+  // ヘルスチェックは「設定」画面のAPI疎通確認で独立して行える運用のため、常にスキップする。
+  const args = [scenarioPath, openapiPath, "--base-url", baseUrl, "--config", configPath, "--skip-health-check"];
+  if (authConfigPath) args.push("--auth-config", authConfigPath);
+  if (reportOutput) args.push("--report-output", reportOutput);
+  if ($("dbscenario-dry-run").checked) args.push("--dry-run");
+
+  dbScenarioRunId = `dbscenario-${Date.now()}`;
+  dbScenarioResultPath = reportOutput || null;
+  $("dbscenario-log").textContent = "";
+  $("dbscenario-run-button").disabled = true;
+  $("dbscenario-cancel-button").disabled = false;
+  $("dbscenario-open-result-button").disabled = true;
+  setDbScenarioStatus("実行中...", "running");
+
+  invoke("run_script", { runId: dbScenarioRunId, script: "runner/db_scenario_runner.py", args });
+});
+
+$("dbscenario-cancel-button").addEventListener("click", async () => {
+  if (dbScenarioRunId) await invoke("cancel_script", { runId: dbScenarioRunId });
+});
+
+$("dbscenario-open-result-button").addEventListener("click", async () => {
+  if (dbScenarioResultPath) {
+    const { openPath } = await import("@tauri-apps/plugin-opener");
+    await openPath(dbScenarioResultPath).catch(() => {});
+  }
+});
+
 // ---------- 実行（生成→実行の2段階） ----------
 
 let currentRunId = null;
@@ -708,13 +1082,55 @@ $("open-result-button").addEventListener("click", async () => {
 });
 
 listen("proc-line", (event) => {
-  if (event.payload.runId !== currentRunId) return;
-  appendLog(event.payload.line);
+  const { runId, line } = event.payload;
+  if (runId === currentRunId) {
+    appendLog(line);
+    return;
+  }
+  if (runId === dbScenarioRunId) {
+    appendDbScenarioLog(line);
+    return;
+  }
+  const simple = simpleRuns.get(runId);
+  if (simple && simple.logEl) {
+    simple.logEl.textContent += (simple.logEl.textContent ? "\n" : "") + line;
+    simple.logEl.scrollTop = simple.logEl.scrollHeight;
+  }
 });
 
 listen("proc-done", async (event) => {
-  if (event.payload.runId !== currentRunId) return;
-  const code = event.payload.code;
+  const { runId, code } = event.payload;
+
+  const simple = simpleRuns.get(runId);
+  if (simple) {
+    simpleRuns.delete(runId);
+    if (simple.statusEl) {
+      if (code === 0) {
+        simple.statusEl.textContent = simple.doneMessage || "完了しました";
+        simple.statusEl.classList.add("ok");
+      } else {
+        simple.statusEl.textContent = `失敗しました（終了コード ${code}）。ログを確認してください`;
+        simple.statusEl.classList.add("error");
+      }
+    }
+    simple.resolve(code);
+    return;
+  }
+
+  if (runId === dbScenarioRunId) {
+    finishDbScenarioRunUi(code);
+    if (dbScenarioTempDbConfigPath) {
+      invoke("delete_file", { path: dbScenarioTempDbConfigPath }).catch(() => {});
+      dbScenarioTempDbConfigPath = null;
+    }
+    if (dbScenarioTempAuthConfigPath) {
+      invoke("delete_file", { path: dbScenarioTempAuthConfigPath }).catch(() => {});
+      dbScenarioTempAuthConfigPath = null;
+    }
+    return;
+  }
+
+  if (runId !== currentRunId) return;
 
   if (pendingSecondStage) {
     const stage = pendingSecondStage;

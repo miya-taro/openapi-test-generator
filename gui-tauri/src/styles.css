@@ -512,7 +512,7 @@ label.checkbox input[type="checkbox"] {
 
 /* ---------- 実行パネル ---------- */
 
-#run-panel {
+.run-panel {
   background: var(--surface);
   border: 1px solid var(--border-light);
   border-radius: 10px;
@@ -525,24 +525,24 @@ label.checkbox input[type="checkbox"] {
   font-size: 10.5pt;
 }
 
-#run-status {
+.run-status-line {
   font-weight: 600;
   padding: 6px 0 2px;
 }
 
-#run-status[data-state="ok"] {
+.run-status-line[data-state="ok"] {
   color: var(--ok);
 }
 
-#run-status[data-state="ng"] {
+.run-status-line[data-state="ng"] {
   color: var(--danger);
 }
 
-#run-status[data-state="warn"] {
+.run-status-line[data-state="warn"] {
   color: var(--warn);
 }
 
-#run-status[data-state="running"] {
+.run-status-line[data-state="running"] {
   color: var(--accent);
 }
 
@@ -562,7 +562,7 @@ label.checkbox input[type="checkbox"] {
   transition: width 0.2s ease;
 }
 
-#run-log {
+.run-log {
   background: var(--log-bg);
   color: var(--log-text);
   border-radius: 8px;
@@ -573,6 +573,20 @@ label.checkbox input[type="checkbox"] {
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.mini-log {
+  background: var(--log-bg);
+  color: var(--log-text);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: "Consolas", "Cascadia Mono", monospace;
+  font-size: 8.5pt;
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {
