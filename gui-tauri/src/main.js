@@ -163,20 +163,20 @@ $("db-config-save").addEventListener("click", async () => {
   try {
     data = collectDbConfig();
   } catch (e) {
-    alert(e.message);
+    setDbConfigStatus(e.message, "error");
     return;
   }
   if (Object.keys(data).length === 0) {
-    alert("PostgreSQL/InfluxDBのいずれかを有効にしてください");
+    setDbConfigStatus("PostgreSQL/InfluxDBのいずれかを有効にしてください", "error");
     return;
   }
   const savePath = await save({ filters: [{ name: "JSON", extensions: ["json"] }], defaultPath: "config.json" });
   if (!savePath) return;
   try {
     await invoke("write_config_file", { path: savePath, data });
-    $("db-config-status").textContent = `保存しました: ${savePath}`;
+    setDbConfigStatus(`保存しました: ${savePath}`, "ok");
   } catch (e) {
-    $("db-config-status").textContent = `保存に失敗しました: ${e}`;
+    setDbConfigStatus(`保存に失敗しました: ${e}`, "error");
   }
 });
 
@@ -320,6 +320,24 @@ function setStatus(text, state) {
   el.dataset.state = state || "";
 }
 
+function showGenError(message) {
+  const el = $("gen-error");
+  el.textContent = message;
+  el.hidden = false;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function hideGenError() {
+  $("gen-error").hidden = true;
+}
+
+function setDbConfigStatus(text, state) {
+  const el = $("db-config-status");
+  el.textContent = text;
+  el.classList.remove("error", "ok");
+  if (state) el.classList.add(state);
+}
+
 function startRunUi() {
   $("run-log").textContent = "";
   progressTotal = 0;
@@ -347,27 +365,29 @@ function finishRunUi(code) {
 }
 
 $("run-button").addEventListener("click", async () => {
+  hideGenError();
+
   const openapiPath = $("openapi-path").value.trim();
   const baseUrl = $("base-url").value.trim();
   if (!openapiPath) {
-    alert("openapi.json を選択してください");
+    showGenError("openapi.json を選択してください（画面上部）");
     return;
   }
   if (!baseUrl) {
-    alert("Base URL を入力してください");
+    showGenError("Base URL を入力してください（「1. 対象API」）");
     return;
   }
 
   const unchecked = getUncheckedOperationIds();
   if (lastOperations.length > 0 && unchecked.length === lastOperations.length) {
-    alert("対象APIを少なくとも1つ選択してください");
+    showGenError("対象APIを少なくとも1つ選択してください（「1. 対象API」）");
     return;
   }
 
   const setupPath = $("setup-sql-path").value.trim();
   const teardownPath = $("teardown-sql-path").value.trim();
   if ((setupPath || teardownPath) && !dbConfigEnabled()) {
-    alert("試験前SQL または 試験後SQL を指定する場合は DB接続設定 が必要です");
+    showGenError("試験前SQL または 試験後SQL を指定する場合は DB接続設定（画面上部）が必要です");
     return;
   }
 
@@ -377,13 +397,13 @@ $("run-button").addEventListener("click", async () => {
     try {
       dbConfigData = collectDbConfig();
     } catch (e) {
-      alert(e.message);
+      showGenError(e.message);
       return;
     }
     try {
       configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
     } catch (e) {
-      alert(`DB接続設定の準備に失敗しました: ${e}`);
+      showGenError(`DB接続設定の準備に失敗しました: ${e}`);
       return;
     }
   }

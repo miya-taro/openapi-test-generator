@@ -156,6 +156,18 @@ body {
   cursor: pointer;
 }
 
+#sidebar li .badge {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 7.5pt;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
 #sidebar li:hover:not(.active) {
   background: var(--sidebar-border);
   color: #e2e8f0;
@@ -294,6 +306,50 @@ label.checkbox input[type="checkbox"] {
   accent-color: var(--accent);
 }
 
+/* ---------- セクション区切り（フォームをまとまりごとに視認しやすくする） ---------- */
+
+.form-section {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.form-section-title {
+  margin: 0 0 4px;
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-section-desc {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 9pt;
+}
+
+.optional-tag {
+  font-size: 8pt;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.status-message.error {
+  color: var(--danger);
+}
+
+.status-message.ok {
+  color: #15803d;
+}
+
 /* ---------- 汎用フィールド行 ---------- */
 
 .form-field {
@@ -398,7 +454,16 @@ label.checkbox input[type="checkbox"] {
 /* ---------- 実行パネル ---------- */
 
 #run-panel {
-  margin-top: 16px;
+  margin-top: 0;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+#run-button {
+  padding: 10px 28px;
+  font-size: 10.5pt;
 }
 
 #run-status {

@@ -43,7 +43,7 @@
             <p class="field-caption">
               試験前SQL/試験後SQLの実行やDBシナリオ試験を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
             </p>
-            <div id="db-config-status" class="field-caption"></div>
+            <div id="db-config-status" class="field-caption status-message"></div>
           </div>
         </details>
       </header>
@@ -52,71 +52,87 @@
         <nav id="sidebar">
           <ul>
             <li data-page="gen" class="active">テスト生成・実行</li>
-            <li data-page="db-prep">DB準備</li>
-            <li data-page="db-scenario">DBシナリオ</li>
-            <li data-page="health-check">ヘルスチェック</li>
+            <li data-page="db-prep">DB準備<span class="badge">準備中</span></li>
+            <li data-page="db-scenario">DBシナリオ<span class="badge">準備中</span></li>
+            <li data-page="health-check">ヘルスチェック<span class="badge">準備中</span></li>
           </ul>
           <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner</div>
         </nav>
 
         <main id="content">
           <section id="page-gen" class="page active">
-            <div class="form-field">
-              <label>出力先フォルダ</label>
-              <div class="row">
-                <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
-                <button class="secondary" id="browse-output-dir">参照...</button>
+            <div id="gen-error" class="banner warning" hidden></div>
+
+            <div class="form-section">
+              <h3 class="form-section-title">1. 対象API</h3>
+              <p class="form-section-desc">openapi.json（画面上部）を選択すると、含まれるAPIの一覧がここに表示されます。</p>
+
+              <div class="form-field">
+                <label>対象API（チェックを外すと今回の試験から除外されます）</label>
+                <div id="operations-list"><div class="op-empty">openapi.jsonを選択すると一覧が表示されます</div></div>
+                <div class="btn-row">
+                  <button class="secondary" id="ops-select-all">すべて選択</button>
+                  <button class="secondary" id="ops-select-none">すべて解除</button>
+                </div>
+              </div>
+
+              <div class="form-field">
+                <label>Base URL</label>
+                <input id="base-url" type="text" placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）" />
+              </div>
+
+              <label class="checkbox">
+                <input type="checkbox" id="health-check-enabled" />
+                実行前にヘルスチェック（疎通確認）を行う（詳細は「ヘルスチェック」メニュー）
+              </label>
+            </div>
+
+            <div class="form-section">
+              <h3 class="form-section-title">2. 認証・DBデータ準備<span class="optional-tag">任意</span></h3>
+              <p class="form-section-desc">ログイン認証が必要なAPI、またはDBへのデータ投入・後片付けが必要な試験でのみ入力してください。</p>
+
+              <div class="form-field">
+                <label>認証設定</label>
+                <div class="row">
+                  <input id="auth-config-path" type="text" placeholder="ログイン認証が必要なAPIのみ。auth_config.yaml（未作成の場合は空欄でOK）" />
+                  <button class="secondary" id="browse-auth-config">参照...</button>
+                </div>
+              </div>
+
+              <div class="form-field">
+                <label>試験前SQL</label>
+                <div class="row">
+                  <input id="setup-sql-path" type="text" placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）" />
+                  <button class="secondary" id="browse-setup-sql">参照...</button>
+                </div>
+              </div>
+              <div class="form-field">
+                <label>試験後SQL</label>
+                <div class="row">
+                  <input id="teardown-sql-path" type="text" placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど。teardown.sql）" />
+                  <button class="secondary" id="browse-teardown-sql">参照...</button>
+                </div>
               </div>
             </div>
 
-            <div class="form-field">
-              <label>対象API（チェックを外すと今回の試験から除外されます）</label>
-              <div id="operations-list"><div class="op-empty">openapi.jsonを選択すると一覧が表示されます</div></div>
-              <div class="btn-row">
-                <button class="secondary" id="ops-select-all">すべて選択</button>
-                <button class="secondary" id="ops-select-none">すべて解除</button>
+            <div class="form-section">
+              <h3 class="form-section-title">3. 実行設定</h3>
+
+              <div class="form-field">
+                <label>出力先フォルダ</label>
+                <div class="row">
+                  <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
+                  <button class="secondary" id="browse-output-dir">参照...</button>
+                </div>
               </div>
-            </div>
 
-            <div class="form-field">
-              <label>Base URL</label>
-              <input id="base-url" type="text" placeholder="試験対象サーバーのURL（openapi.jsonにserversがあれば自動入力されます）" />
+              <label class="checkbox"><input type="checkbox" id="dry-run" /> dry-run（実際にはリクエストを送信しない。生成内容の確認用）</label>
+              <label class="checkbox"><input type="checkbox" id="full-body" /> full-body（結果Excelの実測ボディを省略せず全文出力する）</label>
+              <label class="checkbox"><input type="checkbox" id="fail-fast" /> fail-fast（最初のNGが出た時点で試験を打ち切る）</label>
             </div>
-
-            <label class="checkbox">
-              <input type="checkbox" id="health-check-enabled" />
-              実行前にヘルスチェック（疎通確認）を行う（詳細は「ヘルスチェック」メニュー）
-            </label>
-
-            <div class="form-field">
-              <label>認証設定(任意)</label>
-              <div class="row">
-                <input id="auth-config-path" type="text" placeholder="ログイン認証が必要なAPIのみ。②認証設定タブで作成できます" />
-                <button class="secondary" id="browse-auth-config">参照...</button>
-              </div>
-              <p class="field-caption">ログイン認証が必要なAPIのみ（任意）。②認証設定タブで作成できます。</p>
-            </div>
-
-            <div class="form-field">
-              <label>試験前SQL(任意)</label>
-              <div class="row">
-                <input id="setup-sql-path" type="text" placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）" />
-                <button class="secondary" id="browse-setup-sql">参照...</button>
-              </div>
-            </div>
-            <div class="form-field">
-              <label>試験後SQL(任意)</label>
-              <div class="row">
-                <input id="teardown-sql-path" type="text" placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど。teardown.sql）" />
-                <button class="secondary" id="browse-teardown-sql">参照...</button>
-              </div>
-            </div>
-
-            <label class="checkbox"><input type="checkbox" id="dry-run" /> dry-run（実際にはリクエストを送信しない。生成内容の確認用）</label>
-            <label class="checkbox"><input type="checkbox" id="full-body" /> full-body（結果Excelの実測ボディを省略せず全文出力する）</label>
-            <label class="checkbox"><input type="checkbox" id="fail-fast" /> fail-fast（最初のNGが出た時点で試験を打ち切る）</label>
 
             <div id="run-panel">
+              <h3 class="form-section-title">4. 実行</h3>
               <div class="btn-row">
                 <button id="run-button">生成して実行</button>
                 <button class="secondary" id="cancel-button" disabled>キャンセル</button>
