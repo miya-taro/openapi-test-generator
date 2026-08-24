@@ -34,10 +34,8 @@ async function loadSettingsIntoForm() {
   $("influx-port").value = settings.cfg_influx_port || "";
   $("influx-database").value = settings.cfg_influx_database || "";
   $("influx-username").value = settings.cfg_influx_username || "";
-  updateDbConfigSummary();
-  if ($("pg-enabled").checked || $("influx-enabled").checked) {
-    $("db-config-details").open = true;
-  }
+  updateActiveOpenapiText();
+  updateActiveDbConfigText();
 
   await refreshOperationsList({ keepExcluded: true });
 }
@@ -87,24 +85,36 @@ async function browseDir(inputId) {
 
 // ---------- サイドバーナビゲーション ----------
 
-for (const li of document.querySelectorAll("#sidebar li[data-page]")) {
-  li.addEventListener("click", () => {
-    document.querySelectorAll("#sidebar li").forEach((el) => el.classList.remove("active"));
-    document.querySelectorAll(".page").forEach((el) => el.classList.remove("active"));
-    li.classList.add("active");
-    $(`page-${li.dataset.page}`).classList.add("active");
-  });
+function showPage(pageId) {
+  document.querySelectorAll("#sidebar li[data-page]").forEach((el) => el.classList.toggle("active", el.dataset.page === pageId));
+  document.querySelectorAll(".page").forEach((el) => el.classList.toggle("active", el.id === `page-${pageId}`));
 }
 
-// ---------- openapi.json / DB接続設定（共有ヘッダー） ----------
+for (const li of document.querySelectorAll("#sidebar li[data-page]")) {
+  li.addEventListener("click", () => showPage(li.dataset.page));
+}
+
+// ---------- openapi.json（「設定」画面） ----------
+
+function updateActiveOpenapiText() {
+  const path = $("openapi-path").value.trim();
+  const name = path ? path.split(/[\\/]/).pop() : "未設定";
+  $("active-openapi-text").textContent = `openapi.json: ${name}`;
+}
+
+$("goto-settings").addEventListener("click", () => showPage("settings"));
 
 $("browse-openapi").addEventListener("click", () =>
-  browseFile("openapi-path", [{ name: "JSON", extensions: ["json"] }], () =>
-    refreshOperationsList({ keepExcluded: false }),
-  ),
+  browseFile("openapi-path", [{ name: "JSON", extensions: ["json"] }], () => {
+    updateActiveOpenapiText();
+    return refreshOperationsList({ keepExcluded: false });
+  }),
 );
 // ダイアログを使わず直接入力/貼り付けした場合にも一覧を更新する。
-$("openapi-path").addEventListener("change", () => refreshOperationsList({ keepExcluded: false }));
+$("openapi-path").addEventListener("change", () => {
+  updateActiveOpenapiText();
+  refreshOperationsList({ keepExcluded: false });
+});
 
 // ---------- DB接続設定（画面入力のみ。ファイル参照は行わず、実行時に裏で一時ファイル化する） ----------
 
@@ -146,16 +156,16 @@ function collectDbConfig() {
   return data;
 }
 
-function updateDbConfigSummary() {
+function updateActiveDbConfigText() {
   const parts = [];
   if ($("pg-enabled").checked) parts.push(`PostgreSQL(${$("pg-host").value.trim() || "?"})`);
   if ($("influx-enabled").checked) parts.push(`InfluxDB(${$("influx-host").value.trim() || "?"})`);
-  $("db-config-summary").textContent = parts.length ? parts.join(" / ") : "未設定";
+  $("active-dbconfig-text").textContent = `DB接続設定: ${parts.length ? parts.join(" / ") : "未設定"}`;
 }
 
 for (const id of ["pg-enabled", "pg-host", "influx-enabled", "influx-host"]) {
-  $(id).addEventListener("input", updateDbConfigSummary);
-  $(id).addEventListener("change", updateDbConfigSummary);
+  $(id).addEventListener("input", updateActiveDbConfigText);
+  $(id).addEventListener("change", updateActiveDbConfigText);
 }
 
 $("db-config-save").addEventListener("click", async () => {
@@ -201,7 +211,7 @@ async function refreshOperationsList({ keepExcluded }) {
   const path = $("openapi-path").value.trim();
   const container = $("operations-list");
   if (!path) {
-    container.innerHTML = '<div class="op-empty">openapi.jsonを選択すると一覧が表示されます</div>';
+    container.innerHTML = '<div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div>';
     lastOperations = [];
     return;
   }
@@ -370,7 +380,7 @@ $("run-button").addEventListener("click", async () => {
   const openapiPath = $("openapi-path").value.trim();
   const baseUrl = $("base-url").value.trim();
   if (!openapiPath) {
-    showGenError("openapi.json を選択してください（画面上部）");
+    showGenError("openapi.json を選択してください（「設定」画面）");
     return;
   }
   if (!baseUrl) {
@@ -387,7 +397,7 @@ $("run-button").addEventListener("click", async () => {
   const setupPath = $("setup-sql-path").value.trim();
   const teardownPath = $("teardown-sql-path").value.trim();
   if ((setupPath || teardownPath) && !dbConfigEnabled()) {
-    showGenError("試験前SQL または 試験後SQL を指定する場合は DB接続設定（画面上部）が必要です");
+    showGenError("試験前SQL または 試験後SQL を指定する場合は DB接続設定（「設定」画面）が必要です");
     return;
   }
 

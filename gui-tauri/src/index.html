@@ -7,47 +7,6 @@
   </head>
   <body>
     <div id="app">
-      <header id="shared-header">
-        <div class="field-row">
-          <label>openapi.json</label>
-          <input id="openapi-path" type="text" placeholder="試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます" />
-          <button class="secondary" id="browse-openapi">参照...</button>
-        </div>
-        <details id="db-config-details" class="db-config-details">
-          <summary>
-            <span class="db-config-label">DB接続設定(任意)</span>
-            <span id="db-config-summary" class="field-caption">未設定</span>
-          </summary>
-          <div class="db-config-body">
-            <label class="checkbox"><input type="checkbox" id="pg-enabled" /> PostgreSQLを使う</label>
-            <div class="db-fields-grid">
-              <input id="pg-host" type="text" placeholder="host" />
-              <input id="pg-port" type="text" placeholder="port" class="db-field-port" />
-              <input id="pg-dbname" type="text" placeholder="dbname" />
-              <input id="pg-user" type="text" placeholder="user" />
-              <input id="pg-password" type="password" placeholder="password" />
-            </div>
-
-            <label class="checkbox"><input type="checkbox" id="influx-enabled" /> InfluxDBを使う</label>
-            <div class="db-fields-grid">
-              <input id="influx-host" type="text" placeholder="host" />
-              <input id="influx-port" type="text" placeholder="port" class="db-field-port" />
-              <input id="influx-database" type="text" placeholder="database" />
-              <input id="influx-username" type="text" placeholder="username(任意)" />
-              <input id="influx-password" type="password" placeholder="password(任意)" />
-            </div>
-
-            <div class="btn-row">
-              <button class="secondary" id="db-config-save">ファイルに保存(任意・外部共有用)</button>
-            </div>
-            <p class="field-caption">
-              試験前SQL/試験後SQLの実行やDBシナリオ試験を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
-            </p>
-            <div id="db-config-status" class="field-caption status-message"></div>
-          </div>
-        </details>
-      </header>
-
       <div id="body">
         <nav id="sidebar">
           <ul>
@@ -55,6 +14,9 @@
             <li data-page="db-prep">DB準備<span class="badge">準備中</span></li>
             <li data-page="db-scenario">DBシナリオ<span class="badge">準備中</span></li>
             <li data-page="health-check">ヘルスチェック<span class="badge">準備中</span></li>
+          </ul>
+          <ul class="sidebar-secondary">
+            <li data-page="settings">設定</li>
           </ul>
           <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner</div>
         </nav>
@@ -65,11 +27,16 @@
 
             <div class="form-section">
               <h3 class="form-section-title">1. 対象API</h3>
-              <p class="form-section-desc">openapi.json（画面上部）を選択すると、含まれるAPIの一覧がここに表示されます。</p>
+
+              <div class="active-config-status">
+                <span id="active-openapi-text">openapi.json: 未設定</span>
+                <span id="active-dbconfig-text">DB接続設定: 未設定</span>
+                <button class="secondary" id="goto-settings">設定を変更</button>
+              </div>
 
               <div class="form-field">
                 <label>対象API（チェックを外すと今回の試験から除外されます）</label>
-                <div id="operations-list"><div class="op-empty">openapi.jsonを選択すると一覧が表示されます</div></div>
+                <div id="operations-list"><div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div></div>
                 <div class="btn-row">
                   <button class="secondary" id="ops-select-all">すべて選択</button>
                   <button class="secondary" id="ops-select-none">すべて解除</button>
@@ -152,6 +119,49 @@
           </section>
           <section id="page-health-check" class="page">
             <div class="page-placeholder">ヘルスチェックタブは準備中です。</div>
+          </section>
+
+          <section id="page-settings" class="page">
+            <div class="form-section">
+              <h3 class="form-section-title">openapi.json</h3>
+              <p class="form-section-desc">試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます。</p>
+              <div class="form-field">
+                <div class="row">
+                  <input id="openapi-path" type="text" placeholder="openapi.jsonのパス" />
+                  <button class="secondary" id="browse-openapi">参照...</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h3 class="form-section-title">DB接続設定<span class="optional-tag">任意</span></h3>
+              <p class="form-section-desc">
+                試験前SQL/試験後SQLの実行やDBシナリオ試験を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
+              </p>
+
+              <label class="checkbox"><input type="checkbox" id="pg-enabled" /> PostgreSQLを使う</label>
+              <div class="db-fields-grid">
+                <input id="pg-host" type="text" placeholder="host" />
+                <input id="pg-port" type="text" placeholder="port" class="db-field-port" />
+                <input id="pg-dbname" type="text" placeholder="dbname" />
+                <input id="pg-user" type="text" placeholder="user" />
+                <input id="pg-password" type="password" placeholder="password" />
+              </div>
+
+              <label class="checkbox"><input type="checkbox" id="influx-enabled" /> InfluxDBを使う</label>
+              <div class="db-fields-grid">
+                <input id="influx-host" type="text" placeholder="host" />
+                <input id="influx-port" type="text" placeholder="port" class="db-field-port" />
+                <input id="influx-database" type="text" placeholder="database" />
+                <input id="influx-username" type="text" placeholder="username(任意)" />
+                <input id="influx-password" type="password" placeholder="password(任意)" />
+              </div>
+
+              <div class="btn-row">
+                <button class="secondary" id="db-config-save">ファイルに保存(任意・外部共有用)</button>
+              </div>
+              <div id="db-config-status" class="field-caption status-message"></div>
+            </div>
           </section>
         </main>
       </div>
