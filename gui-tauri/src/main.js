@@ -712,7 +712,7 @@ $("dbprep-gen-scenario-button").addEventListener("click", async () => {
   }
   const mappingPath = $("dbprep-scenario-mapping-path").value.trim();
   if (!mappingPath) {
-    showDbPrepError("mapping.yaml を指定してください（上の手順2で生成するか、既存のファイルを選んでください）");
+    showDbPrepError("APIとDBテーブルの対応表（mapping.yaml）を指定してください（上の手順2で生成するか、既存のファイルを選んでください）");
     return;
   }
 
@@ -805,7 +805,7 @@ $("dbscenario-run-button").addEventListener("click", async () => {
     return;
   }
   if (!scenarioPath) {
-    showDbScenarioError("シナリオYAML を選択してください（「DB準備」タブで生成できます）");
+    showDbScenarioError("DB検証シナリオファイル（scenarios.yaml）を選択してください（「DB準備」タブで生成できます）");
     return;
   }
   if (!dbConfigEnabled()) {

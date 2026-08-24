@@ -127,9 +127,10 @@
               <div id="dbprep-error" class="banner warning" hidden></div>
 
               <div class="form-section">
-                <h3 class="form-section-title">1. setup.sql / teardown.sql の生成<span class="optional-tag">任意</span></h3>
+                <h3 class="form-section-title">1. 試験用データの準備SQLを生成<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">
-                  「設定」画面のDB接続設定を使って、実際のテーブル定義からINSERT/TRUNCATEの雛形を生成します（PostgreSQLのみ対応）。
+                  試験の前にダミーデータを投入する「試験前SQL」（setup.sql）と、試験の後に片付ける「試験後SQL」（teardown.sql）の雛形を、
+                  実際のテーブル定義から自動生成します（PostgreSQLのみ対応）。生成後は「テスト生成・実行」タブの試験前SQL/試験後SQL欄に自動で反映されます。
                   FK制約を満たす順序は自動計算されますが、値の中身は必ず確認・修正してから使ってください。
                 </p>
                 <div class="form-field">
@@ -143,17 +144,18 @@
                   </div>
                 </div>
                 <div class="btn-row">
-                  <button id="dbprep-gen-sql-button">setup.sql / teardown.sql を生成</button>
+                  <button id="dbprep-gen-sql-button">試験前SQL・試験後SQLを生成</button>
                 </div>
                 <div id="dbprep-sql-status" class="field-caption status-message"></div>
                 <div id="dbprep-sql-log" class="mini-log" hidden></div>
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">2. mapping.yaml の生成<span class="optional-tag">任意</span></h3>
+                <h3 class="form-section-title">2. APIとDBテーブルの対応表を生成<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">
-                  openapi.jsonのリクエストボディとDBのカラム名を突き合わせ、operationId→テーブルの対応表の叩き台を作ります（名前ベースの推定です）。
-                  確信度が「低」の項目は必ず確認・修正してください。
+                  「どのAPI操作がDBのどのテーブルを更新するか」の対応表（mapping.yaml）の叩き台を、
+                  openapi.jsonのリクエストボディとDBのカラム名を突き合わせて自動生成します（名前ベースの推定です）。
+                  次の手順3で使います。確信度が「低」の項目は必ず確認・修正してください。
                 </p>
                 <div class="form-field">
                   <label>出力先</label>
@@ -163,22 +165,23 @@
                   </div>
                 </div>
                 <div class="btn-row">
-                  <button id="dbprep-gen-mapping-button">mapping.yaml を生成</button>
+                  <button id="dbprep-gen-mapping-button">対応表を生成</button>
                 </div>
                 <div id="dbprep-mapping-status" class="field-caption status-message"></div>
                 <div id="dbprep-mapping-log" class="mini-log" hidden></div>
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">3. DBシナリオYAMLの生成<span class="optional-tag">任意</span></h3>
+                <h3 class="form-section-title">3. DB検証シナリオを生成<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">
-                  openapi.jsonと上のmapping.yamlから、「DBシナリオ」タブで実行するシナリオYAMLの叩き台を作ります。
+                  「APIを呼び出した結果、DBが期待通り変化したか」を確認する検証シナリオ（scenarios.yaml）の叩き台を、
+                  openapi.jsonと手順2の対応表から自動生成します。生成後は「DBシナリオ」タブで実行できます。
                   where/columns等の検証条件は必ず確認・修正してください。
                 </p>
                 <div class="form-field">
-                  <label>mapping.yaml</label>
+                  <label>手順2で生成した対応表（mapping.yaml）</label>
                   <div class="row">
-                    <input id="dbprep-scenario-mapping-path" type="text" placeholder="上で生成したmapping.yaml、または既存のファイル" />
+                    <input id="dbprep-scenario-mapping-path" type="text" placeholder="上で生成した対応表、または既存のファイル" />
                     <button class="secondary" id="dbprep-browse-scenario-mapping">参照...</button>
                   </div>
                 </div>
@@ -190,7 +193,7 @@
                   </div>
                 </div>
                 <div class="btn-row">
-                  <button id="dbprep-gen-scenario-button">シナリオYAMLを生成</button>
+                  <button id="dbprep-gen-scenario-button">検証シナリオを生成</button>
                 </div>
                 <div id="dbprep-scenario-status" class="field-caption status-message"></div>
                 <div id="dbprep-scenario-log" class="mini-log" hidden></div>
@@ -207,13 +210,15 @@
               <div id="dbscenario-error" class="banner warning" hidden></div>
 
               <div class="form-section">
-                <h3 class="form-section-title">1. シナリオファイル</h3>
+                <h3 class="form-section-title">1. DB検証シナリオファイル</h3>
                 <p class="form-section-desc">
-                  「DB準備」タブで生成・確認・修正したシナリオYAMLを選んでください。認証設定は「テスト生成・実行」タブの内容を共有して使います
+                  「APIを呼び出した結果、DBが期待通り変化したか」を確認する検証シナリオです。
+                  「DB準備」タブの手順3で生成し、確認・修正したファイル（scenarios.yaml）を選んでください。
+                  認証設定は「テスト生成・実行」タブの内容を共有して使います
                   （「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）。
                 </p>
                 <div class="form-field">
-                  <label>シナリオYAML</label>
+                  <label>検証シナリオファイル（scenarios.yaml）</label>
                   <div class="row">
                     <input id="dbscenario-path" type="text" placeholder="scenarios.yaml のパス" />
                     <button class="secondary" id="dbscenario-browse">参照...</button>
@@ -236,7 +241,7 @@
               <div id="dbscenario-run-panel" class="run-panel">
                 <h3 class="form-section-title">3. 実行</h3>
                 <div class="btn-row">
-                  <button id="dbscenario-run-button">シナリオを実行</button>
+                  <button id="dbscenario-run-button">検証シナリオを実行</button>
                   <button class="secondary" id="dbscenario-cancel-button" disabled>キャンセル</button>
                   <button class="secondary" id="dbscenario-open-result-button" disabled>結果Excelを開く</button>
                 </div>
