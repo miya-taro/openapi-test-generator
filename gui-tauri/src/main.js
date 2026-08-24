@@ -346,8 +346,19 @@ async function applyLoginOperationHints() {
     $("auth-token-path").value = hints.token_path;
     filled.push("token_path");
   }
+  const notes = [];
   if (filled.length > 0) {
-    setAuthConfigStatus(`openapi.jsonから${filled.join("・")}を自動入力しました（内容を確認してください）`, "ok");
+    notes.push(`openapi.jsonから${filled.join("・")}を自動入力しました（内容を確認してください）`);
+  }
+  // token_pathはログイン操作の「レスポンス」側のスキーマから推測している。レスポンスに
+  // スキーマが定義されていないopenapi.jsonも多く、その場合は何も起きず無言になってしまうため、
+  // 推測できなかったこと自体を明示する（token_pathが自動で埋まらないのはバグではなく、
+  // 単にopenapi.json側にレスポンスのスキーマが無いだけのことが多い）。
+  if (!hints.token_path) {
+    notes.push("token_pathはログイン操作のレスポンス定義から推測できませんでした。多くのAPIでは既定値（access_token）のままで動くので、まず空欄で試し、動かなければ実際のレスポンス形式に合わせて手入力してください");
+  }
+  if (notes.length > 0) {
+    setAuthConfigStatus(notes.join(" / "), filled.length > 0 ? "ok" : null);
   }
 }
 
