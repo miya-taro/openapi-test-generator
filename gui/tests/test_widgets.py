@@ -37,3 +37,47 @@ def test_path_field_dir_mode_uses_get_existing_directory(monkeypatch):
     field._browse()
     assert calls == ["dir"]
     assert field.get() == "some/dir"
+
+
+def test_path_field_browse_always_offers_all_files_fallback(monkeypatch):
+    seen_filters = []
+
+    def fake_open(*a, **k):
+        seen_filters.append(k.get("filter"))
+        return ("picked.json", "")
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", fake_open)
+    field = PathField("入力", name_filter="JSON (*.json)")
+    field._browse()
+
+    assert seen_filters == ["JSON (*.json);;すべてのファイル (*)"]
+
+
+def test_path_field_browse_uses_non_native_dialog_when_frozen(monkeypatch):
+    seen_options = []
+
+    def fake_open(*a, **k):
+        seen_options.append(k.get("options"))
+        return ("picked.json", "")
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", fake_open)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    field = PathField("入力")
+    field._browse()
+
+    assert seen_options == [QFileDialog.Option.DontUseNativeDialog]
+
+
+def test_path_field_browse_uses_native_dialog_when_not_frozen(monkeypatch):
+    seen_options = []
+
+    def fake_open(*a, **k):
+        seen_options.append(k.get("options"))
+        return ("picked.json", "")
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", fake_open)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    field = PathField("入力")
+    field._browse()
+
+    assert seen_options == [QFileDialog.Option(0)]
