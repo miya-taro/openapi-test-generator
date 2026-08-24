@@ -132,8 +132,7 @@
                   「設定」画面のDB接続設定を使って、実際のテーブル定義からINSERT/TRUNCATEの雛形を生成します（PostgreSQLのみ対応）。
                   FK制約を満たす順序は自動計算されますが、値の中身は必ず確認・修正してから使ってください。
                 </p>
-                <div class="db-fields-grid">
-                  <input id="dbprep-sql-schema" type="text" placeholder="対象スキーマ（既定: public。スキーマを分けていなければ空欄でOK）" />
+                <div class="form-field">
                   <input id="dbprep-sql-tables" type="text" placeholder="対象テーブル（任意・カンマ区切り。空欄で全テーブル）" />
                 </div>
                 <div class="form-field">
@@ -156,10 +155,6 @@
                   openapi.jsonのリクエストボディとDBのカラム名を突き合わせ、operationId→テーブルの対応表の叩き台を作ります（名前ベースの推定です）。
                   確信度が「低」の項目は必ず確認・修正してください。
                 </p>
-                <div class="form-field">
-                  <label>対象スキーマ<span class="optional-tag">任意</span></label>
-                  <input id="dbprep-mapping-schema" type="text" placeholder="既定: public（スキーマを分けていなければ空欄でOK）" />
-                </div>
                 <div class="form-field">
                   <label>出力先</label>
                   <div class="row">
@@ -290,6 +285,7 @@
                   <input id="pg-host" type="text" placeholder="host" />
                   <input id="pg-port" type="text" placeholder="port" class="db-field-port" />
                   <input id="pg-dbname" type="text" placeholder="dbname" />
+                  <input id="pg-schema" type="text" placeholder="schema（既定: public。任意）" />
                   <input id="pg-user" type="text" placeholder="user" />
                   <input id="pg-password" type="password" placeholder="password" />
                 </div>

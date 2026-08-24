@@ -26,6 +26,7 @@ async function loadSettingsIntoForm() {
   $("pg-host").value = settings.cfg_pg_host || "";
   $("pg-port").value = settings.cfg_pg_port || "";
   $("pg-dbname").value = settings.cfg_pg_dbname || "";
+  $("pg-schema").value = settings.cfg_pg_schema || "";
   $("pg-user").value = settings.cfg_pg_user || "";
   // password は設定ファイルに平文保存しないため、起動時は毎回未入力にする
   $("influx-enabled").checked = !!settings.cfg_influx_enabled;
@@ -40,10 +41,8 @@ async function loadSettingsIntoForm() {
   $("auth-header-format").value = settings.auth_header_format || "";
   // ボディは認証情報を含みうるため、設定ファイルに平文保存しない（起動時は毎回未入力）
 
-  $("dbprep-sql-schema").value = settings.dbprep_sql_schema || "";
   $("dbprep-sql-tables").value = settings.dbprep_sql_tables || "";
   $("dbprep-sql-output-dir").value = settings.dbprep_sql_output_dir || "";
-  $("dbprep-mapping-schema").value = settings.dbprep_mapping_schema || "";
   $("dbprep-mapping-output").value = settings.dbprep_mapping_output || "";
   $("dbprep-scenario-mapping-path").value = settings.dbprep_scenario_mapping_path || "";
   $("dbprep-scenario-output").value = settings.dbprep_scenario_output || "";
@@ -81,6 +80,7 @@ async function persistSettings() {
   settings.cfg_pg_host = $("pg-host").value.trim();
   settings.cfg_pg_port = $("pg-port").value.trim();
   settings.cfg_pg_dbname = $("pg-dbname").value.trim();
+  settings.cfg_pg_schema = $("pg-schema").value.trim();
   settings.cfg_pg_user = $("pg-user").value.trim();
   settings.cfg_influx_enabled = $("influx-enabled").checked;
   settings.cfg_influx_host = $("influx-host").value.trim();
@@ -96,10 +96,8 @@ async function persistSettings() {
   settings.auth_header_format = $("auth-header-format").value.trim();
   // ボディ（認証情報を含みうる）は意図的に保存しない
 
-  settings.dbprep_sql_schema = $("dbprep-sql-schema").value.trim();
   settings.dbprep_sql_tables = $("dbprep-sql-tables").value.trim();
   settings.dbprep_sql_output_dir = $("dbprep-sql-output-dir").value.trim();
-  settings.dbprep_mapping_schema = $("dbprep-mapping-schema").value.trim();
   settings.dbprep_mapping_output = $("dbprep-mapping-output").value.trim();
   settings.dbprep_scenario_mapping_path = $("dbprep-scenario-mapping-path").value.trim();
   settings.dbprep_scenario_output = $("dbprep-scenario-output").value.trim();
@@ -630,7 +628,7 @@ $("dbprep-gen-sql-button").addEventListener("click", async () => {
   const setupOutput = joinPath(outputDir, "setup.sql");
   const teardownOutput = joinPath(outputDir, "teardown.sql");
   const args = ["--config", configPath, "--setup-output", setupOutput, "--teardown-output", teardownOutput];
-  const schema = $("dbprep-sql-schema").value.trim();
+  const schema = $("pg-schema").value.trim();
   if (schema) args.push("--schema", schema);
   const tables = $("dbprep-sql-tables").value.trim();
   if (tables) args.push("--tables", tables);
@@ -688,7 +686,7 @@ $("dbprep-gen-mapping-button").addEventListener("click", async () => {
   await persistSettings();
 
   const args = [openapiPath, "--config", configPath, "-o", outputPath];
-  const schema = $("dbprep-mapping-schema").value.trim();
+  const schema = $("pg-schema").value.trim();
   if (schema) args.push("--schema", schema);
 
   $("dbprep-gen-mapping-button").disabled = true;
