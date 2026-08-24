@@ -69,3 +69,12 @@ def test_load_settings_does_not_overwrite_existing_shared_openapi_path(tmp_path,
 
     loaded = load_settings()
     assert loaded["shared_openapi_path"] == "C:/new/openapi.json"
+
+
+def test_load_settings_migrates_legacy_per_tab_config_path(tmp_path, monkeypatch):
+    path = tmp_path / "settings.json"
+    path.write_text('{"sqlgen_config_path": "C:/legacy/config.json"}', encoding="utf-8")
+    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
+
+    loaded = load_settings()
+    assert loaded["shared_config_path"] == "C:/legacy/config.json"

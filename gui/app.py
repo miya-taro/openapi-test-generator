@@ -299,7 +299,7 @@ class ConnectivityCheckRow(QWidget):
 class GenerateRunTab(QWidget):
     """openapi-test-gen で生成 → openapi-test-run で実行、を1クリックで行うタブ。"""
 
-    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", config_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
@@ -345,23 +345,22 @@ class GenerateRunTab(QWidget):
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
 
-        self.config_field = PathField(
-            "DB接続設定(任意)", name_filter=JSON_FILTER,
-            placeholder="DB検証やsetup/teardownを使う場合のみ。①DB接続設定タブで作成できます",
-        )
-        self.config_field.set(settings["gen_config_path"])
-        layout.addWidget(self.config_field)
+        # DB接続設定は全タブ共通で画面上部の欄を共有する（自分のlayoutには足さない）。
+        self.config_field = config_field
+        config_note = QLabel("DB検証やsetup/teardown（下記）を使う場合のみ必要です（任意）。")
+        config_note.setWordWrap(True)
+        layout.addWidget(config_note)
 
         self.setup_field = PathField(
-            "setup SQL(任意)", name_filter=SQL_FILTER,
-            placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など）",
+            "試験前SQL(任意)", name_filter=SQL_FILTER,
+            placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）",
         )
         self.setup_field.set(settings["gen_setup_path"])
         layout.addWidget(self.setup_field)
 
         self.teardown_field = PathField(
-            "teardown SQL(任意)", name_filter=SQL_FILTER,
-            placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど）",
+            "試験後SQL(任意)", name_filter=SQL_FILTER,
+            placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど。teardown.sql）",
         )
         self.teardown_field.set(settings["gen_teardown_path"])
         layout.addWidget(self.teardown_field)
@@ -415,8 +414,8 @@ class GenerateRunTab(QWidget):
             ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
             ("認証設定", validators.validate_auth_config(self.auth_config_field.get())),
             ("DB接続設定", validators.validate_db_config(self.config_field.get(), required=False)),
-            ("setup SQL", validators.validate_sql_file(self.setup_field.get())),
-            ("teardown SQL", validators.validate_sql_file(self.teardown_field.get())),
+            ("試験前SQL", validators.validate_sql_file(self.setup_field.get())),
+            ("試験後SQL", validators.validate_sql_file(self.teardown_field.get())),
         ])
 
     def save_fields(self) -> None:
@@ -426,7 +425,6 @@ class GenerateRunTab(QWidget):
         self.settings["gen_health_check_enabled"] = self.health_check_checkbox.isChecked()
         self.settings["gen_auth_config_path"] = self.auth_config_field.get()
         self.settings["gen_dry_run"] = self.dry_run_checkbox.isChecked()
-        self.settings["gen_config_path"] = self.config_field.get()
         self.settings["gen_setup_path"] = self.setup_field.get()
         self.settings["gen_teardown_path"] = self.teardown_field.get()
         self.settings["gen_full_body"] = self.full_body_checkbox.isChecked()
@@ -439,8 +437,8 @@ class GenerateRunTab(QWidget):
         本人が意識しないまま実DBへ反映されてしまう事故を防ぐための確認。
         """
         reply = QMessageBox.warning(
-            self, "setup/teardown SQLの実行確認",
-            "setup SQL / teardown SQL が指定されています。「生成して実行」を行うと、これらのSQLは"
+            self, "試験前SQL/試験後SQLの実行確認",
+            "試験前SQL / 試験後SQL が指定されています。「生成して実行」を行うと、これらのSQLは"
             "実行前後に実際のDBへ即座に反映されます（ロールバックされません）。"
             "「DB準備」タブで生成したファイルが自動で入っている場合もあるため、内容をよく確認してから"
             "続行してください。本当に実行しますか？",
@@ -464,7 +462,7 @@ class GenerateRunTab(QWidget):
         teardown_path = self.teardown_field.get()
         if (setup_path or teardown_path) and not config_path:
             QMessageBox.critical(
-                self, "入力エラー", "setup SQL または teardown SQL を指定する場合は DB接続設定 が必要です"
+                self, "入力エラー", "試験前SQL または 試験後SQL を指定する場合は DB接続設定 が必要です"
             )
             return
         if (setup_path or teardown_path) and not self._confirm_setup_teardown():
@@ -828,20 +826,14 @@ class AuthConfigBuilderTab(QWidget):
 class MappingGenTab(QWidget):
     """generate_mapping.py（mapping.yaml叩き台生成）を実行するタブ。"""
 
-    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", config_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
         layout = QVBoxLayout(self)
 
         self.openapi_field = openapi_field
-
-        self.config_field = PathField(
-            "DB接続設定", name_filter=JSON_FILTER,
-            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
-        )
-        self.config_field.set(settings["mapgen_config_path"])
-        layout.addWidget(self.config_field)
+        self.config_field = config_field
 
         self.schema_field = TextField("対象スキーマ", settings["mapgen_schema"])
         layout.addWidget(self.schema_field)
@@ -871,7 +863,7 @@ class MappingGenTab(QWidget):
         layout.addWidget(self.connectivity_row)
 
         self.panel = LogPanel(
-            "mapping.yaml生成", self.on_run,
+            "テーブル対応表を生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
@@ -930,7 +922,6 @@ class MappingGenTab(QWidget):
         ])
 
     def save_fields(self) -> None:
-        self.settings["mapgen_config_path"] = self.config_field.get()
         self.settings["mapgen_schema"] = self.schema_field.get()
         self.settings["mapgen_output_dir"] = self.output_dir_field.get()
 
@@ -967,18 +958,13 @@ class MappingGenTab(QWidget):
 class SetupSqlGenTab(QWidget):
     """generate_setup_sql.py（setup.sql/teardown.sql雛形生成）を実行するタブ。"""
 
-    def __init__(self, settings: dict, parent=None):
+    def __init__(self, settings: dict, config_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
         layout = QVBoxLayout(self)
 
-        self.config_field = PathField(
-            "DB接続設定", name_filter=JSON_FILTER,
-            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
-        )
-        self.config_field.set(settings["sqlgen_config_path"])
-        layout.addWidget(self.config_field)
+        self.config_field = config_field
 
         self.schema_field = TextField("対象スキーマ", settings["sqlgen_schema"])
         layout.addWidget(self.schema_field)
@@ -1016,7 +1002,7 @@ class SetupSqlGenTab(QWidget):
         layout.addWidget(self.connectivity_row)
 
         self.panel = LogPanel(
-            "setup.sql/teardown.sql生成", self.on_run,
+            "試験データSQLを生成", self.on_run,
             open_result_label="生成結果を開く", exit_code_meanings=_GENERATOR_EXIT_MEANINGS,
         )
         layout.addWidget(self.panel, stretch=1)
@@ -1153,7 +1139,6 @@ class SetupSqlGenTab(QWidget):
         ])
 
     def save_fields(self) -> None:
-        self.settings["sqlgen_config_path"] = self.config_field.get()
         self.settings["sqlgen_schema"] = self.schema_field.get()
         self.settings["sqlgen_tables"] = self.tables_field.get()
         self.settings["sqlgen_output_dir"] = self.output_dir_field.get()
@@ -1203,7 +1188,10 @@ class ScenarioGenTab(QWidget):
 
         self.openapi_field = openapi_field
 
-        self.mapping_field = PathField("mapping.yaml", name_filter=YAML_FILTER)
+        self.mapping_field = PathField(
+            "テーブル対応表", name_filter=YAML_FILTER,
+            placeholder="③テーブル対応表タブで作成したファイル（自動で反映されます。mapping.yaml）",
+        )
         self.mapping_field.set(settings["scengen_mapping_path"])
         layout.addWidget(self.mapping_field)
 
@@ -1288,7 +1276,7 @@ class ScenarioGenTab(QWidget):
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
             ("openapi.json", validators.validate_openapi(self.openapi_field.get())),
-            ("mapping.yaml", validators.validate_mapping_yaml(self.mapping_field.get())),
+            ("テーブル対応表", validators.validate_mapping_yaml(self.mapping_field.get())),
         ])
 
     def save_fields(self) -> None:
@@ -1325,7 +1313,7 @@ class ScenarioGenTab(QWidget):
 class DBScenarioTab(QWidget):
     """db_scenario_runner.py を実行するタブ。"""
 
-    def __init__(self, settings: dict, openapi_field: "PathField", parent=None):
+    def __init__(self, settings: dict, openapi_field: "PathField", config_field: "PathField", parent=None):
         super().__init__(parent)
         self.settings = settings
 
@@ -1337,13 +1325,7 @@ class DBScenarioTab(QWidget):
 
         self.openapi_field = openapi_field
         self.openapi_field.line_edit.textChanged.connect(self._maybe_fill_base_url_from_openapi)
-
-        self.config_field = PathField(
-            "DB接続設定", name_filter=JSON_FILTER,
-            placeholder="①DB接続設定タブで作成したファイル（自動で反映されます）",
-        )
-        self.config_field.set(settings["db_config_path"])
-        layout.addWidget(self.config_field)
+        self.config_field = config_field
 
         self.base_url_field = TextField(
             "Base URL", settings["db_base_url"],
@@ -1425,7 +1407,6 @@ class DBScenarioTab(QWidget):
 
     def save_fields(self) -> None:
         self.settings["db_scenario_path"] = self.scenario_field.get()
-        self.settings["db_config_path"] = self.config_field.get()
         self.settings["db_base_url"] = self.base_url_field.get()
         self.settings["db_health_path"] = self.health_path_field.get()
         self.settings["db_health_check_enabled"] = self.health_check_checkbox.isChecked()
@@ -1493,19 +1474,27 @@ class MainWindow(QMainWindow):
         )
         self.openapi_field.set(self.settings["shared_openapi_path"])
 
-        self.gen_tab = GenerateRunTab(self.settings, self.openapi_field)
+        # DB接続設定も同じ理由（4タブに分かれていて分かりにくい）で1箇所に統一する。
+        # こちらは任意項目のツールもあるため、共通のプレースホルダーで用途を示す。
+        self.config_field = PathField(
+            "DB接続設定", name_filter=JSON_FILTER,
+            placeholder="DB検証を行う場合に必要。①DB接続設定タブで作成、または既存のconfig.jsonを選択",
+        )
+        self.config_field.set(self.settings["shared_config_path"])
+
+        self.gen_tab = GenerateRunTab(self.settings, self.openapi_field, self.config_field)
         self.config_builder_tab = ConfigBuilderTab(self.settings)
         self.auth_builder_tab = AuthConfigBuilderTab(self.settings)
-        self.mapping_gen_tab = MappingGenTab(self.settings, self.openapi_field)
-        self.sql_gen_tab = SetupSqlGenTab(self.settings)
+        self.mapping_gen_tab = MappingGenTab(self.settings, self.openapi_field, self.config_field)
+        self.sql_gen_tab = SetupSqlGenTab(self.settings, self.config_field)
         self.scenario_gen_tab = ScenarioGenTab(self.settings, self.openapi_field)
-        self.db_tab = DBScenarioTab(self.settings, self.openapi_field)
+        self.db_tab = DBScenarioTab(self.settings, self.openapi_field, self.config_field)
 
         db_prep_tabs = QTabWidget()
         db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定")
         db_prep_tabs.addTab(self.auth_builder_tab, "②認証設定(任意)")
-        db_prep_tabs.addTab(self.mapping_gen_tab, "③mapping.yaml")
-        db_prep_tabs.addTab(self.sql_gen_tab, "④setup.sql/teardown.sql")
+        db_prep_tabs.addTab(self.mapping_gen_tab, "③テーブル対応表")
+        db_prep_tabs.addTab(self.sql_gen_tab, "④試験データSQL")
         db_prep_tabs.addTab(self.scenario_gen_tab, "⑤シナリオ雛形")
 
         db_prep_container = QWidget()
@@ -1513,7 +1502,8 @@ class MainWindow(QMainWindow):
         db_prep_layout.setContentsMargins(0, 0, 0, 0)
         intro_label = QLabel(
             "DB検証（Layer2）の準備はこの順番で進めます: "
-            "①DB接続設定 → ②認証設定(任意) → ③mapping.yaml → ④setup.sql/teardown.sql → ⑤シナリオ雛形。"
+            "①DB接続設定 → ②認証設定(任意) → ③テーブル対応表（operationIdとDBテーブルの対応、"
+            "mapping.yaml） → ④試験データSQL（試験前後にDBへ流すsetup.sql/teardown.sql） → ⑤シナリオ雛形。"
             "各ステップで生成・保存したファイルは、次のステップの入力欄に自動で反映されます。"
             "④は生成・保存しただけではDBに反映されません。「実行（DBに反映）」ボタンを別途押してください。"
             "完了したら「DBシナリオ」タブで実行してください。"
@@ -1559,10 +1549,12 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(content_wrap, stretch=1)
 
         header = QWidget()
-        header.setObjectName("openapiHeader")
-        header_layout = QHBoxLayout(header)
+        header.setObjectName("sharedFieldsHeader")
+        header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(20, 12, 20, 12)
+        header_layout.setSpacing(6)
         header_layout.addWidget(self.openapi_field)
+        header_layout.addWidget(self.config_field)
 
         container = QWidget()
         outer = QVBoxLayout(container)
@@ -1599,8 +1591,8 @@ class MainWindow(QMainWindow):
         """あるタブで生成・保存したファイルのパスを、次のステップのタブへ自動反映する。"""
 
         def propagate_config(path: Path) -> None:
-            for tab in (self.mapping_gen_tab, self.sql_gen_tab, self.db_tab, self.gen_tab):
-                tab.config_field.set(str(path))
+            # config_fieldは全タブ共通の1つの欄を共有しているため、1回セットすれば足りる。
+            self.config_field.set(str(path))
 
         def propagate_auth(path: Path) -> None:
             for tab in (self.gen_tab, self.db_tab):
@@ -1656,6 +1648,7 @@ class MainWindow(QMainWindow):
         for tab in self._all_tabs:
             tab.save_fields()
         self.settings["shared_openapi_path"] = self.openapi_field.get()
+        self.settings["shared_config_path"] = self.config_field.get()
         save_settings(self.settings)
         for tab in self._all_tabs:
             if hasattr(tab, "panel"):

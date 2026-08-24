@@ -286,7 +286,7 @@ def test_gen_tab_new_fields_persisted_to_settings(window, tmp_path):
     window.gen_tab.fail_fast_checkbox.setChecked(True)
     window.gen_tab.save_fields()
 
-    assert window.settings["gen_config_path"] == config_path
+    assert window.config_field.get() == config_path
     assert window.settings["gen_setup_path"] == setup_path
     assert window.settings["gen_teardown_path"] == teardown_path
     assert window.settings["gen_full_body"] is True
@@ -337,7 +337,7 @@ def test_gen_tab_validate_button_calls_expected_validators(window, tmp_path, mon
     monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
     window.gen_tab.on_validate()
     labels = [label for label, _ in shown[0]]
-    assert labels == ["openapi.json", "認証設定", "DB接続設定", "setup SQL", "teardown SQL"]
+    assert labels == ["openapi.json", "認証設定", "DB接続設定", "試験前SQL", "試験後SQL"]
 
 
 # ---------- DBScenarioTab ----------

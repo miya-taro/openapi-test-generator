@@ -7,19 +7,18 @@ SETTINGS_PATH = Path.home() / ".openapi_test_gui_settings.json"
 
 DEFAULTS: dict[str, str | bool] = {
     "shared_openapi_path": "",
+    "shared_config_path": "",
     "gen_output_dir": "",
     "gen_base_url": "",
     "gen_health_path": "/health",
     "gen_health_check_enabled": False,
     "gen_auth_config_path": "",
     "gen_dry_run": False,
-    "gen_config_path": "",
     "gen_setup_path": "",
     "gen_teardown_path": "",
     "gen_full_body": False,
     "gen_fail_fast": False,
     "db_scenario_path": "",
-    "db_config_path": "",
     "db_base_url": "",
     "db_health_path": "/health",
     "db_health_check_enabled": False,
@@ -44,10 +43,8 @@ DEFAULTS: dict[str, str | bool] = {
     "authb_token_path": "access_token",
     "authb_header_name": "Authorization",
     "authb_header_format": "Bearer {token}",
-    "mapgen_config_path": "",
     "mapgen_schema": "public",
     "mapgen_output_dir": "",
-    "sqlgen_config_path": "",
     "sqlgen_schema": "public",
     "sqlgen_tables": "",
     "sqlgen_output_dir": "",
@@ -56,22 +53,24 @@ DEFAULTS: dict[str, str | bool] = {
 }
 
 
-# 過去バージョンではopenapi.jsonの入力欄がタブごとに独立していた名残。
+# 過去バージョンではopenapi.json/DB接続設定の入力欄がタブごとに独立していた名残。
 # 1箇所に統合した際、既存ユーザーの設定ファイルにこれらの値が残っていれば
-# shared_openapi_pathへ引き継ぐ（_migrate_shared_openapi_path参照）。
-_LEGACY_OPENAPI_PATH_KEYS = (
-    "gen_openapi_path", "mapgen_openapi_path", "scengen_openapi_path", "db_openapi_path",
-)
+# shared_*_pathへ引き継ぐ（_migrate_legacy_shared_paths参照）。
+_LEGACY_SHARED_PATH_KEYS = {
+    "shared_openapi_path": ("gen_openapi_path", "mapgen_openapi_path", "scengen_openapi_path", "db_openapi_path"),
+    "shared_config_path": ("gen_config_path", "mapgen_config_path", "sqlgen_config_path", "db_config_path"),
+}
 
 
-def _migrate_shared_openapi_path(merged: dict) -> dict:
-    if merged.get("shared_openapi_path"):
-        return merged
-    for key in _LEGACY_OPENAPI_PATH_KEYS:
-        value = merged.get(key)
-        if value:
-            merged["shared_openapi_path"] = value
-            break
+def _migrate_legacy_shared_paths(merged: dict) -> dict:
+    for shared_key, legacy_keys in _LEGACY_SHARED_PATH_KEYS.items():
+        if merged.get(shared_key):
+            continue
+        for key in legacy_keys:
+            value = merged.get(key)
+            if value:
+                merged[shared_key] = value
+                break
     return merged
 
 
@@ -80,7 +79,7 @@ def load_settings() -> dict:
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return _migrate_shared_openapi_path({**DEFAULTS, **data})
+                return _migrate_legacy_shared_paths({**DEFAULTS, **data})
         except (json.JSONDecodeError, OSError):
             pass
     return dict(DEFAULTS)

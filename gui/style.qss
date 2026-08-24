@@ -74,7 +74,7 @@ QWidget#contentWrap {
     background-color: #f7f8fa;
 }
 
-QWidget#openapiHeader {
+QWidget#sharedFieldsHeader {
     background-color: #ffffff;
     border-bottom: 1px solid #e0e3e8;
 }

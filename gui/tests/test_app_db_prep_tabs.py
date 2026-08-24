@@ -105,6 +105,17 @@ def test_mapping_gen_openapi_field_is_shared_across_tabs(window, tmp_path):
     assert window.db_tab.openapi_field is window.mapping_gen_tab.openapi_field
 
 
+def test_config_field_is_shared_across_tabs(window, tmp_path):
+    # DB接続設定もopenapi.jsonと同様、全タブ共通の1つの入力欄を参照している
+    # （①DB接続設定タブだけは例外で、config.jsonを新規作成するための別画面）。
+    config_path = str(tmp_path / "config.json")
+    window.mapping_gen_tab.config_field.set(config_path)
+    assert window.config_field.get() == config_path
+    assert window.gen_tab.config_field is window.mapping_gen_tab.config_field
+    assert window.sql_gen_tab.config_field is window.mapping_gen_tab.config_field
+    assert window.db_tab.config_field is window.mapping_gen_tab.config_field
+
+
 def test_mapping_gen_result_path_set_only_on_success(window, tmp_path, monkeypatch):
     window.mapping_gen_tab.openapi_field.set(str(tmp_path / "openapi.json"))
     window.mapping_gen_tab.config_field.set(str(tmp_path / "config.json"))
@@ -541,7 +552,7 @@ def test_scengen_validate_button_calls_expected_validators(window, tmp_path, mon
     monkeypatch.setattr(app_module, "_show_validation", lambda parent, title, checks: shown.append(checks))
     window.scenario_gen_tab.on_validate()
     labels = [label for label, _ in shown[0]]
-    assert labels == ["openapi.json", "mapping.yaml"]
+    assert labels == ["openapi.json", "テーブル対応表"]
 
 
 # ---------- SetupSqlGenTab ----------
