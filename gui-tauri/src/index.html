@@ -13,12 +13,39 @@
           <input id="openapi-path" type="text" placeholder="試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます" />
           <button class="secondary" id="browse-openapi">参照...</button>
         </div>
-        <div class="field-row">
-          <label>DB接続設定</label>
-          <input id="config-path" type="text" placeholder="DB検証を行う場合に必要。①DB接続設定タブで作成、または既存のconfig.jsonを選択" />
-          <button class="secondary" id="browse-config">参照...</button>
-        </div>
-        <p class="caption">DB検証を行う場合に必要（任意）。①DB接続設定タブで作成すると自動で反映されます。</p>
+        <details id="db-config-details" class="db-config-details">
+          <summary>
+            <span class="db-config-label">DB接続設定(任意)</span>
+            <span id="db-config-summary" class="field-caption">未設定</span>
+          </summary>
+          <div class="db-config-body">
+            <label class="checkbox"><input type="checkbox" id="pg-enabled" /> PostgreSQLを使う</label>
+            <div class="db-fields-grid">
+              <input id="pg-host" type="text" placeholder="host" />
+              <input id="pg-port" type="text" placeholder="port" class="db-field-port" />
+              <input id="pg-dbname" type="text" placeholder="dbname" />
+              <input id="pg-user" type="text" placeholder="user" />
+              <input id="pg-password" type="password" placeholder="password" />
+            </div>
+
+            <label class="checkbox"><input type="checkbox" id="influx-enabled" /> InfluxDBを使う</label>
+            <div class="db-fields-grid">
+              <input id="influx-host" type="text" placeholder="host" />
+              <input id="influx-port" type="text" placeholder="port" class="db-field-port" />
+              <input id="influx-database" type="text" placeholder="database" />
+              <input id="influx-username" type="text" placeholder="username(任意)" />
+              <input id="influx-password" type="password" placeholder="password(任意)" />
+            </div>
+
+            <div class="btn-row">
+              <button class="secondary" id="db-config-save">ファイルに保存(任意・外部共有用)</button>
+            </div>
+            <p class="field-caption">
+              試験前SQL/試験後SQLの実行やDBシナリオ試験を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
+            </p>
+            <div id="db-config-status" class="field-caption"></div>
+          </div>
+        </details>
       </header>
 
       <div id="body">
@@ -29,7 +56,7 @@
             <li data-page="db-scenario">DBシナリオ</li>
             <li data-page="health-check">ヘルスチェック</li>
           </ul>
-          <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner (Tauri版・開発中)</div>
+          <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner</div>
         </nav>
 
         <main id="content">
@@ -102,13 +129,13 @@
           </section>
 
           <section id="page-db-prep" class="page">
-            <div class="page-placeholder">DB準備タブは準備中です（PySide6版で先行提供中）。</div>
+            <div class="page-placeholder">DB準備タブは準備中です。</div>
           </section>
           <section id="page-db-scenario" class="page">
-            <div class="page-placeholder">DBシナリオタブは準備中です（PySide6版で先行提供中）。</div>
+            <div class="page-placeholder">DBシナリオタブは準備中です。</div>
           </section>
           <section id="page-health-check" class="page">
-            <div class="page-placeholder">ヘルスチェックタブは準備中です（PySide6版で先行提供中）。</div>
+            <div class="page-placeholder">ヘルスチェックタブは準備中です。</div>
           </section>
         </main>
       </div>

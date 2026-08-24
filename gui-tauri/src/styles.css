@@ -77,6 +77,51 @@ body {
   margin: 2px 0 0 128px;
 }
 
+/* ---------- DB接続設定（折りたたみ式フォーム） ---------- */
+
+.db-config-details {
+  margin-top: 4px;
+}
+
+.db-config-details summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 500;
+  list-style: revert;
+}
+
+.db-config-details summary .db-config-label {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.db-config-details[open] summary {
+  margin-bottom: 8px;
+}
+
+.db-config-body {
+  padding-left: 6px;
+}
+
+.db-fields-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 12px 26px;
+}
+
+.db-fields-grid input {
+  flex: 1 1 140px;
+  min-width: 100px;
+}
+
+.db-fields-grid input.db-field-port {
+  flex: 0 1 80px;
+}
+
 /* ---------- 本体レイアウト ---------- */
 
 #body {
@@ -151,7 +196,8 @@ body {
 
 /* ---------- フォーム部品 ---------- */
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -161,16 +207,19 @@ input[type="text"] {
   color: var(--text);
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus,
+input[type="password"]:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-input[type="text"]::placeholder {
+input[type="text"]::placeholder,
+input[type="password"]::placeholder {
   color: #9aa1ad;
 }
 
-input[type="text"]:disabled {
+input[type="text"]:disabled,
+input[type="password"]:disabled {
   background: #f1f2f5;
   color: var(--text-muted);
 }

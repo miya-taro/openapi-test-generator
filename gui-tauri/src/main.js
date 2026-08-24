@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 function $(id) {
   return document.getElementById(id);
@@ -13,7 +13,6 @@ let settings = {};
 async function loadSettingsIntoForm() {
   settings = await invoke("load_settings");
   $("openapi-path").value = settings.shared_openapi_path || "";
-  $("config-path").value = settings.shared_config_path || "";
   $("output-dir").value = settings.gen_output_dir || "";
   $("base-url").value = settings.gen_base_url || "";
   $("auth-config-path").value = settings.gen_auth_config_path || "";
@@ -23,12 +22,28 @@ async function loadSettingsIntoForm() {
   $("full-body").checked = !!settings.gen_full_body;
   $("fail-fast").checked = !!settings.gen_fail_fast;
   $("health-check-enabled").checked = !!settings.shared_health_check_enabled;
+
+  $("pg-enabled").checked = !!settings.cfg_pg_enabled;
+  $("pg-host").value = settings.cfg_pg_host || "";
+  $("pg-port").value = settings.cfg_pg_port || "";
+  $("pg-dbname").value = settings.cfg_pg_dbname || "";
+  $("pg-user").value = settings.cfg_pg_user || "";
+  // password は設定ファイルに平文保存しないため、起動時は毎回未入力にする
+  $("influx-enabled").checked = !!settings.cfg_influx_enabled;
+  $("influx-host").value = settings.cfg_influx_host || "";
+  $("influx-port").value = settings.cfg_influx_port || "";
+  $("influx-database").value = settings.cfg_influx_database || "";
+  $("influx-username").value = settings.cfg_influx_username || "";
+  updateDbConfigSummary();
+  if ($("pg-enabled").checked || $("influx-enabled").checked) {
+    $("db-config-details").open = true;
+  }
+
   await refreshOperationsList({ keepExcluded: true });
 }
 
 async function persistSettings() {
   settings.shared_openapi_path = $("openapi-path").value.trim();
-  settings.shared_config_path = $("config-path").value.trim();
   settings.gen_output_dir = $("output-dir").value.trim();
   settings.gen_base_url = $("base-url").value.trim();
   settings.gen_auth_config_path = $("auth-config-path").value.trim();
@@ -39,6 +54,19 @@ async function persistSettings() {
   settings.gen_fail_fast = $("fail-fast").checked;
   settings.shared_health_check_enabled = $("health-check-enabled").checked;
   settings.gen_excluded_operations = getUncheckedOperationIds().join(",");
+
+  settings.cfg_pg_enabled = $("pg-enabled").checked;
+  settings.cfg_pg_host = $("pg-host").value.trim();
+  settings.cfg_pg_port = $("pg-port").value.trim();
+  settings.cfg_pg_dbname = $("pg-dbname").value.trim();
+  settings.cfg_pg_user = $("pg-user").value.trim();
+  settings.cfg_influx_enabled = $("influx-enabled").checked;
+  settings.cfg_influx_host = $("influx-host").value.trim();
+  settings.cfg_influx_port = $("influx-port").value.trim();
+  settings.cfg_influx_database = $("influx-database").value.trim();
+  settings.cfg_influx_username = $("influx-username").value.trim();
+  // password は意図的に保存しない（設定ファイルへの平文保存を避けるため）
+
   await invoke("save_settings", { data: settings });
 }
 
@@ -75,11 +103,82 @@ $("browse-openapi").addEventListener("click", () =>
     refreshOperationsList({ keepExcluded: false }),
   ),
 );
-$("browse-config").addEventListener("click", () =>
-  browseFile("config-path", [{ name: "JSON", extensions: ["json"] }]),
-);
 // ダイアログを使わず直接入力/貼り付けした場合にも一覧を更新する。
 $("openapi-path").addEventListener("change", () => refreshOperationsList({ keepExcluded: false }));
+
+// ---------- DB接続設定（画面入力のみ。ファイル参照は行わず、実行時に裏で一時ファイル化する） ----------
+
+function parsePort(text, label) {
+  const n = parseInt(text, 10);
+  if (!text || Number.isNaN(n)) {
+    throw new Error(`${label} のポート番号は数値で入力してください: ${text || "(空欄)"}`);
+  }
+  return n;
+}
+
+function dbConfigEnabled() {
+  return $("pg-enabled").checked || $("influx-enabled").checked;
+}
+
+function collectDbConfig() {
+  const data = {};
+  if ($("pg-enabled").checked) {
+    data.postgres = {
+      host: $("pg-host").value.trim(),
+      port: parsePort($("pg-port").value.trim(), "PostgreSQL"),
+      dbname: $("pg-dbname").value.trim(),
+      user: $("pg-user").value.trim(),
+      password: $("pg-password").value,
+    };
+  }
+  if ($("influx-enabled").checked) {
+    const influx = {
+      host: $("influx-host").value.trim(),
+      port: parsePort($("influx-port").value.trim(), "InfluxDB"),
+      database: $("influx-database").value.trim(),
+    };
+    const username = $("influx-username").value.trim();
+    const password = $("influx-password").value;
+    if (username) influx.username = username;
+    if (password) influx.password = password;
+    data.influxdb = influx;
+  }
+  return data;
+}
+
+function updateDbConfigSummary() {
+  const parts = [];
+  if ($("pg-enabled").checked) parts.push(`PostgreSQL(${$("pg-host").value.trim() || "?"})`);
+  if ($("influx-enabled").checked) parts.push(`InfluxDB(${$("influx-host").value.trim() || "?"})`);
+  $("db-config-summary").textContent = parts.length ? parts.join(" / ") : "未設定";
+}
+
+for (const id of ["pg-enabled", "pg-host", "influx-enabled", "influx-host"]) {
+  $(id).addEventListener("input", updateDbConfigSummary);
+  $(id).addEventListener("change", updateDbConfigSummary);
+}
+
+$("db-config-save").addEventListener("click", async () => {
+  let data;
+  try {
+    data = collectDbConfig();
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+  if (Object.keys(data).length === 0) {
+    alert("PostgreSQL/InfluxDBのいずれかを有効にしてください");
+    return;
+  }
+  const savePath = await save({ filters: [{ name: "JSON", extensions: ["json"] }], defaultPath: "config.json" });
+  if (!savePath) return;
+  try {
+    await invoke("write_config_file", { path: savePath, data });
+    $("db-config-status").textContent = `保存しました: ${savePath}`;
+  } catch (e) {
+    $("db-config-status").textContent = `保存に失敗しました: ${e}`;
+  }
+});
 
 // ---------- 出力先フォルダ / 認証設定 / setup・teardown SQL ----------
 
@@ -185,6 +284,7 @@ function dirName(path) {
 let currentRunId = null;
 let pendingSecondStage = null;
 let currentResultPath = null;
+let tempDbConfigPath = null;
 let progressTotal = 0;
 let progressDone = 0;
 
@@ -264,13 +364,30 @@ $("run-button").addEventListener("click", async () => {
     return;
   }
 
-  const configPath = $("config-path").value.trim();
   const setupPath = $("setup-sql-path").value.trim();
   const teardownPath = $("teardown-sql-path").value.trim();
-  if ((setupPath || teardownPath) && !configPath) {
+  if ((setupPath || teardownPath) && !dbConfigEnabled()) {
     alert("試験前SQL または 試験後SQL を指定する場合は DB接続設定 が必要です");
     return;
   }
+
+  let configPath = "";
+  if (dbConfigEnabled()) {
+    let dbConfigData;
+    try {
+      dbConfigData = collectDbConfig();
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    try {
+      configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+    } catch (e) {
+      alert(`DB接続設定の準備に失敗しました: ${e}`);
+      return;
+    }
+  }
+  tempDbConfigPath = configPath || null;
 
   await persistSettings();
 
@@ -336,6 +453,10 @@ listen("proc-done", async (event) => {
   }
 
   finishRunUi(code);
+  if (tempDbConfigPath) {
+    invoke("delete_file", { path: tempDbConfigPath }).catch(() => {});
+    tempDbConfigPath = null;
+  }
 });
 
 // ---------- 初期化 ----------

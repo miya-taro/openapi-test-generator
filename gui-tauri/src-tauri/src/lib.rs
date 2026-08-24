@@ -183,6 +183,34 @@ async fn bridge_call(
     }
 }
 
+/// DB接続設定（postgres/influxdb）をJSONファイルとして書き出す。
+/// pathを指定すればそこへ（GUIの「ファイルに保存」用）、
+/// 指定しなければOS一時フォルダへ書き出し、実際に書いたパスを返す
+/// （runner側が今もファイルパスでしかconfigを受け取れないため、実行時の橋渡し用）。
+#[tauri::command]
+fn write_config_file(path: Option<String>, data: serde_json::Value) -> Result<String, String> {
+    let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    let target = match path {
+        Some(p) => PathBuf::from(p),
+        None => {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            std::env::temp_dir().join(format!("openapi-test-gui-config-{nanos}.json"))
+        }
+    };
+    std::fs::write(&target, text).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// write_config_file(path: None, ...)で作った一時ファイルを実行後に片付ける
+/// （パスワードを含むため、使い終わったら残さない）。失敗してもフロント側は無視してよい。
+#[tauri::command]
+fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn load_settings() -> serde_json::Value {
     let path = settings_path();
@@ -209,6 +237,8 @@ pub fn run() {
             run_script,
             cancel_script,
             bridge_call,
+            write_config_file,
+            delete_file,
             load_settings,
             save_settings,
         ])
