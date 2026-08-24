@@ -32,6 +32,42 @@ def test_dispatch_validate_openapi(tmp_path):
     assert result.startswith("OK")
 
 
+def test_dispatch_login_operation_hints(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {
+            "/auth/login": {
+                "post": {
+                    "operationId": "login",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["email"],
+                                    "properties": {"email": {"type": "string"}},
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = tauri_bridge._dispatch("login_operation_hints", {"path": str(path), "operation_id": "login"})
+
+    assert result == {"body": {"email": "email"}, "token_path": None}
+
+
+def test_dispatch_health_check_unreachable_host():
+    result = tauri_bridge._dispatch("health_check", {"base_url": "http://127.0.0.1:1", "health_path": "/health"})
+    assert result is False
+
+
 def test_dispatch_unknown_command_raises():
     try:
         tauri_bridge._dispatch("nope", {})

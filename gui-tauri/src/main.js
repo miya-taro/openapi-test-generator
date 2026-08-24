@@ -20,7 +20,7 @@ async function loadSettingsIntoForm() {
   $("dry-run").checked = !!settings.gen_dry_run;
   $("full-body").checked = !!settings.gen_full_body;
   $("fail-fast").checked = !!settings.gen_fail_fast;
-  $("health-check-enabled").checked = !!settings.shared_health_check_enabled;
+  $("hc-path").value = settings.hc_path || "";
 
   $("pg-enabled").checked = !!settings.cfg_pg_enabled;
   $("pg-host").value = settings.cfg_pg_host || "";
@@ -42,6 +42,7 @@ async function loadSettingsIntoForm() {
 
   updateActiveOpenapiText();
   updateActiveBaseUrlText();
+  updateHcBaseUrlText();
   updateActiveDbConfigText();
 
   await refreshOperationsList({ keepExcluded: true });
@@ -58,7 +59,7 @@ async function persistSettings() {
   settings.gen_dry_run = $("dry-run").checked;
   settings.gen_full_body = $("full-body").checked;
   settings.gen_fail_fast = $("fail-fast").checked;
-  settings.shared_health_check_enabled = $("health-check-enabled").checked;
+  settings.hc_path = $("hc-path").value.trim();
   settings.gen_excluded_operations = getUncheckedOperationIds().join(",");
 
   settings.cfg_pg_enabled = $("pg-enabled").checked;
@@ -122,11 +123,46 @@ function updateActiveBaseUrlText() {
   $("active-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
 }
 
+function updateHcBaseUrlText() {
+  const url = $("base-url").value.trim();
+  $("hc-baseurl-text").textContent = `Base URL: ${url || "未設定"}`;
+}
+
 for (const evt of ["input", "change"]) {
   $("base-url").addEventListener(evt, updateActiveBaseUrlText);
+  $("base-url").addEventListener(evt, updateHcBaseUrlText);
 }
 
 $("goto-settings").addEventListener("click", () => showPage("settings"));
+$("hc-goto-settings").addEventListener("click", () => showPage("settings"));
+
+// ---------- ヘルスチェック（試験実行とは独立した、任意の疎通確認） ----------
+
+function setHcStatus(text, state) {
+  const el = $("hc-status");
+  el.textContent = text;
+  el.classList.remove("error", "ok");
+  if (state) el.classList.add(state);
+}
+
+$("hc-run-button").addEventListener("click", async () => {
+  const baseUrl = $("base-url").value.trim();
+  if (!baseUrl) {
+    setHcStatus("Base URL が未設定です（「設定」画面）", "error");
+    return;
+  }
+  const healthPath = $("hc-path").value.trim() || "/health";
+  $("hc-run-button").disabled = true;
+  setHcStatus("確認中...", null);
+  try {
+    const ok = await invoke("bridge_call", { command: "health_check", args: { base_url: baseUrl, health_path: healthPath } });
+    setHcStatus(ok ? `OK: ${baseUrl}${healthPath} から2xxが返りました` : `NG: ${baseUrl}${healthPath} から2xxが返りませんでした`, ok ? "ok" : "error");
+  } catch (e) {
+    setHcStatus(`確認に失敗しました: ${e}`, "error");
+  } finally {
+    $("hc-run-button").disabled = false;
+  }
+});
 
 $("browse-openapi").addEventListener("click", () =>
   browseFile("openapi-path", [{ name: "JSON", extensions: ["json"] }], () => {
@@ -259,6 +295,35 @@ function populateAuthLoginOpSelect() {
     select.value = previous;
   }
 }
+
+// ログイン操作を選ぶと、openapi.jsonのスキーマから分かる範囲でボディ/token_pathを自動入力する
+// （example/defaultが無ければプロパティ名を仮の値にするだけ、token_pathはレスポンススキーマに
+// それらしいキーが無ければ空のまま。あくまで下書きなので、埋まらない/違う場合は手入力する）。
+$("auth-login-op").addEventListener("change", async () => {
+  const operationId = $("auth-login-op").value;
+  const openapiPath = $("openapi-path").value.trim();
+  if (!operationId || !openapiPath) return;
+
+  let hints;
+  try {
+    hints = await invoke("bridge_call", { command: "login_operation_hints", args: { path: openapiPath, operation_id: operationId } });
+  } catch {
+    return; // 自動入力は失敗しても致命的ではないので無視する
+  }
+
+  const filled = [];
+  if (hints.body && !$("auth-body").value.trim()) {
+    $("auth-body").value = JSON.stringify(hints.body, null, 2);
+    filled.push("ボディ");
+  }
+  if (hints.token_path && !$("auth-token-path").value.trim()) {
+    $("auth-token-path").value = hints.token_path;
+    filled.push("token_path");
+  }
+  if (filled.length > 0) {
+    setAuthConfigStatus(`openapi.jsonから${filled.join("・")}を自動入力しました（内容を確認してください）`, "ok");
+  }
+});
 
 function collectAuthConfig() {
   const operationId = $("auth-login-op").value;
@@ -565,8 +630,9 @@ $("run-button").addEventListener("click", async () => {
   const genArgs = [openapiPath, "-o", casesPath, "--excel-output", specPath];
   if (unchecked.length > 0) genArgs.push("--exclude-ops", unchecked.join(","));
 
-  const runArgs = [specPath, openapiPath, "--base-url", baseUrl, "--output", resultPath];
-  if (!$("health-check-enabled").checked) runArgs.push("--skip-health-check");
+  // ヘルスチェック（疎通確認）は「ヘルスチェック」画面で独立して行える運用にしたため、
+  // 試験実行時は常にスキップする。
+  const runArgs = [specPath, openapiPath, "--base-url", baseUrl, "--output", resultPath, "--skip-health-check"];
   if (authConfigPath) runArgs.push("--auth-config", authConfigPath);
   if (configPath) runArgs.push("--config", configPath);
   if (setupPath) runArgs.push("--setup", setupPath);

@@ -31,6 +31,10 @@ def _dispatch(command: str, args: dict) -> object:
         return _servers_url(args["path"])
     if command == "list_operations":
         return validators.list_operations(args["path"])
+    if command == "login_operation_hints":
+        return validators.login_operation_hints(args["path"], args["operation_id"])
+    if command == "health_check":
+        return validators.health_check(args["base_url"], args.get("health_path") or "/health")
     if command == "validate_openapi":
         return validators.validate_openapi(args["path"], required=args.get("required", True))
     if command == "validate_db_config":

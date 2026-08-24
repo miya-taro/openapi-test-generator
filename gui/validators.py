@@ -82,6 +82,139 @@ def list_operations(path: str) -> list[dict]:
     return operations
 
 
+_TOKEN_KEY_CANDIDATES = ("access_token", "accessToken", "token", "id_token", "idToken", "jwt", "authToken", "auth_token")
+
+
+def _sample_value_for_property(name: str, schema: dict):
+    if not isinstance(schema, dict):
+        return name
+    if "example" in schema:
+        return schema["example"]
+    if "default" in schema:
+        return schema["default"]
+    type_ = schema.get("type")
+    if isinstance(type_, list):
+        type_ = next((t for t in type_ if t != "null"), type_[0] if type_ else None)
+    if type_ in ("integer", "number"):
+        return 0
+    if type_ == "boolean":
+        return False
+    if type_ == "array":
+        return []
+    if type_ == "object":
+        return _build_object_example(schema)
+    # string・不明な型はプロパティ名をそのまま値にし、埋めるべき箇所だと分かるようにする
+    return name
+
+
+def _build_object_example(schema: dict) -> dict:
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return {}
+    required = schema.get("required") or list(properties.keys())
+    return {
+        name: _sample_value_for_property(name, prop_schema)
+        for name, prop_schema in properties.items()
+        if name in required
+    }
+
+
+def _find_operation(openapi: dict, operation_id: str) -> dict | None:
+    for p, item in (openapi.get("paths") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        for method, op in item.items():
+            if method not in _HTTP_METHODS or not isinstance(op, dict):
+                continue
+            if op.get("operationId") == operation_id:
+                return op
+    return None
+
+
+def _json_schema_for(content) -> dict | None:
+    if not isinstance(content, dict):
+        return None
+    media = content.get("application/json") or next(iter(content.values()), None)
+    if not isinstance(media, dict):
+        return None
+    schema = media.get("schema")
+    return schema if isinstance(schema, dict) else None
+
+
+def _guess_token_path(schema: dict | None) -> str | None:
+    if not isinstance(schema, dict):
+        return None
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    lowered = {k.lower(): k for k in properties}
+    for candidate in _TOKEN_KEY_CANDIDATES:
+        if candidate.lower() in lowered:
+            return lowered[candidate.lower()]
+    # 1階層だけネストも見る（例: {"data": {"token": "..."}}）
+    for key, prop_schema in properties.items():
+        if not isinstance(prop_schema, dict) or prop_schema.get("type") != "object":
+            continue
+        nested = prop_schema.get("properties")
+        if not isinstance(nested, dict):
+            continue
+        nested_lowered = {k.lower(): k for k in nested}
+        for candidate in _TOKEN_KEY_CANDIDATES:
+            if candidate.lower() in nested_lowered:
+                return f"{key}.{nested_lowered[candidate.lower()]}"
+    return None
+
+
+def login_operation_hints(path: str, operation_id: str) -> dict:
+    """ログイン操作のoperationIdから、リクエストボディの例とtoken_pathの推定値を作る
+    （GUIの認証設定フォームの自動入力用）。
+
+    どちらも openapi.json の example/default/レスポンススキーマからの推定でしかなく、
+    実際のAPI仕様と食い違う可能性がある。推定できない場合はNoneを返し、
+    呼び出し側でユーザーに手入力してもらう。
+    """
+    if not path or not Path(path).exists() or not operation_id:
+        return {"body": None, "token_path": None}
+
+    from src.parser import parse_openapi, OpenAPIParseError
+
+    try:
+        openapi = parse_openapi(path)
+    except OpenAPIParseError:
+        return {"body": None, "token_path": None}
+
+    op = _find_operation(openapi, operation_id)
+    if op is None:
+        return {"body": None, "token_path": None}
+
+    body = None
+    request_schema = _json_schema_for((op.get("requestBody") or {}).get("content"))
+    if isinstance(request_schema, dict) and request_schema.get("type", "object") == "object":
+        body = _build_object_example(request_schema) or None
+
+    token_path = None
+    responses = op.get("responses") or {}
+    ordered_statuses = [s for s in ("200", "201") if s in responses]
+    ordered_statuses += sorted(s for s in responses if s not in ("200", "201"))
+    for status in ordered_statuses:
+        response_schema = _json_schema_for((responses.get(status) or {}).get("content"))
+        token_path = _guess_token_path(response_schema)
+        if token_path:
+            break
+
+    return {"body": body, "token_path": token_path}
+
+
+def health_check(base_url: str, health_path: str = "/health") -> bool:
+    """base_url + health_path へGETし、2xxが返るかを確認する（GUIの「ヘルスチェック」画面用）。
+
+    runner側の疎通確認（runner/http_client.py の health_check）と同じロジックをそのまま使う。
+    """
+    from http_client import health_check as _http_health_check
+
+    return _http_health_check(base_url, health_path)
+
+
 def validate_db_config(path: str, required: bool = True) -> str:
     err = _missing_or_blank(path, required)
     if err is not None:

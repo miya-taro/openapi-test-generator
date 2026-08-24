@@ -82,6 +82,107 @@ def test_list_operations_skips_operations_without_operation_id(tmp_path):
     assert validators.list_operations(str(path)) == []
 
 
+# --- login_operation_hints ---
+
+
+def test_login_operation_hints_blank_returns_none():
+    assert validators.login_operation_hints("", "login") == {"body": None, "token_path": None}
+
+
+def test_login_operation_hints_missing_operation_returns_none(tmp_path):
+    doc = {"openapi": "3.0.3", "paths": {"/users": {"get": {"operationId": "listUsers"}}}}
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert validators.login_operation_hints(str(path), "login") == {"body": None, "token_path": None}
+
+
+def test_login_operation_hints_builds_body_from_required_properties(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {
+            "/auth/login": {
+                "post": {
+                    "operationId": "login",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["email", "password"],
+                                    "properties": {
+                                        "email": {"type": "string"},
+                                        "password": {"type": "string"},
+                                        "rememberMe": {"type": "boolean"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    hints = validators.login_operation_hints(str(path), "login")
+
+    # required でない rememberMe は含まれない
+    assert hints["body"] == {"email": "email", "password": "password"}
+    assert hints["token_path"] is None
+
+
+def test_login_operation_hints_prefers_example_and_guesses_token_path(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {
+            "/auth/login": {
+                "post": {
+                    "operationId": "login",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["email"],
+                                    "properties": {"email": {"type": "string", "example": "a@example.com"}},
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"access_token": {"type": "string"}},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+    path = tmp_path / "openapi.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    hints = validators.login_operation_hints(str(path), "login")
+
+    assert hints["body"] == {"email": "a@example.com"}
+    assert hints["token_path"] == "access_token"
+
+
+# --- health_check ---
+
+
+def test_health_check_unreachable_host_returns_false():
+    assert validators.health_check("http://127.0.0.1:1", "/health") is False
+
+
 # --- validate_db_config ---
 
 
