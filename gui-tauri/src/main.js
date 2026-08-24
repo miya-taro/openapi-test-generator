@@ -86,12 +86,12 @@ async function browseDir(inputId) {
 // ---------- サイドバーナビゲーション ----------
 
 function showPage(pageId) {
-  document.querySelectorAll("#sidebar li[data-page]").forEach((el) => el.classList.toggle("active", el.dataset.page === pageId));
+  document.querySelectorAll("#top-nav .tab[data-page]").forEach((el) => el.classList.toggle("active", el.dataset.page === pageId));
   document.querySelectorAll(".page").forEach((el) => el.classList.toggle("active", el.id === `page-${pageId}`));
 }
 
-for (const li of document.querySelectorAll("#sidebar li[data-page]")) {
-  li.addEventListener("click", () => showPage(li.dataset.page));
+for (const tab of document.querySelectorAll("#top-nav .tab[data-page]")) {
+  tab.addEventListener("click", () => showPage(tab.dataset.page));
 }
 
 // ---------- openapi.json（「設定」画面） ----------
@@ -245,9 +245,13 @@ async function refreshOperationsList({ keepExcluded }) {
     const row = document.createElement("label");
     row.className = "op-item";
     const checked = !excluded.has(op.operationId);
-    row.innerHTML = `<input type="checkbox" data-op-id="${op.operationId}" ${checked ? "checked" : ""}/>
-      <span class="op-method">${op.method}</span><span>${op.path}</span>
-      <span style="color:var(--text-muted)">(${op.operationId})</span>`;
+    row.innerHTML = `
+      <span class="op-row1">
+        <input type="checkbox" data-op-id="${op.operationId}" ${checked ? "checked" : ""}/>
+        <span class="op-method">${op.method}</span>
+      </span>
+      <span class="op-path">${op.path}</span>
+      <span class="op-id">${op.operationId}</span>`;
     container.appendChild(row);
   }
 

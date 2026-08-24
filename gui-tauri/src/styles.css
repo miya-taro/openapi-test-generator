@@ -9,11 +9,6 @@
   --accent-hover: #1d4ed8;
   --accent-active: #1e40af;
   --accent-soft: #eef2ff;
-  --sidebar-bg: #0f172a;
-  --sidebar-border: #1e293b;
-  --sidebar-selected: #1e3a8a;
-  --sidebar-accent: #60a5fa;
-  --sidebar-text: #cbd5e1;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
   --warn: #b45309;
@@ -60,69 +55,124 @@ body {
   min-height: 0;
 }
 
+/* サイドバー：常に「今どのAPIを対象にしているか」が見えるよう、対象API一覧を常時表示する */
+
 #sidebar {
-  width: 196px;
-  min-width: 196px;
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--sidebar-border);
+  width: 320px;
+  min-width: 280px;
+  max-width: 30vw;
+  background: var(--surface);
+  border-right: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
-#sidebar ul {
-  list-style: none;
-  margin: 0;
-  padding: 16px 10px;
+.sidebar-header {
+  padding: 16px 14px 10px;
+  border-bottom: 1px solid var(--border-light);
 }
 
-#sidebar > ul:first-of-type {
+.sidebar-header h2 {
+  margin: 0 0 10px;
+  font-size: 10.5pt;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sidebar-header .btn-row {
+  margin-bottom: 0;
+}
+
+.sidebar-header .btn-row button {
   flex: 1;
+  padding: 6px 8px;
+  font-size: 9pt;
 }
 
-#sidebar .sidebar-secondary {
-  border-top: 1px solid var(--sidebar-border);
-  padding-top: 14px;
+#sidebar .footer {
+  color: var(--text-muted);
+  font-size: 8.5pt;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-light);
 }
 
-#sidebar li {
-  color: var(--sidebar-text);
-  padding: 12px 14px;
-  margin-bottom: 4px;
-  border-radius: 8px;
-  border-left: 3px solid transparent;
+/* メインエリア：上部タブ（機能の切り替え） + コンテンツ */
+
+#main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#top-nav {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 20px;
+  flex-wrap: wrap;
+}
+
+#top-nav .tabs {
+  display: flex;
+}
+
+.tab {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: 13px 16px 11px;
   font-weight: 600;
-  cursor: pointer;
+  font-size: 10pt;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-#sidebar li .badge {
+.tab-hint {
+  font-size: 7.5pt;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tab:hover:not(.active) {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab.active:hover {
+  background: transparent;
+}
+
+.tab.active .tab-hint {
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+.tab .badge {
   display: inline-block;
   margin-left: 6px;
   font-size: 7.5pt;
   font-weight: 600;
-  color: var(--sidebar-text);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
   border-radius: 999px;
   padding: 1px 7px;
   vertical-align: middle;
-}
-
-#sidebar li:hover:not(.active) {
-  background: var(--sidebar-border);
-  color: #e2e8f0;
-}
-
-#sidebar li.active {
-  background: var(--sidebar-selected);
-  color: #ffffff;
-  border-left: 3px solid var(--sidebar-accent);
-}
-
-#sidebar .footer {
-  color: #64748b;
-  font-size: 9pt;
-  padding: 14px 16px;
-  border-top: 1px solid var(--sidebar-border);
 }
 
 #content {
@@ -387,46 +437,64 @@ label.checkbox input[type="checkbox"] {
   border-left: 4px solid var(--danger);
 }
 
-/* ---------- operation選択リスト ---------- */
+/* ---------- 対象API一覧（サイドバー常時表示） ---------- */
 
 #operations-list {
-  max-height: 220px;
+  flex: 1;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  min-height: 0;
   background: var(--surface);
-  padding: 4px;
-  margin-bottom: 8px;
+  padding: 6px;
 }
 
 .op-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 8px;
   border-radius: 6px;
   font-family: "Consolas", "Cascadia Mono", monospace;
-  font-size: 9.5pt;
+  font-size: 9pt;
+  cursor: pointer;
 }
 
 .op-item:hover {
   background: var(--bg);
 }
 
+.op-item .op-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .op-item input[type="checkbox"] {
   accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .op-method {
   display: inline-block;
-  min-width: 46px;
+  min-width: 42px;
   font-weight: 700;
   color: var(--accent);
 }
 
+.op-path {
+  overflow-wrap: anywhere;
+  padding-left: 26px;
+}
+
+.op-id {
+  color: var(--text-muted);
+  font-size: 7.5pt;
+  padding-left: 26px;
+}
+
 .op-empty {
   color: var(--text-muted);
-  padding: 12px;
+  padding: 16px 10px;
   text-align: center;
   font-size: 9.5pt;
 }
