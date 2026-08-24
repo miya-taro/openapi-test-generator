@@ -72,19 +72,14 @@ def _migrate_legacy_shared_paths(merged: dict) -> dict:
     return merged
 
 
-# ヘルスチェックも過去バージョンではタブごとに独立していた。ON/OFFはどちらかが
-# ONだったならONを引き継ぎ（見落としを防ぐ安全側）、Health Pathは既定値"/health"から
-# 変更されている方を優先する。
-_LEGACY_HEALTH_CHECK_ENABLED_KEYS = ("gen_health_check_enabled", "db_health_check_enabled")
+# ヘルスチェックも過去バージョンではタブごとに独立していた。Health Pathは既定値
+# "/health"から変更されている方を優先して引き継ぐ。
+# （enabled/disabledの概念自体は今回新設したもので、リリース済みバージョンには
+# 存在しなかったため、ON/OFFの移行対象は無い＝常にFalseから始まる。）
 _LEGACY_HEALTH_PATH_KEYS = ("gen_health_path", "db_health_path")
 
 
 def _migrate_legacy_health_check(merged: dict) -> dict:
-    if not merged.get("shared_health_check_enabled") and any(
-        merged.get(key) for key in _LEGACY_HEALTH_CHECK_ENABLED_KEYS
-    ):
-        merged["shared_health_check_enabled"] = True
-
     if merged.get("shared_health_path", DEFAULTS["shared_health_path"]) == DEFAULTS["shared_health_path"]:
         for key in _LEGACY_HEALTH_PATH_KEYS:
             value = merged.get(key)

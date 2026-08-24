@@ -45,7 +45,6 @@ QMenu::item:selected {
 QListWidget#navList {
     background-color: #0f172a;
     border: none;
-    border-right: 1px solid #1e293b;
     padding: 16px 10px;
     outline: none;
 }
@@ -261,7 +260,7 @@ QLabel#statusLabel {
 }
 
 QLabel#statusLabel[state="ok"] {
-    color: #16a34a;
+    color: #15803d;
 }
 
 QLabel#statusLabel[state="ng"] {
@@ -269,9 +268,117 @@ QLabel#statusLabel[state="ng"] {
 }
 
 QLabel#statusLabel[state="warn"] {
-    color: #d97706;
+    color: #b45309;
 }
 
 QLabel#statusLabel[state="running"] {
     color: #2563eb;
+}
+
+QPushButton#dangerButton {
+    background-color: #dc2626;
+    color: #ffffff;
+    border: none;
+    padding: 8px 20px;
+    font-weight: 600;
+}
+
+QPushButton#dangerButton:hover {
+    background-color: #b91c1c;
+}
+
+QPushButton#dangerButton:pressed {
+    background-color: #991b1b;
+}
+
+QPushButton#dangerButton:disabled {
+    background-color: #fca5a5;
+    color: #fee2e2;
+}
+
+QLabel#warningLabel {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    border-left: 4px solid #dc2626;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-weight: 500;
+}
+
+QLabel#captionLabel {
+    color: #6b7280;
+    font-size: 9pt;
+    padding: 0 2px;
+}
+
+QCheckBox {
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1.5px solid #c7ccd6;
+    background: #ffffff;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #9aa1ad;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+
+QCheckBox::indicator:checked:hover {
+    background-color: #1d4ed8;
+}
+
+QCheckBox::indicator:disabled {
+    background-color: #f1f2f5;
+    border-color: #e5e7eb;
+}
+
+QWidget#navPanel {
+    background-color: #0f172a;
+    border-right: 1px solid #1e293b;
+}
+
+QLabel#navFooter {
+    background-color: transparent;
+    color: #64748b;
+    font-size: 9pt;
+    padding: 14px 16px;
+    border-top: 1px solid #1e293b;
+}
+
+QTabWidget#dbPrepTabs::pane {
+    border: 1px solid #e0e3e8;
+    border-radius: 8px;
+    background: #ffffff;
+    top: -1px;
+}
+
+QTabWidget#dbPrepTabs QTabBar::tab {
+    background: #eef0f3;
+    color: #6b7280;
+    padding: 6px 16px;
+    margin-right: 6px;
+    border-radius: 14px;
+    font-weight: 600;
+    font-size: 9.5pt;
+}
+
+QTabWidget#dbPrepTabs QTabBar::tab:selected {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+}
+
+QTabWidget#dbPrepTabs QTabBar::tab:hover:!selected {
+    background: #e0e3e8;
+    color: #374151;
 }

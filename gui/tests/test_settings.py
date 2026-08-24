@@ -80,13 +80,15 @@ def test_load_settings_migrates_legacy_per_tab_config_path(tmp_path, monkeypatch
     assert loaded["shared_config_path"] == "C:/legacy/config.json"
 
 
-def test_load_settings_migrates_legacy_health_check_enabled_if_either_tab_was_on(tmp_path, monkeypatch):
+def test_load_settings_health_check_enabled_defaults_to_false_regardless_of_legacy_data(tmp_path, monkeypatch):
+    # enabled/disabledという概念自体が今回新設のもので、旧バージョンには無かったため
+    # 移行対象は無い（常にFalseから始まる）。
     path = tmp_path / "settings.json"
     path.write_text('{"db_health_check_enabled": true}', encoding="utf-8")
     monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
 
     loaded = load_settings()
-    assert loaded["shared_health_check_enabled"] is True
+    assert loaded["shared_health_check_enabled"] is False
 
 
 def test_load_settings_migrates_legacy_health_path_when_customized(tmp_path, monkeypatch):

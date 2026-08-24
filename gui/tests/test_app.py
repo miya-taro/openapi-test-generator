@@ -304,6 +304,29 @@ def test_gen_tab_base_url_autofilled_from_openapi_servers(window, tmp_path):
     assert window.gen_tab.base_url_field.get() == "https://api.example.com"
 
 
+def test_base_url_autofilled_on_startup_from_settings_saved_openapi_path(tmp_path, monkeypatch):
+    # openapi_field.set()（設定復元）は各タブのtextChanged接続より前に走るため、
+    # 起動直後の自動入力はMainWindow側で明示的に補っている必要がある（過去の回帰）。
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text('{"servers": [{"url": "https://startup.example.com"}]}', encoding="utf-8")
+
+    settings = {**DEFAULTS, "shared_openapi_path": str(openapi_path)}
+    monkeypatch.setattr(app_module, "load_settings", lambda: settings)
+
+    w = app_module.MainWindow()
+    try:
+        assert w.gen_tab.base_url_field.get() == "https://startup.example.com"
+        assert w.db_tab.base_url_field.get() == "https://startup.example.com"
+    finally:
+        for tab in w._all_tabs:
+            if hasattr(tab, "panel"):
+                tab.panel.stop()
+            if hasattr(tab, "connectivity_row"):
+                tab.connectivity_row.stop()
+            if hasattr(tab, "stop"):
+                tab.stop()
+
+
 def test_gen_tab_base_url_autofill_does_not_overwrite_existing_value(window, tmp_path):
     openapi_path = tmp_path / "openapi.json"
     openapi_path.write_text('{"servers": [{"url": "https://api.example.com"}]}', encoding="utf-8")

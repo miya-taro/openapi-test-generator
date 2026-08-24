@@ -16,12 +16,12 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QPushButton, QLabel, QProgressBar, QPlainTextEdit, QMessageBox, QCheckBox, QComboBox,
-    QListWidget, QListWidgetItem, QStackedWidget, QSplashScreen,
+    QListWidget, QListWidgetItem, QStackedWidget, QSplashScreen, QScrollArea, QFrame,
 )
 
 from settings import load_settings, save_settings
@@ -94,6 +94,34 @@ def _show_validation(parent, title: str, checks: list[tuple[str, str]]) -> None:
     """checks: [(表示名, 検証結果文字列), ...] をダイアログで表示する。"""
     text = "\n".join(f"{label}: {result}" for label, result in checks)
     QMessageBox.information(parent, title, text)
+
+
+def _fill_base_url_from_openapi(openapi_field: "PathField", base_url_field: "TextField") -> None:
+    """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。
+
+    GenerateRunTab/DBScenarioTabの両方から呼ばれる共通ロジック。
+    """
+    if base_url_field.get():
+        return
+    path = openapi_field.get()
+    if not path or not Path(path).exists():
+        return
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        url = data["servers"][0]["url"]
+    except (json.JSONDecodeError, OSError, KeyError, IndexError, TypeError):
+        return
+    if isinstance(url, str) and url:
+        base_url_field.set(url)
+
+
+def _scrollable(widget: QWidget) -> QScrollArea:
+    """項目数の多いタブでウィンドウ下部が見切れないよう、縦スクロール可能なラッパーに包む。"""
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setWidget(widget)
+    return scroll
 
 
 class LogPanel(QWidget):
@@ -378,6 +406,9 @@ class GenerateRunTab(QWidget):
         )
         self.auth_config_field.set(settings["gen_auth_config_path"])
         layout.addWidget(self.auth_config_field)
+        auth_caption = QLabel("ログイン認証が必要なAPIのみ（任意）。②認証設定タブで作成できます。")
+        auth_caption.setObjectName("captionLabel")
+        layout.addWidget(auth_caption)
 
         # DB接続設定は全タブ共通で画面上部の欄を共有する（自分のlayoutには足さない）。
         self.config_field = config_field
@@ -426,19 +457,7 @@ class GenerateRunTab(QWidget):
         layout.addWidget(self.panel, stretch=1)
 
     def _maybe_fill_base_url_from_openapi(self) -> None:
-        """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
-        if self.base_url_field.get():
-            return
-        path = self.openapi_field.get()
-        if not path or not Path(path).exists():
-            return
-        try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            url = data["servers"][0]["url"]
-        except (json.JSONDecodeError, OSError, KeyError, IndexError, TypeError):
-            return
-        if isinstance(url, str) and url:
-            self.base_url_field.set(url)
+        _fill_base_url_from_openapi(self.openapi_field, self.base_url_field)
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -1057,14 +1076,20 @@ class SetupSqlGenTab(QWidget):
         preview_btn_row.addStretch(1)
         layout.addLayout(preview_btn_row)
 
+        execute_warning = QLabel("⚠ 下の「実行」ボタンは実DBへ即座に反映され、ロールバックできません。")
+        execute_warning.setObjectName("warningLabel")
+        execute_warning.setWordWrap(True)
+        layout.addWidget(execute_warning)
+
         execute_row = QHBoxLayout()
         self.execute_setup_button = QPushButton("setup.sqlを実行（DBに反映）")
+        self.execute_setup_button.setObjectName("dangerButton")
         self.execute_setup_button.setEnabled(False)
         self.execute_setup_button.clicked.connect(self.on_execute_setup)
         execute_row.addWidget(self.execute_setup_button)
 
         self.execute_teardown_button = QPushButton("teardown.sqlを実行（DBに反映）")
-        self.execute_teardown_button.setObjectName("secondaryButton")
+        self.execute_teardown_button.setObjectName("dangerButton")
         self.execute_teardown_button.setEnabled(False)
         self.execute_teardown_button.clicked.connect(self.on_execute_teardown)
         execute_row.addWidget(self.execute_teardown_button)
@@ -1223,6 +1248,9 @@ class ScenarioGenTab(QWidget):
         )
         self.mapping_field.set(settings["scengen_mapping_path"])
         layout.addWidget(self.mapping_field)
+        mapping_caption = QLabel("③テーブル対応表タブで作成したファイル（自動で反映されます。mapping.yaml）")
+        mapping_caption.setObjectName("captionLabel")
+        layout.addWidget(mapping_caption)
 
         self.output_dir_field = PathField(
             "出力先フォルダ", is_dir=True, placeholder="空欄可: openapi.jsonと同じフォルダに出力します",
@@ -1399,19 +1427,7 @@ class DBScenarioTab(QWidget):
         layout.addWidget(self.panel, stretch=1)
 
     def _maybe_fill_base_url_from_openapi(self) -> None:
-        """openapi.jsonのservers[0].urlをBase URLの初期値として使う（既に入力済みなら上書きしない）。"""
-        if self.base_url_field.get():
-            return
-        path = self.openapi_field.get()
-        if not path or not Path(path).exists():
-            return
-        try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            url = data["servers"][0]["url"]
-        except (json.JSONDecodeError, OSError, KeyError, IndexError, TypeError):
-            return
-        if isinstance(url, str) and url:
-            self.base_url_field.set(url)
+        _fill_base_url_from_openapi(self.openapi_field, self.base_url_field)
 
     def on_validate(self) -> None:
         _show_validation(self, "入力の確認結果", [
@@ -1514,12 +1530,19 @@ class MainWindow(QMainWindow):
             self.health_check_tab.health_check_checkbox, self.health_check_tab.health_path_field,
         )
 
+        # openapi_field.set()は上記タブ構築（textChangedへの接続）より前に呼んでいるため、
+        # 起動時に設定ファイルから復元されたパスに対してはBase URL自動入力が発火しない。
+        # ここで両タブ分を明示的に一度実行して補う。
+        self.gen_tab._maybe_fill_base_url_from_openapi()
+        self.db_tab._maybe_fill_base_url_from_openapi()
+
         db_prep_tabs = QTabWidget()
-        db_prep_tabs.addTab(self.config_builder_tab, "①DB接続設定を作成")
-        db_prep_tabs.addTab(self.auth_builder_tab, "②認証設定(任意)")
-        db_prep_tabs.addTab(self.mapping_gen_tab, "③テーブル対応表")
-        db_prep_tabs.addTab(self.sql_gen_tab, "④試験データSQL")
-        db_prep_tabs.addTab(self.scenario_gen_tab, "⑤シナリオ雛形")
+        db_prep_tabs.setObjectName("dbPrepTabs")
+        db_prep_tabs.addTab(_scrollable(self.config_builder_tab), "①DB接続設定を作成")
+        db_prep_tabs.addTab(_scrollable(self.auth_builder_tab), "②認証設定(任意)")
+        db_prep_tabs.addTab(_scrollable(self.mapping_gen_tab), "③テーブル対応表")
+        db_prep_tabs.addTab(_scrollable(self.sql_gen_tab), "④試験データSQL")
+        db_prep_tabs.addTab(_scrollable(self.scenario_gen_tab), "⑤シナリオ雛形")
 
         db_prep_container = QWidget()
         db_prep_layout = QVBoxLayout(db_prep_container)
@@ -1549,18 +1572,29 @@ class MainWindow(QMainWindow):
         self.nav_list.setObjectName("navList")
         self.nav_stack = QStackedWidget()
         nav_pages = [
-            ("テスト生成・実行", self.gen_tab),
+            ("テスト生成・実行", _scrollable(self.gen_tab)),
             ("DB準備", db_prep_container),
-            ("DBシナリオ", self.db_tab),
-            ("ヘルスチェック", self.health_check_tab),
+            ("DBシナリオ", _scrollable(self.db_tab)),
+            ("ヘルスチェック", _scrollable(self.health_check_tab)),
         ]
         for label, page in nav_pages:
             self.nav_list.addItem(QListWidgetItem(label))
             self.nav_stack.addWidget(page)
         self.nav_list.setCurrentRow(0)
         self.nav_list.currentRowChanged.connect(self.nav_stack.setCurrentIndex)
-        self.nav_list.setFixedWidth(196)
         self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        nav_footer = QLabel("openapi-test-gen\nAPI Test Generator & Runner")
+        nav_footer.setObjectName("navFooter")
+
+        nav_panel = QWidget()
+        nav_panel.setObjectName("navPanel")
+        nav_panel.setFixedWidth(196)
+        nav_panel_layout = QVBoxLayout(nav_panel)
+        nav_panel_layout.setContentsMargins(0, 0, 0, 0)
+        nav_panel_layout.setSpacing(0)
+        nav_panel_layout.addWidget(self.nav_list, stretch=1)
+        nav_panel_layout.addWidget(nav_footer)
 
         content_wrap = QWidget()
         content_wrap.setObjectName("contentWrap")
@@ -1572,7 +1606,7 @@ class MainWindow(QMainWindow):
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
-        body_layout.addWidget(self.nav_list)
+        body_layout.addWidget(nav_panel)
         body_layout.addWidget(content_wrap, stretch=1)
 
         header = QWidget()
@@ -1582,6 +1616,9 @@ class MainWindow(QMainWindow):
         header_layout.setSpacing(6)
         header_layout.addWidget(self.openapi_field)
         header_layout.addWidget(self.config_field)
+        config_caption = QLabel("DB検証を行う場合に必要（任意）。①DB接続設定タブで作成すると自動で反映されます。")
+        config_caption.setObjectName("captionLabel")
+        header_layout.addWidget(config_caption)
 
         container = QWidget()
         outer = QVBoxLayout(container)
@@ -1724,9 +1761,7 @@ def main() -> None:
     if SPLASH_PATH.exists():
         splash = QSplashScreen(QPixmap(str(SPLASH_PATH)))
         splash.show()
-        loop = QEventLoop()
-        QTimer.singleShot(700, loop.quit)
-        loop.exec()
+        app.processEvents()  # MainWindow構築中もスプラッシュ自体は描画されるようにする
 
     window = MainWindow()
     if ICON_PATH.exists():
