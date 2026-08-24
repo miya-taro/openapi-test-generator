@@ -1,0 +1,101 @@
+# 自動生成された叩き台です（generate_mapping.py）。
+# table はフィールド名とDBカラム名の一致度から推定した「候補」であり、正しいとは限りません。
+# 確信度（高/中/低）のコメントを必ず確認し、「低」は特に人間の判断で修正してください。
+# engine は現時点では全て postgres 前提で出力しています（influxdbは対象外）。
+# 【重要】外部キーで紐づく子テーブル（例: 注文とその明細行のような親子関係）は、
+# 1 operation = 1 table 前提のこの自動推定では検出できません。生成後のシナリオYAML
+# （generate_db_scenarios.py の出力）は子テーブル分のdb_checkが漏れているはずなので、
+# 必要なら該当operationのtableの下に子テーブルの候補を手動で追記してください
+# （書き方の実例は examples/mapping.yaml と examples/README.md を参照）。
+
+operations:
+  login:
+    engine: postgres
+    table: users  # 確信度: 中（一致 1/2 フィールド（うち完全一致 1 件））
+
+  logout:
+    engine: postgres
+    table: __FILL_ME_IN__  # 確信度: 低（リクエストボディが無く、同一パスの他operationからも推定できませんでした）
+
+  createUser:
+    engine: postgres
+    table: users  # 確信度: 高（一致 3/3 フィールド（うち完全一致 3 件））
+    # 次点候補: categories（一致 1/3, スコア0.33）
+
+  updateUser:
+    engine: postgres
+    table: users  # 確信度: 高（一致 2/2 フィールド（うち完全一致 2 件））
+    # 次点候補: categories（一致 1/2, スコア0.50）
+
+  deleteUser:
+    engine: postgres
+    table: users  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+
+  createCategory:
+    engine: postgres
+    table: categories  # 確信度: 中（一致 1/1 フィールド（うち完全一致 1 件） / 次点候補と僅差のためテーブルを一意に決められません）
+    # 次点候補: products（一致 1/1, スコア1.00）
+
+  updateCategory:
+    engine: postgres
+    table: categories  # 確信度: 中（一致 1/1 フィールド（うち完全一致 1 件） / 次点候補と僅差のためテーブルを一意に決められません）
+    # 次点候補: products（一致 1/1, スコア1.00）
+
+  deleteCategory:
+    engine: postgres
+    table: categories  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+
+  createProduct:
+    engine: postgres
+    table: products  # 確信度: 高（一致 5/5 フィールド（うち完全一致 5 件））
+    # 次点候補: categories（一致 1/5, スコア0.20）
+
+  updateProduct:
+    engine: postgres
+    table: products  # 確信度: 高（一致 3/3 フィールド（うち完全一致 3 件））
+    # 次点候補: categories（一致 1/3, スコア0.33）
+
+  deleteProduct:
+    engine: postgres
+    table: products  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+
+  createOrder:
+    engine: postgres
+    table: orders  # 確信度: 高（一致 1/1 フィールド（うち完全一致 1 件））
+
+  updateOrderStatus:
+    engine: postgres
+    table: orders  # 確信度: 中（一致 1/1 フィールド（うち完全一致 1 件） / 次点候補と僅差のためテーブルを一意に決められません）
+    # 次点候補: products（一致 1/1, スコア1.00）
+
+  cancelOrder:
+    engine: postgres
+    table: orders  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+
+  addOrderItem:
+    engine: postgres
+    table: order_items  # 手動修正: 自動推定はcart_itemsと僅差で一意に決められなかったが、実際はorder_items
+
+  createReview:
+    engine: postgres
+    table: reviews  # 確信度: 高（一致 3/3 フィールド（うち完全一致 3 件））
+    # 次点候補: cart_items（一致 1/3, スコア0.33）
+
+  deleteReview:
+    engine: postgres
+    table: reviews  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+
+  addCartItem:
+    engine: postgres
+    table: cart_items  # 確信度: 中（一致 2/2 フィールド（うち完全一致 2 件） / 次点候補と僅差のためテーブルを一意に決められません）
+    # 次点候補: order_items（一致 2/2, スコア1.00）
+
+  updateCartItem:
+    engine: postgres
+    table: cart_items  # 確信度: 中（一致 1/1 フィールド（うち完全一致 1 件） / 次点候補と僅差のためテーブルを一意に決められません）
+    # 次点候補: order_items（一致 1/1, スコア1.00）
+
+  removeCartItem:
+    engine: postgres
+    table: cart_items  # 確信度: 中（リクエストボディが無いため、同一パスの他operationの推定結果から補完）
+

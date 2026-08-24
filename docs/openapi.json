@@ -1,0 +1,417 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Shop Sample API (規模確認用)",
+    "version": "1.0.0",
+    "description": "GUIの動作確認用に作った、ある程度の規模を持つ架空のECサイトAPI。実サーバーは無いのでdry-run/生成確認向け。"
+  },
+  "servers": [{ "url": "http://localhost:8080" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "security": [],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8, "maxLength": 64 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "parameters": [
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "operationId": "createUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "email": { "type": "string", "format": "email" },
+                  "role": { "type": "string", "enum": ["member", "admin"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/users/{userId}": {
+      "get": {
+        "operationId": "getUser",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "put": {
+        "operationId": "updateUser",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "role": { "type": "string", "enum": ["member", "admin"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deleteUser",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/users/{userId}/orders": {
+      "get": {
+        "operationId": "listUserOrders",
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/categories": {
+      "get": { "operationId": "listCategories", "responses": { "200": { "description": "ok" } } },
+      "post": {
+        "operationId": "createCategory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 50 } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/categories/{categoryId}": {
+      "get": {
+        "operationId": "getCategory",
+        "parameters": [{ "name": "categoryId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "put": {
+        "operationId": "updateCategory",
+        "parameters": [{ "name": "categoryId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 50 } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deleteCategory",
+        "parameters": [{ "name": "categoryId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/products": {
+      "get": {
+        "operationId": "listProducts",
+        "parameters": [
+          { "name": "categoryId", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "operationId": "createProduct",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "price", "categoryId"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "description": { "type": "string", "maxLength": 2000 },
+                  "price": { "type": "number", "minimum": 0 },
+                  "categoryId": { "type": "integer" },
+                  "status": { "type": "string", "enum": ["draft", "published", "archived"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/products/{productId}": {
+      "get": {
+        "operationId": "getProduct",
+        "parameters": [{ "name": "productId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "put": {
+        "operationId": "updateProduct",
+        "parameters": [{ "name": "productId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "price"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "price": { "type": "number", "minimum": 0 },
+                  "status": { "type": "string", "enum": ["draft", "published", "archived"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deleteProduct",
+        "parameters": [{ "name": "productId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["pending", "shipped", "delivered", "cancelled"] } }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "operationId": "createOrder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "items"],
+                "properties": {
+                  "userId": { "type": "integer" },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["productId", "quantity"],
+                      "properties": {
+                        "productId": { "type": "integer" },
+                        "quantity": { "type": "integer", "minimum": 1, "maximum": 99 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "patch": {
+        "operationId": "updateOrderStatus",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["pending", "shipped", "delivered", "cancelled"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "cancelOrder",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/orders/{orderId}/items": {
+      "get": {
+        "operationId": "listOrderItems",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "operationId": "addOrderItem",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity"],
+                "properties": {
+                  "productId": { "type": "integer" },
+                  "quantity": { "type": "integer", "minimum": 1, "maximum": 99 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/reviews": {
+      "get": {
+        "operationId": "listReviews",
+        "parameters": [{ "name": "productId", "in": "query", "required": false, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "operationId": "createReview",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "rating"],
+                "properties": {
+                  "productId": { "type": "integer" },
+                  "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+                  "comment": { "type": "string", "maxLength": 1000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/reviews/{reviewId}": {
+      "get": {
+        "operationId": "getReview",
+        "parameters": [{ "name": "reviewId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deleteReview",
+        "parameters": [{ "name": "reviewId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/cart": {
+      "get": { "operationId": "getCart", "responses": { "200": { "description": "ok" } } }
+    },
+    "/cart/items": {
+      "post": {
+        "operationId": "addCartItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity"],
+                "properties": {
+                  "productId": { "type": "integer" },
+                  "quantity": { "type": "integer", "minimum": 1, "maximum": 99 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/cart/items/{itemId}": {
+      "patch": {
+        "operationId": "updateCartItem",
+        "parameters": [{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["quantity"],
+                "properties": { "quantity": { "type": "integer", "minimum": 1, "maximum": 99 } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "removeCartItem",
+        "parameters": [{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    }
+  }
+}

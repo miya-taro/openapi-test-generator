@@ -1,0 +1,279 @@
+# 自動生成された叩き台（generate_db_scenarios.py）を、実際の動作確認のために手直ししたものです。
+# 直した内容は下記コメント、および直近のコミット・チャットの説明を参照してください。
+#
+# 元の自動生成の癖（他のAPIで同じツールを使う際にも起こりうる）:
+# - login/logoutのようなDBを変更しない操作にも db_check が生成される
+#   （POST/PUT/PATCH/DELETEを一律「データ変更あり」とみなすため）
+# - APIのキャメルケース（categoryId等）がDBカラム名（category_id等）と食い違う場合、
+#   db_check にはAPI側の名前がそのまま使われる（自動では対応表に無い変換はできない）
+# - order_itemsとcart_itemsのようにカラム構成が同じテーブルは、名前だけでは一意に
+#   決められない（mapping.yamlの「次点候補と僅差」コメントが出ている箇所は要注意）
+# - create→update→deleteを個々のリソースごとに並べると、他のリソースが参照する前に
+#   削除してしまいFK違反になることがある（例: 注文で使うユーザーを先に消してしまう）
+
+scenarios:
+  defaults:
+    engine: postgres
+  list:
+  - name: createCategory
+    request:
+      operationId: createCategory
+      body:
+        name: a
+    db_check:
+      table: categories
+      where:
+        name: a
+      expect:
+        exists: true
+        columns:
+          name: a
+
+  - name: createUser
+    request:
+      operationId: createUser
+      body:
+        name: a
+        email: test@example.com
+        role: member
+    db_check:
+      table: users
+      where:
+        name: a
+        email: test@example.com
+        role: member
+      expect:
+        exists: true
+        columns:
+          name: a
+          email: test@example.com
+          role: member
+
+  - name: createProduct
+    request:
+      operationId: createProduct
+      body:
+        name: a
+        description: test
+        price: 0
+        categoryId: 1
+        status: draft
+    db_check:
+      table: products
+      where:
+        name: a
+        category_id: 1
+      expect:
+        exists: true
+        columns:
+          name: a
+          price: 0
+          category_id: 1
+          status: draft
+
+  - name: createOrder
+    request:
+      operationId: createOrder
+      body:
+        userId: 1
+        items:
+        - productId: 1
+          quantity: 1
+    db_check:
+      table: orders
+      where:
+        user_id: 1
+      expect:
+        exists: true
+        columns:
+          user_id: 1
+          status: pending
+
+  - name: createReview
+    request:
+      operationId: createReview
+      body:
+        productId: 1
+        rating: 5
+        comment: test
+    db_check:
+      table: reviews
+      where:
+        product_id: 1
+        rating: 5
+      expect:
+        exists: true
+        columns:
+          product_id: 1
+          rating: 5
+          comment: test
+
+  - name: addCartItem
+    request:
+      operationId: addCartItem
+      body:
+        productId: 1
+        quantity: 1
+    db_check:
+      table: cart_items
+      where:
+        product_id: 1
+        quantity: 1
+      expect:
+        exists: true
+        columns:
+          product_id: 1
+          quantity: 1
+
+  - name: updateUser
+    request:
+      operationId: updateUser
+      path_params:
+        userId: 1
+      body:
+        name: b
+        role: member
+    db_check:
+      table: users
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          name: b
+
+  - name: updateCategory
+    request:
+      operationId: updateCategory
+      path_params:
+        categoryId: 1
+      body:
+        name: b
+    db_check:
+      table: categories
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          name: b
+
+  - name: updateProduct
+    request:
+      operationId: updateProduct
+      path_params:
+        productId: 1
+      body:
+        name: b
+        price: 100
+        status: published
+    db_check:
+      table: products
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          name: b
+          price: 100
+          status: published
+
+  - name: updateOrderStatus
+    request:
+      operationId: updateOrderStatus
+      path_params:
+        orderId: 1
+      body:
+        status: shipped
+    db_check:
+      table: orders
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          status: shipped
+
+  # mapping.yamlの叩き台では「次点候補と僅差」により cart_items に誤って
+  # マッピングされていたため、正しい order_items に修正している。
+  - name: addOrderItem
+    request:
+      operationId: addOrderItem
+      path_params:
+        orderId: 1
+      body:
+        productId: 1
+        quantity: 2
+    db_check:
+      table: order_items
+      where:
+        order_id: 1
+        product_id: 1
+        quantity: 2
+      expect:
+        exists: true
+        columns:
+          product_id: 1
+          quantity: 2
+
+  - name: updateCartItem
+    request:
+      operationId: updateCartItem
+      path_params:
+        itemId: 1
+      body:
+        quantity: 3
+    db_check:
+      table: cart_items
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          quantity: 3
+
+  # cancelOrderはDELETEメソッドだが、実際には論理キャンセル（statusの更新）であり
+  # 行自体は削除されない。自動生成は「DELETE=行が無くなる」前提だったため、
+  # 実際の実装（status確認）に合わせて修正している。
+  - name: cancelOrder
+    request:
+      operationId: cancelOrder
+      path_params:
+        orderId: 1
+    db_check:
+      table: orders
+      where:
+        id: 1
+      expect:
+        exists: true
+        columns:
+          status: cancelled
+
+  - name: removeCartItem
+    request:
+      operationId: removeCartItem
+      path_params:
+        itemId: 1
+    db_check:
+      table: cart_items
+      where:
+        id: 1
+      expect:
+        exists: false
+
+  - name: deleteReview
+    request:
+      operationId: deleteReview
+      path_params:
+        reviewId: 1
+    db_check:
+      table: reviews
+      where:
+        id: 1
+      expect:
+        exists: false
+
+  # deleteUser/deleteCategory/deleteProductは、上のシナリオで作成した注文・商品・
+  # カテゴリからまだ参照されている（外部キー制約）ため、この一連の流れの中では
+  # 安全に削除できない（実行すると正しくFKエラーで失敗する＝DB側の整合性は正常）。
+  # 削除の検証だけを行いたい場合は、他から参照されない行を別途用意してください。
