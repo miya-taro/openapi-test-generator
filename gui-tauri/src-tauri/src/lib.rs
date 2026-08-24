@@ -211,6 +211,19 @@ fn delete_file(path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
+/// 出力先フォルダが無ければ作成する（実行直前に呼ぶ）。
+/// 既存のファイル（フォルダではない）が同じパスにある場合はエラーにして
+/// 実行前にはっきり伝える（openapi.jsonのパスをそのまま出力先フォルダ欄に
+/// 入れてしまった、等の入力ミスをrunner起動前に検知するため）。
+#[tauri::command]
+fn ensure_output_dir(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    if target.is_file() {
+        return Err(format!("出力先フォルダに指定されたパスは既にファイルとして存在します（フォルダではありません）: {path}"));
+    }
+    std::fs::create_dir_all(&target).map_err(|e| format!("出力先フォルダを作成できませんでした: {e}"))
+}
+
 #[tauri::command]
 fn load_settings() -> serde_json::Value {
     let path = settings_path();
@@ -239,6 +252,7 @@ pub fn run() {
             bridge_call,
             write_config_file,
             delete_file,
+            ensure_output_dir,
             load_settings,
             save_settings,
         ])

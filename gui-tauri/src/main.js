@@ -46,7 +46,12 @@ async function loadSettingsIntoForm() {
 
   await refreshOperationsList({ keepExcluded: true });
   // ログイン操作の選択はoperation一覧に依存するため、一覧更新後に復元する。
-  if (settings.auth_login_op) $("auth-login-op").value = settings.auth_login_op;
+  // value を直接書き換えても change イベントは発火しないため、ボディ/token_pathの
+  // 自動入力を明示的に呼び直す（呼ばないと「選択済みなのに毎回空欄」になる）。
+  if (settings.auth_login_op) {
+    $("auth-login-op").value = settings.auth_login_op;
+    await applyLoginOperationHints();
+  }
 }
 
 async function persistSettings() {
@@ -320,7 +325,7 @@ function populateAuthLoginOpSelect() {
 // ログイン操作を選ぶと、openapi.jsonのスキーマから分かる範囲でボディ/token_pathを自動入力する
 // （example/defaultが無ければプロパティ名を仮の値にするだけ、token_pathはレスポンススキーマに
 // それらしいキーが無ければ空のまま。あくまで下書きなので、埋まらない/違う場合は手入力する）。
-$("auth-login-op").addEventListener("change", async () => {
+async function applyLoginOperationHints() {
   const operationId = $("auth-login-op").value;
   const openapiPath = $("openapi-path").value.trim();
   if (!operationId || !openapiPath) return;
@@ -344,7 +349,9 @@ $("auth-login-op").addEventListener("change", async () => {
   if (filled.length > 0) {
     setAuthConfigStatus(`openapi.jsonから${filled.join("・")}を自動入力しました（内容を確認してください）`, "ok");
   }
-});
+}
+
+$("auth-login-op").addEventListener("change", applyLoginOperationHints);
 
 function collectAuthConfig() {
   const operationId = $("auth-login-op").value;
@@ -605,6 +612,14 @@ $("run-button").addEventListener("click", async () => {
     return;
   }
 
+  const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
+  try {
+    await invoke("ensure_output_dir", { path: outputDir });
+  } catch (e) {
+    showGenError(`${e}（「2. 実行設定」の出力先フォルダを確認してください）`);
+    return;
+  }
+
   let configPath = "";
   if (dbConfigEnabled()) {
     let dbConfigData;
@@ -643,7 +658,6 @@ $("run-button").addEventListener("click", async () => {
 
   await persistSettings();
 
-  const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
   const specPath = joinPath(outputDir, "試験仕様.xlsx");
   const casesPath = joinPath(outputDir, "test_cases.json");
   const resultPath = joinPath(outputDir, "試験仕様_result.xlsx");
