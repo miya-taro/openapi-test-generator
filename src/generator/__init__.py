@@ -1,7 +1,7 @@
 """ParamSpec / BodyFieldSpec / AuthSpec から TestCase を生成するメインロジック。"""
 from __future__ import annotations
 
-from .rules.common import generate_common_cases
+from .rules.common import generate_common_cases, generate_one_of_variant_cases
 from .rules.integer import generate_integer_cases
 from .rules.string import generate_string_cases
 from .rules.array import generate_array_cases
@@ -147,10 +147,16 @@ def _generate_from_schema(
     is_root_body: bool = False,
 ) -> list[dict]:
     cases: list[dict] = []
-    ctx = {"paramIn": param_in, "paramName": param_name, "opts": opts, "successStatus": success_status}
+    ctx = {
+        "paramIn": param_in, "paramName": param_name, "opts": opts,
+        "successStatus": success_status, "isRootBody": is_root_body,
+    }
 
     # 共通ルール（required, type）
     cases.extend(generate_common_cases(schema, required, ctx))
+
+    # --one-of-full-coverage 指定時のみ: oneOf/anyOf の代表バリアント以外にも正常系ケースを追加
+    cases.extend(generate_one_of_variant_cases(schema, ctx))
 
     type_ = schema.get("type")
     type_ = type_[0] if isinstance(type_, list) else type_
@@ -162,8 +168,7 @@ def _generate_from_schema(
     elif type_ == "array":
         cases.extend(generate_array_cases(schema, ctx))
     elif type_ == "object":
-        obj_ctx = {**ctx, "isRootBody": is_root_body}
-        cases.extend(generate_object_cases(schema, obj_ctx))
+        cases.extend(generate_object_cases(schema, ctx))
     else:
         # type 不明の場合でも format/enum がある string 系を試みる
         if (

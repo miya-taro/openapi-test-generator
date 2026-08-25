@@ -38,6 +38,10 @@ def main() -> int:
     parser.add_argument("--no-normal", action="store_true", help="正常系ケースを生成しない")
     parser.add_argument("--no-abnormal", action="store_true", help="異常系ケースを生成しない")
     parser.add_argument("--enum-full-coverage", action="store_true", help="enum の全値を正常ケースとして生成")
+    parser.add_argument(
+        "--one-of-full-coverage", action="store_true",
+        help="requestBody 直下の oneOf/anyOf について、代表バリアント以外にも正常系ケースを生成する",
+    )
     parser.add_argument("--log-level", default="info", help="ログレベル (debug/info/warn/error)")
     parser.add_argument("--dry-run", action="store_true", help="ケース数のみ表示し、ファイルを出力しない")
     parser.add_argument("--fail-if-exists", action="store_true", help="出力先ファイルが存在する場合はエラー終了")
@@ -64,6 +68,7 @@ def main() -> int:
         "includeNormal": not args.no_normal,
         "includeAbnormal": not args.no_abnormal,
         "enumFullCoverage": args.enum_full_coverage,
+        "oneOfFullCoverage": args.one_of_full_coverage,
     }
 
     try:

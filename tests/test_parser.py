@@ -62,6 +62,59 @@ def test_circular_ref_does_not_hang(tmp_path):
     assert node == {}
 
 
+def test_shared_non_cyclic_ref_is_resolved_once_and_reused(tmp_path):
+    # 循環しない共有スキーマは複数箇所から参照されても同一オブジェクトとして
+    # 再利用され（＝再展開されず）、性能上のキャッシュが効いていることを保証する。
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/a": {"get": {"operationId": "getA", "responses": {
+                "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Money"}}}}
+            }}},
+            "/b": {"get": {"operationId": "getB", "responses": {
+                "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Money"}}}}
+            }}},
+        },
+        "components": {
+            "schemas": {
+                "Money": {"type": "object", "properties": {"amount": {"type": "integer"}}},
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema_a = api["paths"]["/a"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema_b = api["paths"]["/b"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema_a == {"type": "object", "properties": {"amount": {"type": "integer"}}}
+    assert schema_a is schema_b
+
+
+def test_cyclic_ref_referenced_from_two_places_is_not_shared(tmp_path):
+    # 循環を含む展開結果はどのスタック経由で辿り着いたかに依存するため、
+    # 複数箇所から参照されてもキャッシュを使い回さず、それぞれ独立に展開されること。
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/a": {"get": {"operationId": "getA", "responses": {
+                "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Node"}}}}
+            }}},
+            "/b": {"get": {"operationId": "getB", "responses": {
+                "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Node"}}}}
+            }}},
+        },
+        "components": {
+            "schemas": {
+                "Node": {"type": "object", "properties": {"child": {"$ref": "#/components/schemas/Node"}}},
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema_a = api["paths"]["/a"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema_b = api["paths"]["/b"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema_a["properties"]["child"] == {}
+    assert schema_b["properties"]["child"] == {}
+    assert schema_a is not schema_b
+
+
 def test_all_of_merges_properties_and_required(tmp_path):
     doc = {
         "openapi": "3.1.0",
@@ -130,6 +183,103 @@ def test_one_of_reduces_to_first_variant(tmp_path):
     assert "oneOf" not in reduced
     assert reduced["required"] == ["name"]
     assert "name" in reduced["properties"]
+
+
+def test_one_of_discriminator_does_not_corrupt_shared_variant_schema(tmp_path):
+    # 回帰テスト: $ref のキャッシュ（性能最適化）により、oneOf の代表バリアントが
+    # 別の場所（/a の直接参照）と同一オブジェクトを共有することがある。discriminator
+    # 制約の適用が in-place 破壊的だと、無関係な /a 側のスキーマにまで enum 制約が
+    # 漏れてしまっていた。
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/a": {
+                "get": {
+                    "operationId": "getA",
+                    "responses": {
+                        "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Shared"}}}}
+                    },
+                }
+            },
+            "/b": {
+                "get": {
+                    "operationId": "getB",
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {"$ref": "#/components/schemas/Shared"},
+                                            {"type": "object", "title": "Other", "properties": {"kind": {"type": "string"}}},
+                                        ],
+                                        "discriminator": {"propertyName": "kind"},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "Shared": {
+                    "type": "object",
+                    "title": "SharedTitle",
+                    "required": ["kind"],
+                    "properties": {"kind": {"type": "string"}},
+                },
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema_a = api["paths"]["/a"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    schema_b = api["paths"]["/b"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+
+    # /a は Shared への素の参照なので discriminator の enum 制約が付いてはならない
+    assert "enum" not in schema_a["properties"]["kind"]
+    # /b 側は discriminator により正しく enum 制約が付く
+    assert schema_b["properties"]["kind"]["enum"] == ["SharedTitle"]
+
+
+def test_one_of_preserves_all_variants_for_full_coverage(tmp_path):
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {
+                    "oneOf": [
+                        {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+                        {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}},
+                    ]
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    variants = reduced["_oneOfVariants"]
+    assert len(variants) == 2
+    assert variants[0]["required"] == ["name"]
+    assert variants[1]["required"] == ["id"]
+
+
+def test_one_of_single_variant_does_not_add_sidecar(tmp_path):
+    # バリアントが1件しかない場合は「代表以外」が存在しないため _oneOfVariants は不要
+    doc = {
+        "openapi": "3.1.0",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Pet": {"oneOf": [{"type": "object", "properties": {"name": {"type": "string"}}}]}
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    reduced = api["components"]["schemas"]["Pet"]
+    assert "_oneOfVariants" not in reduced
 
 
 def test_any_of_reduces_to_first_variant(tmp_path):

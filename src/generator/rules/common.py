@@ -1,6 +1,11 @@
 """共通ルール（required, type）。全型・全 in に適用される。"""
 from __future__ import annotations
 
+# requestBody ルート直下の oneOf/anyOf バリアント用マーカー。
+# runner/request_builder.py の _ROOT_BODY_ONE_OF_VARIANT_PREFIX と対応させている
+# （末尾に schema["_oneOfVariants"] のインデックスを付与した文字列として使う）。
+ONE_OF_VARIANT_MARKER_PREFIX = "__ONE_OF_VARIANT__"
+
 
 def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]:
     cases: list[dict] = []
@@ -94,6 +99,36 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "notes": "nullable が明示されていないため null は不正な値として扱う",
             })
 
+    return cases
+
+
+def generate_one_of_variant_cases(schema: dict, ctx: dict) -> list[dict]:
+    """`--one-of-full-coverage` 指定時、oneOf/anyOf の代表バリアント以外の各バリアントに
+    ついても「正常系」ケースを1件ずつ追加する。
+
+    デフォルト動作（フラグ未指定）では何も生成しない。対象は requestBody ルート直下の
+    oneOf/anyOf のみ（parser.py の _reduce_one_of_any_of が残す schema["_oneOfVariants"]）。
+    代表バリアント（インデックス0）は通常の型別ルールで既にカバーされているため、
+    インデックス1以降のみを追加する。
+    """
+    opts = ctx["opts"]
+    variants = schema.get("_oneOfVariants")
+    if not variants or not opts.get("oneOfFullCoverage") or not opts["includeNormal"]:
+        return []
+    if not ctx.get("isRootBody"):
+        return []
+
+    cases = []
+    for i in range(1, len(variants)):
+        cases.append({
+            "summary": f"{ctx['paramName']} oneOf/anyOf バリアント{i + 1}（正常）",
+            "keyword": "oneOf",
+            "perspective": f"正常系_oneOfバリアント{i + 1}",
+            "inputValue": f"{ONE_OF_VARIANT_MARKER_PREFIX}{i}",
+            "expectedStatus": ctx.get("successStatus"),
+            "expectedResult": "正常に処理されること",
+            "notes": f"oneOf/anyOf の {i + 1} 番目のバリアントに適合するリクエスト",
+        })
     return cases
 
 

@@ -1,6 +1,56 @@
-from src.generator.rules.common import generate_common_cases
+from src.generator.rules.common import (
+    generate_common_cases,
+    generate_one_of_variant_cases,
+    ONE_OF_VARIANT_MARKER_PREFIX,
+)
 
 ALL_OPTS = {"includeNormal": True, "includeAbnormal": True, "enumFullCoverage": False}
+ONE_OF_OPTS = {**ALL_OPTS, "oneOfFullCoverage": True}
+
+_VARIANTS_SCHEMA = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "_oneOfVariants": [
+        {"type": "object", "properties": {"name": {"type": "string"}}},
+        {"type": "object", "properties": {"email": {"type": "string"}}},
+        {"type": "object", "properties": {"phone": {"type": "string"}}},
+    ],
+}
+
+
+def _root_body_ctx(opts) -> dict:
+    return {"paramIn": "body", "paramName": "requestBody", "opts": opts, "successStatus": "200", "isRootBody": True}
+
+
+def test_one_of_variant_cases_disabled_by_default():
+    cases = generate_one_of_variant_cases(_VARIANTS_SCHEMA, _root_body_ctx(ALL_OPTS))
+    assert cases == []
+
+
+def test_one_of_variant_cases_generated_when_flag_enabled():
+    cases = generate_one_of_variant_cases(_VARIANTS_SCHEMA, _root_body_ctx(ONE_OF_OPTS))
+    # インデックス0（代表バリアント）は通常ケースで既にカバー済みなので、1・2番目のみ追加
+    assert len(cases) == 2
+    assert all(c["perspective"].startswith("正常系") for c in cases)
+    assert cases[0]["inputValue"] == f"{ONE_OF_VARIANT_MARKER_PREFIX}1"
+    assert cases[1]["inputValue"] == f"{ONE_OF_VARIANT_MARKER_PREFIX}2"
+
+
+def test_one_of_variant_cases_skipped_when_not_root_body():
+    ctx = {"paramIn": "body", "paramName": "user.contact", "opts": ONE_OF_OPTS, "successStatus": "200", "isRootBody": False}
+    cases = generate_one_of_variant_cases(_VARIANTS_SCHEMA, ctx)
+    assert cases == []
+
+
+def test_one_of_variant_cases_skipped_when_no_variants():
+    cases = generate_one_of_variant_cases({"type": "object"}, _root_body_ctx(ONE_OF_OPTS))
+    assert cases == []
+
+
+def test_one_of_variant_cases_respects_include_normal_false():
+    ctx = _root_body_ctx({**ONE_OF_OPTS, "includeNormal": False})
+    cases = generate_one_of_variant_cases(_VARIANTS_SCHEMA, ctx)
+    assert cases == []
 
 
 def test_required_true_query_missing_400():

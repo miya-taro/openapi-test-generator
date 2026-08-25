@@ -117,6 +117,7 @@ python src/cli.py <openapi.json> [オプション]
 | `--no-normal` | 正常系ケースを生成しない | — |
 | `--no-abnormal` | 異常系ケースを生成しない | — |
 | `--enum-full-coverage` | enum の全値を正常ケースとして生成 | false |
+| `--one-of-full-coverage` | requestBody 直下の oneOf/anyOf について、代表バリアント以外にも正常系ケースを生成 | false |
 | `--dry-run` | ケース数のみ表示し、ファイルを出力しない | — |
 | `--fail-if-exists` | 出力先が存在する場合はエラー終了 | — |
 | `--log-level <level>` | ログレベル（debug/info/warn/error）| `info` |

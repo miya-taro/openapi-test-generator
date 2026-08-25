@@ -5,6 +5,7 @@ TypeScript版は `@apidevtools/swagger-parser` の `dereference()` を使用し�
 軽量な自前実装で置き換える。
 """
 from __future__ import annotations
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -29,26 +30,51 @@ def parse_openapi(input_path: str) -> dict:
             f"OpenAPI 3.x のみ対応しています（検出バージョン: {version or '不明'}）"
         )
 
-    api = _resolve_refs(raw, raw, ())
+    api, _ = _resolve_refs(raw, raw, (), {})
     _walk_schemas(api, _normalize_schema, set())
 
     log.info({"version": version}, "OpenAPI パース完了")
     return api
 
 
-def _resolve_refs(node: Any, root: dict, stack: tuple[str, ...]) -> Any:
+def _resolve_refs(node: Any, root: dict, stack: tuple[str, ...], cache: dict[str, Any]) -> tuple[Any, bool]:
+    """`$ref` を再帰的に展開する。戻り値は (展開結果, tainted)。
+
+    tainted は「この結果のどこかで循環参照による打ち切り（空スキーマ化）が
+    発生したか」を表す。循環の打ち切り位置は辿り着いた経路（stack）に依存する
+    ため、tainted な結果は同じ $ref の別の参照元では絶対に使い回してはならない。
+    tainted でない結果（実務で大半を占める、共有はされるが循環しないスキーマ）
+    のみ cache に載せ、同じ $ref を複数箇所から参照した際の再展開コストを避ける。
+    """
     if isinstance(node, dict):
         ref = node.get("$ref")
         if isinstance(ref, str):
+            if ref in cache:
+                return cache[ref], False
             if ref in stack:
                 # 循環参照: これ以上展開せず空スキーマとして扱う
-                return {}
+                return {}, True
             target = _lookup_ref(ref, root)
-            return _resolve_refs(target, root, stack + (ref,))
-        return {k: _resolve_refs(v, root, stack) for k, v in node.items()}
+            value, tainted = _resolve_refs(target, root, stack + (ref,), cache)
+            if not tainted:
+                cache[ref] = value
+            return value, tainted
+        result: dict = {}
+        node_tainted = False
+        for k, v in node.items():
+            resolved, tainted = _resolve_refs(v, root, stack, cache)
+            result[k] = resolved
+            node_tainted = node_tainted or tainted
+        return result, node_tainted
     if isinstance(node, list):
-        return [_resolve_refs(v, root, stack) for v in node]
-    return node
+        results = []
+        list_tainted = False
+        for v in node:
+            resolved, tainted = _resolve_refs(v, root, stack, cache)
+            results.append(resolved)
+            list_tainted = list_tainted or tainted
+        return results, list_tainted
+    return node, False
 
 
 def _lookup_ref(ref: str, root: dict) -> Any:
@@ -131,6 +157,11 @@ def _merge_all_of(schema: dict) -> None:
     for sub in all_of:
         if not isinstance(sub, dict):
             continue
+        # $ref 解決のキャッシュにより sub は他の場所と共有されているオブジェクトの
+        # 可能性がある（例: 同じコンポーネントスキーマが単独でも別の場所から参照されて
+        # いる場合）。deepcopy せずに in-place で書き換えると、無関係な参照先まで
+        # 汚染してしまうため、書き換え対象は必ずコピーしてから処理する。
+        sub = copy.deepcopy(sub)
         _merge_all_of(sub)  # ネストした allOf も先に展開しておく
 
         for k, v in sub.get("properties", {}).items():
@@ -164,14 +195,33 @@ def _reduce_one_of_any_of(schema: dict) -> None:
             continue
         discriminator = schema.pop("discriminator", None)
         del schema[key]
-        first = variants[0]
-        if isinstance(first, dict):
-            _merge_all_of(first)
-            _reduce_one_of_any_of(first)  # 入れ子の oneOf/anyOf も先に展開しておく
-            for k, v in first.items():
-                schema.setdefault(k, v)
-            if discriminator:
-                _apply_discriminator_constraint(schema, discriminator, first)
+
+        normalized_variants: list[dict] = []
+        for v in variants:
+            if not isinstance(v, dict):
+                continue
+            # $ref キャッシュによる共有オブジェクトの可能性があるため、書き換える前に
+            # 必ずコピーする（コピーせず in-place で書き換えると、無関係な参照先まで
+            # 汚染してしまう）。
+            v = copy.deepcopy(v)
+            _merge_all_of(v)
+            _reduce_one_of_any_of(v)  # 入れ子の oneOf/anyOf も先に展開しておく
+            normalized_variants.append(v)
+        if not normalized_variants:
+            return
+
+        first = normalized_variants[0]
+        for k, v in first.items():
+            schema.setdefault(k, v)
+        if discriminator:
+            _apply_discriminator_constraint(schema, discriminator, first)
+
+        # 代表バリアント以外も、`--one-of-full-coverage` 用に正規化済みの形で残しておく
+        # （generator/rules/common.py の generate_one_of_variant_cases が参照する）。
+        # 標準の JSON Schema キーワードではないため、jsonschema 等の汎用バリデータからは
+        # 無視される（未知キーはエラーにならない）。
+        if len(normalized_variants) > 1:
+            schema["_oneOfVariants"] = normalized_variants
         return
 
 
