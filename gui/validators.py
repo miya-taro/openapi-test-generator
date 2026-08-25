@@ -85,7 +85,10 @@ def list_operations(path: str) -> list[dict]:
 _TOKEN_KEY_CANDIDATES = ("access_token", "accessToken", "token", "id_token", "idToken", "jwt", "authToken", "auth_token")
 
 
-def _sample_value_for_property(name: str, schema: dict):
+_MAX_EXAMPLE_DEPTH = 20  # 循環参照ではない単なる深いネストでの再帰上限暴走を防ぐ（$refの循環はparser.py側で別途ガード済み）
+
+
+def _sample_value_for_property(name: str, schema: dict, depth: int = 0):
     if not isinstance(schema, dict):
         return name
     if "example" in schema:
@@ -102,18 +105,20 @@ def _sample_value_for_property(name: str, schema: dict):
     if type_ == "array":
         return []
     if type_ == "object":
-        return _build_object_example(schema)
+        if depth >= _MAX_EXAMPLE_DEPTH:
+            return {}
+        return _build_object_example(schema, depth + 1)
     # string・不明な型はプロパティ名をそのまま値にし、埋めるべき箇所だと分かるようにする
     return name
 
 
-def _build_object_example(schema: dict) -> dict:
+def _build_object_example(schema: dict, depth: int = 0) -> dict:
     properties = schema.get("properties")
     if not isinstance(properties, dict):
         return {}
     required = schema.get("required") or list(properties.keys())
     return {
-        name: _sample_value_for_property(name, prop_schema)
+        name: _sample_value_for_property(name, prop_schema, depth)
         for name, prop_schema in properties.items()
         if name in required
     }

@@ -61,10 +61,10 @@ def perform_login(base_url: str, auth_config: dict) -> str:
         "curl.exe", "-s", "-S", "-X", method,
         "-w", "\n%{http_code}",
         "--max-time", str(CURL_TIMEOUT),
-        url,
     ]
     if body:
         cmd += ["-H", "Content-Type: application/json; charset=utf-8", "-d", json.dumps(body, ensure_ascii=False)]
+    cmd += ["--", url]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")

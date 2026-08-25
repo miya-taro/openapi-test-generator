@@ -214,22 +214,29 @@ function dbConfigEnabled() {
   return $("pg-enabled").checked || $("influx-enabled").checked;
 }
 
+function requireField(value, label) {
+  if (!value) {
+    throw new Error(`${label} を入力してください`);
+  }
+  return value;
+}
+
 function collectDbConfig() {
   const data = {};
   if ($("pg-enabled").checked) {
     data.postgres = {
-      host: $("pg-host").value.trim(),
+      host: requireField($("pg-host").value.trim(), "PostgreSQLのhost"),
       port: parsePort($("pg-port").value.trim(), "PostgreSQL"),
-      dbname: $("pg-dbname").value.trim(),
-      user: $("pg-user").value.trim(),
+      dbname: requireField($("pg-dbname").value.trim(), "PostgreSQLのdbname"),
+      user: requireField($("pg-user").value.trim(), "PostgreSQLのuser"),
       password: $("pg-password").value,
     };
   }
   if ($("influx-enabled").checked) {
     const influx = {
-      host: $("influx-host").value.trim(),
+      host: requireField($("influx-host").value.trim(), "InfluxDBのhost"),
       port: parsePort($("influx-port").value.trim(), "InfluxDB"),
-      database: $("influx-database").value.trim(),
+      database: requireField($("influx-database").value.trim(), "InfluxDBのdatabase"),
     };
     const username = $("influx-username").value.trim();
     const password = $("influx-password").value;
@@ -892,6 +899,21 @@ let tempAuthConfigPath = null;
 let progressTotal = 0;
 let progressDone = 0;
 
+// DB接続設定/認証設定の一時ファイル（パスワード等を含む）は、生成→実行の2段階の
+// どちらで終わっても必ず片付ける。呼び出し漏れがあると平文の認証情報が
+// 一時フォルダに残り続けるため、終了パス（成功/失敗/キャンセル）ごとに個別実装せず
+// 必ずこの関数経由で片付ける。
+function cleanupGenTempConfigFiles() {
+  if (tempDbConfigPath) {
+    invoke("delete_file", { path: tempDbConfigPath }).catch(() => {});
+    tempDbConfigPath = null;
+  }
+  if (tempAuthConfigPath) {
+    invoke("delete_file", { path: tempAuthConfigPath }).catch(() => {});
+    tempAuthConfigPath = null;
+  }
+}
+
 function appendLog(line) {
   const log = $("run-log");
   log.textContent += (log.textContent ? "\n" : "") + line;
@@ -1028,12 +1050,14 @@ $("run-button").addEventListener("click", async () => {
       authConfigData = collectAuthConfig();
     } catch (e) {
       showGenError(e.message);
+      if (configPath) invoke("delete_file", { path: configPath }).catch(() => {});
       return;
     }
     try {
       authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
     } catch (e) {
       showGenError(`認証設定の準備に失敗しました: ${e}`);
+      if (configPath) invoke("delete_file", { path: configPath }).catch(() => {});
       return;
     }
   }
@@ -1136,6 +1160,7 @@ listen("proc-done", async (event) => {
     if (code !== 0) {
       appendLog(`[ERROR] テスト仕様の生成に失敗しました（終了コード ${code}）`);
       finishRunUi(code);
+      cleanupGenTempConfigFiles();
       return;
     }
     appendLog("");
@@ -1144,14 +1169,7 @@ listen("proc-done", async (event) => {
   }
 
   finishRunUi(code);
-  if (tempDbConfigPath) {
-    invoke("delete_file", { path: tempDbConfigPath }).catch(() => {});
-    tempDbConfigPath = null;
-  }
-  if (tempAuthConfigPath) {
-    invoke("delete_file", { path: tempAuthConfigPath }).catch(() => {});
-    tempAuthConfigPath = null;
-  }
+  cleanupGenTempConfigFiles();
 });
 
 // ---------- 初期化 ----------

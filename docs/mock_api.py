@@ -12,6 +12,8 @@ db_check（「APIを呼んだ結果DBが期待通り変化したか」の検証�
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request
@@ -21,10 +23,17 @@ DB = dict(host="127.0.0.1", port=5432, dbname="apitester_test", user="postgres",
 app = FastAPI()
 
 
+@contextmanager
 def _conn():
+    # psycopg2の接続自体をwith文で使うとcommit/rollbackだけでcloseされないため、
+    # 明示的にcloseするcontextmanagerでラップする（さもないとリクエストのたびに
+    # 接続がリークし、連続稼働でmax_connectionsに達する）。
     conn = psycopg2.connect(**DB)
     conn.autocommit = True
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def _fetch_one(cur, table: str, row_id: int) -> dict:

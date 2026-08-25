@@ -70,8 +70,8 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
     if case.param_in == "body":
         cmd += ["-H", "Content-Type: application/json; charset=utf-8"]
 
-    cmd.append(url)
     cmd += body_args
+    cmd += ["--", url]
 
     cmd_str = " ".join(cmd)
 
@@ -182,7 +182,7 @@ def health_check(base_url: str, health_path: str = "/health") -> bool:
             # "/dev/null" は Windows のネイティブ curl.exe では有効な出力先として扱われない
             # ことがあるため、os.devnull（Windows では "nul"）を使う。
             ["curl.exe", "-s", "-o", os.devnull, "-w", "%{http_code}",
-             "--max-time", "5", url],
+             "--max-time", "5", "--", url],
             capture_output=True,
             text=True,
             encoding="utf-8",
