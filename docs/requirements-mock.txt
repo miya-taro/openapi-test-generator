@@ -1,0 +1,4 @@
+# docs/mock_api.py（DBシナリオ動作確認用の簡易APIサーバー）を動かすためだけの依存関係。
+# ツール本体（src/ / runner/）の実行には不要なため requirements.txt には含めない。
+fastapi>=0.110.0
+uvicorn>=0.29.0

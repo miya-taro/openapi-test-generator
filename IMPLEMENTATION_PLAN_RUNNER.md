@@ -323,20 +323,12 @@ with patch("subprocess.run") as mock_run:
 
 ## 将来対応（今回スコープ外）
 
-**`--operations` で対象 operationId を絞り込むオプション**
-
-例: `--operations getUser,createUser` で指定した operationId のみ実行する。
-今回は全件実行のみ対応する。
-
----
-
-**path パラメータが複数あるエンドポイントの baseline 自動生成**
-
-例: `/users/{id}/posts/{post_id}` で `post_id` をテストする場合、
-テスト対象外の `id` に対しても baseline 値（`minimum` 値等）を自動生成する必要がある。
-
-今回対象の openapi.json はすべて単一 path パラメータのため実装対象外とする。
-将来的には `request_builder.py` の `_expand_required` と同様のロジックで対応する。
+上記2件は対応済み。`--operations`/`--exclude-ops` は `src/cli.py` に実装されている
+（README参照）。path パラメータが複数あるエンドポイントの baseline 自動生成は
+`request_builder.py` の `_fill_path_params` / `_baseline_path_value` で対応済み
+（テスト対象でない path param には openapi.json のスキーマからベースライン値を
+自動生成して埋める。body/query フィールドをテストする際、単一 path param の
+エンドポイントでも同じ仕組みで埋める必要があったため、実装時にスコープを拡張した）。
 
 ---
 

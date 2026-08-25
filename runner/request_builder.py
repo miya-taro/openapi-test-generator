@@ -1,7 +1,10 @@
 from __future__ import annotations
 import json
+import re
 from urllib.parse import urlencode
 from models import RunCase
+
+_PATH_PARAM_PATTERN = re.compile(r"\{([^{}]+)\}")
 
 OMIT_MARKERS = {"（省略）", "（フィールドを省略）"}
 EMPTY_VALUE_MARKER = "（空文字）"
@@ -11,6 +14,12 @@ NULL_VALUE_MARKER = "null"
 # openapi-test-gen の src/generator/rules/object.py が出力する値と対応させている。
 _ROOT_BODY_EMPTY_MARKER = "{}"
 _ROOT_BODY_EXTRA_PROP_MARKER = '{ ...validBody, "__extra__": "value" }'
+
+# --one-of-full-coverage 用マーカー。
+# src/generator/rules/common.py の ONE_OF_VARIANT_MARKER_PREFIX と対応させている。
+# 末尾の数字が schema["_oneOfVariants"]（parser.py が残す正規化済みバリアント一覧）
+# のインデックス。
+_ONE_OF_VARIANT_MARKER_PREFIX = "__ONE_OF_VARIANT__"
 
 FORMAT_SAMPLES: dict[str, str | int | bool] = {
     "email": "test@example.com",
@@ -25,10 +34,7 @@ FORMAT_SAMPLES: dict[str, str | int | bool] = {
 
 
 def build_url(base_url: str, case: RunCase, openapi: dict | None = None) -> str:
-    path = case.path
-    if case.param_in == "path" and case.input_value not in OMIT_MARKERS:
-        val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
-        path = path.replace("{" + case.param_name + "}", val)
+    path = _fill_path_params(case, openapi)
 
     url = base_url.rstrip("/") + path
 
@@ -38,6 +44,61 @@ def build_url(base_url: str, case: RunCase, openapi: dict | None = None) -> str:
         url += "?" + urlencode({case.param_name: query_val}, doseq=True)
 
     return url
+
+
+def _fill_path_params(case: RunCase, openapi: dict | None) -> str:
+    """path テンプレート中の全ての {paramName} プレースホルダを埋める。
+
+    テスト対象のパラメータ（case.param_in == "path" かつ同名）は case.input_value を
+    そのまま使う（省略/空文字マーカーの特殊挙動を含め、既存の挙動を維持する）。
+
+    それ以外の path パラメータ（body/query フィールドをテストしている場合の
+    テスト対象外の path param、および複数 path param を持つエンドポイントで
+    テスト対象でない方）は、openapi.json のスキーマからベースライン値を自動生成して
+    埋める。埋めないと "/users/{userId}" のような未置換のプレースホルダがそのまま
+    URLとして送信され、多くのサーバー実装でルーティング失敗・型エラー（例: 422）に
+    なり、本来テストしたいフィールドの検証にならない。
+    """
+    path = case.path
+    for match in _PATH_PARAM_PATTERN.finditer(case.path):
+        param_name = match.group(1)
+        placeholder = "{" + param_name + "}"
+        if placeholder not in path:
+            continue  # 既に置換済み（同名の path param が複数出現するケースはない前提）
+
+        if case.param_in == "path" and param_name == case.param_name:
+            if case.input_value in OMIT_MARKERS:
+                continue
+            val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+        else:
+            val = _baseline_path_value(openapi, case, param_name)
+        path = path.replace(placeholder, val)
+    return path
+
+
+def _baseline_path_value(openapi: dict | None, case: RunCase, param_name: str) -> str:
+    if openapi is None:
+        return "1"
+    schema = _resolve_path_param_schema(openapi, case, param_name)
+    value = _expand_value(schema) if schema is not None else "1"
+    return str(value)
+
+
+def _resolve_path_param_schema(openapi: dict, case: RunCase, param_name: str) -> dict | None:
+    paths = openapi.get("paths", {})
+    path_item = paths.get(case.path)
+    if path_item is None:
+        path_item = _find_path_by_operation_id(paths, case.operation_id)
+    if path_item is None:
+        return None
+    op = path_item.get(case.method.lower())
+    all_params = [*(path_item.get("parameters") or [])]
+    if isinstance(op, dict):
+        all_params += op.get("parameters") or []
+    for p in all_params:
+        if isinstance(p, dict) and p.get("name") == param_name and p.get("in") == "path":
+            return p.get("schema") or {}
+    return None
 
 
 def _build_query_value(case: RunCase, val: str, openapi: dict) -> object:
@@ -105,12 +166,17 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
     baseline = _expand_value(schema) if schema is not None else {}
     body: dict = baseline if isinstance(baseline, dict) else {}
 
-    # ルートbody全体を対象とするケース（空body / additionalProperties）は body 全体を差し替える
+    # ルートbody全体を対象とするケース（空body / additionalProperties / oneOfバリアント）は
+    # body 全体を差し替える
     if case.param_name == "requestBody":
         if case.input_value == _ROOT_BODY_EMPTY_MARKER:
             return {}
         if case.input_value == _ROOT_BODY_EXTRA_PROP_MARKER:
             return {**body, "__extra__": "value"}
+        if case.input_value.startswith(_ONE_OF_VARIANT_MARKER_PREFIX):
+            variant_body = _resolve_one_of_variant_body(schema, case.input_value)
+            if variant_body is not None:
+                return variant_body
         return body
 
     if case.input_value in OMIT_MARKERS:
@@ -123,6 +189,27 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
         _set_nested(body, case.param_name, _coerce_value(raw, field_schema), schema)
 
     return body
+
+
+def _resolve_one_of_variant_body(schema: dict | None, input_value: str) -> dict | None:
+    """`__ONE_OF_VARIANT__{index}` マーカーから、対応するバリアントのベースラインbodyを組み立てる。
+
+    schema や index が想定外（schema に _oneOfVariants が無い、index範囲外等）の場合は
+    None を返し、呼び出し側で通常のベースラインbodyにフォールバックする。
+    """
+    if schema is None:
+        return None
+    variants = schema.get("_oneOfVariants")
+    if not variants:
+        return None
+    try:
+        index = int(input_value[len(_ONE_OF_VARIANT_MARKER_PREFIX):])
+    except ValueError:
+        return None
+    if not (0 <= index < len(variants)):
+        return None
+    value = _expand_value(variants[index])
+    return value if isinstance(value, dict) else None
 
 
 def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) -> tuple[dict, str]:

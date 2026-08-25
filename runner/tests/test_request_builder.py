@@ -83,6 +83,92 @@ def test_base_url_trailing_slash():
     assert url == "http://localhost:8080/users?page=1"
 
 
+# --- テスト対象外の path param のベースライン自動生成 ---
+# body/query フィールドをテストする際、そのエンドポイントの path param
+# （テスト対象ではない）が未置換のまま "{userId}" のようにURLへ残ってしまう
+# バグの回帰テスト。放置すると多くのサーバー実装で404/422等になり、本来
+# テストしたいフィールドの検証にならない。
+
+_PATH_PARAM_OPENAPI = {
+    "paths": {
+        "/users/{userId}": {
+            "put": {
+                "operationId": "updateUser",
+                "parameters": [
+                    {"name": "userId", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 5}}
+                ],
+            }
+        }
+    }
+}
+
+
+def test_body_field_test_fills_untested_path_param_with_schema_baseline():
+    case = make_case(
+        path="/users/{userId}", operation_id="updateUser", method="PUT",
+        param_in="body", param_name="name", input_value="Alice",
+    )
+    url = build_url("http://localhost:8080", case, _PATH_PARAM_OPENAPI)
+    assert url == "http://localhost:8080/users/5"
+
+
+def test_query_field_test_fills_untested_path_param_with_schema_baseline():
+    case = make_case(
+        path="/users/{userId}", operation_id="updateUser", method="PUT",
+        param_in="query", param_name="page", input_value="1",
+    )
+    url = build_url("http://localhost:8080", case, _PATH_PARAM_OPENAPI)
+    assert url.startswith("http://localhost:8080/users/5")
+    assert "{userId}" not in url
+
+
+def test_body_field_test_fills_untested_path_param_with_generic_default_without_openapi():
+    case = make_case(
+        path="/users/{userId}", operation_id="updateUser", method="PUT",
+        param_in="body", param_name="name", input_value="Alice",
+    )
+    url = build_url("http://localhost:8080", case)
+    assert url == "http://localhost:8080/users/1"
+
+
+_MULTI_PATH_PARAM_OPENAPI = {
+    "paths": {
+        "/users/{userId}/posts/{postId}": {
+            "get": {
+                "operationId": "getUserPost",
+                "parameters": [
+                    {"name": "userId", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 5}},
+                    {"name": "postId", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 10}},
+                ],
+            }
+        }
+    }
+}
+
+
+def test_multiple_path_params_only_tested_one_uses_input_value():
+    # 複数 path param を持つエンドポイントで postId をテストする場合、
+    # テスト対象外の userId にもスキーマベースのベースライン値が必要
+    # （IMPLEMENTATION_PLAN_RUNNER.md で「将来対応」とされていたケース）。
+    case = make_case(
+        path="/users/{userId}/posts/{postId}", operation_id="getUserPost", method="GET",
+        param_in="path", param_name="postId", input_value="999",
+    )
+    url = build_url("http://localhost:8080", case, _MULTI_PATH_PARAM_OPENAPI)
+    assert url == "http://localhost:8080/users/5/posts/999"
+
+
+def test_path_field_under_test_is_unaffected_by_baseline_fill():
+    # テスト対象の path param 自身は、これまで通り case.input_value がそのまま使われる
+    # （スキーマのベースライン値に上書きされない）。
+    case = make_case(
+        path="/users/{userId}", operation_id="updateUser", method="PUT",
+        param_in="path", param_name="userId", input_value="999",
+    )
+    url = build_url("http://localhost:8080", case, _PATH_PARAM_OPENAPI)
+    assert url == "http://localhost:8080/users/999"
+
+
 # --- 配列型クエリパラメータの style/explode ---
 
 ARRAY_QUERY_OPENAPI = {
@@ -514,6 +600,62 @@ def test_root_body_additional_properties_marker_adds_extra_key_to_valid_body():
     assert body["__extra__"] == "value"
     assert body["amount"] == 1
     assert body["customer"]["name"]
+
+
+# --one-of-full-coverage 用マーカーの解決（parser.py が残す _oneOfVariants を消費する側）
+
+ONE_OF_OPENAPI = {
+    "paths": {
+        "/contacts": {
+            "post": {
+                "operationId": "createContact",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string", "minLength": 1}},
+                                "required": ["name"],
+                                "_oneOfVariants": [
+                                    {
+                                        "type": "object",
+                                        "required": ["name"],
+                                        "properties": {"name": {"type": "string", "minLength": 1}},
+                                    },
+                                    {
+                                        "type": "object",
+                                        "required": ["email"],
+                                        "properties": {"email": {"type": "string", "format": "email"}},
+                                    },
+                                ],
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def _contact_case(**kwargs) -> RunCase:
+    defaults = dict(operation_id="createContact", path="/contacts", method="POST", param_in="body")
+    defaults.update(kwargs)
+    return make_case(**defaults)
+
+
+def test_one_of_variant_marker_builds_that_variants_baseline_body():
+    case = _contact_case(param_name="requestBody", input_value="__ONE_OF_VARIANT__1")
+    args = build_body_args(case, ONE_OF_OPENAPI)
+    body = json.loads(args[1])
+    assert body == {"email": "test@example.com"}
+
+
+def test_one_of_variant_marker_out_of_range_falls_back_to_baseline():
+    case = _contact_case(param_name="requestBody", input_value="__ONE_OF_VARIANT__99")
+    args = build_body_args(case, ONE_OF_OPENAPI)
+    body = json.loads(args[1])
+    assert body == {"name": "a"}
 
 
 def test_null_marker_sends_actual_json_null_not_string():

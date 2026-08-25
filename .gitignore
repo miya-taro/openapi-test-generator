@@ -36,3 +36,4 @@ Thumbs.db
 *.xlsx
 coverage/
 htmlcov/
+docs/_ci_*

@@ -35,3 +35,46 @@ jobs:
 
       - name: Run GUI logic tests
         run: python -m pytest gui/tests/ -v
+
+  e2e:
+    # このツールセット自体の単体テストだけでなく、docs/ のサンプル一式
+    # （openapi.json / mock_api.py / scenarios.yaml）を使って「生成 → 実際のAPIサーバーへの
+    # HTTP実行 → 結果Excel出力」（Layer 1）と「DB事前状態確認込みのシナリオ実行」（Layer 2）
+    # を実際にエンドツーエンドで検証する。詳細は docs/run_e2e.py を参照。
+    name: E2E (docs/ sample against mock API + PostgreSQL)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r docs/requirements-mock.txt
+
+      - name: Start PostgreSQL
+        # windows-latest ランナーの GitHub Actions `services:` コンテナは Linux 専用で
+        # 使えないため、Docker Desktop（windows-latest に標準搭載、既定で Linux コンテナ
+        # モード）に対して docker run を直接叩く形で代用する。
+        run: >
+          docker run -d --name apitester-pg
+          -e POSTGRES_PASSWORD=testpass123
+          -e POSTGRES_DB=apitester_test
+          -e POSTGRES_USER=postgres
+          -p 5432:5432
+          postgres:16
+
+      - name: Apply DB schema
+        run: python docs/apply_schema.py
+
+      - name: Run E2E (generate -> execute -> DB scenario verification)
+        run: python docs/run_e2e.py
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker rm -f apitester-pg
