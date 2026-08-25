@@ -84,3 +84,25 @@ def test_multiple_of():
     abnormal = next(c for c in cases if c["keyword"] == "multipleOf" and c["perspective"].startswith("異常系"))
     assert normal["inputValue"] == "6"
     assert abnormal["inputValue"] == "4"
+
+
+def test_multiple_of_unit_fraction_abnormal_value_is_not_actually_a_multiple():
+    # multipleOf が 0.01 のような単位分数の場合、"+1" は正当な倍数(1.01)になってしまい
+    # 自己矛盾したテストケースが生成されていた（0.01 の倍数を「異常系」として扱う）。
+    cases = generate_integer_cases(
+        {"type": "number", "multipleOf": 0.01}, {"paramName": "n", "opts": ABNORMAL_ONLY}
+    )
+    abnormal = next(c for c in cases if c["keyword"] == "multipleOf")
+    value = float(abnormal["inputValue"])
+    ratio = value / 0.01
+    assert abs(ratio - round(ratio)) > 1e-6, f"{value} は 0.01 の倍数であってはならない"
+
+
+def test_number_type_as_nullable_array_form_uses_decimal_step():
+    # parser.py の nullable 正規化後は type が ["number", "null"] のような配列になる。
+    # 配列形式でも number 型として扱われ、増減幅に 0.1 が使われる必要がある。
+    cases = generate_integer_cases(
+        {"type": ["number", "null"], "minimum": 1.5}, {"paramName": "n", "opts": ABNORMAL_ONLY}
+    )
+    abnormal = next(c for c in cases if c["keyword"] == "minimum")
+    assert abnormal["inputValue"] == "1.4"

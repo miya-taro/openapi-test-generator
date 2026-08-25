@@ -33,7 +33,7 @@ def get_postgres_config(config: dict) -> dict:
         raise ValueError('config.json に "postgres" セクションがありません')
 
     postgres = config["postgres"]
-    missing = REQUIRED_POSTGRES_KEYS - set(postgres.keys())
+    missing = {key for key in REQUIRED_POSTGRES_KEYS if not str(postgres.get(key, "")).strip()}
     if missing:
         raise ValueError(f'config.json の postgres セクションに必須キーが不足しています: {sorted(missing)}')
 
@@ -49,7 +49,7 @@ def get_influxdb_config(config: dict) -> dict:
         raise ValueError('config.json に "influxdb" セクションがありません')
 
     influxdb = config["influxdb"]
-    missing = REQUIRED_INFLUXDB_KEYS - set(influxdb.keys())
+    missing = {key for key in REQUIRED_INFLUXDB_KEYS if not str(influxdb.get(key, "")).strip()}
     if missing:
         raise ValueError(f'config.json の influxdb セクションに必須キーが不足しています: {sorted(missing)}')
 

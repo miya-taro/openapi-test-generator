@@ -5,7 +5,7 @@ from __future__ import annotations
 def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
     cases: list[dict] = []
     opts = ctx["opts"]
-    is_number = schema.get("type") == "number"
+    is_number = "number" in _type_set(schema)
     step = 0.1 if is_number else 1
 
     minimum = schema.get("minimum")
@@ -134,11 +134,15 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "notes": "",
             })
         if opts["includeAbnormal"]:
+            # multiple_of が 0.01 のような単位分数の場合、"+1" は正当な倍数になり
+            # うる（例: 0.01 + 1 = 1.01 は 0.01 の倍数）。比率 1.5 倍の値は
+            # multiple_of がどんな値でも整数倍にならないため、確実に非倍数となる。
+            non_multiple = multiple_of * 1.5 if is_number else multiple_of + 1
             cases.append({
                 "summary": f"{ctx['paramName']} multipleOf 非倍数値（異常）",
                 "keyword": "multipleOf",
                 "perspective": "異常系_multipleOf非倍数",
-                "inputValue": _num_str(multiple_of + 1),
+                "inputValue": _num_str(non_multiple),
                 "expectedStatus": "400",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
@@ -161,3 +165,13 @@ def _as_number(value: object) -> float | int | None:
     if isinstance(value, (int, float)):
         return value
     return None
+
+
+def _type_set(schema: dict) -> set[str]:
+    """schema["type"] を集合として返す（nullable 正規化後の配列形式にも対応）。"""
+    t = schema.get("type")
+    if isinstance(t, list):
+        return set(t)
+    if isinstance(t, str):
+        return {t}
+    return set()

@@ -203,11 +203,10 @@ $("openapi-path").addEventListener("change", () => {
 // ---------- DB接続設定（画面入力のみ。ファイル参照は行わず、実行時に裏で一時ファイル化する） ----------
 
 function parsePort(text, label) {
-  const n = parseInt(text, 10);
-  if (!text || Number.isNaN(n)) {
+  if (!text || !/^\d+$/.test(text)) {
     throw new Error(`${label} のポート番号は数値で入力してください: ${text || "(空欄)"}`);
   }
-  return n;
+  return parseInt(text, 10);
 }
 
 function dbConfigEnabled() {
@@ -564,7 +563,15 @@ function runSimpleScript(script, args, { logEl, statusEl, doneMessage } = {}) {
       statusEl.classList.remove("error", "ok");
     }
     simpleRuns.set(runId, { logEl, statusEl, doneMessage, resolve });
-    invoke("run_script", { runId, script, args });
+    invoke("run_script", { runId, script, args }).catch((e) => {
+      if (!simpleRuns.has(runId)) return;
+      simpleRuns.delete(runId);
+      if (statusEl) {
+        statusEl.textContent = `スクリプトの起動に失敗しました: ${e}`;
+        statusEl.classList.add("error");
+      }
+      resolve(-1);
+    });
   });
 }
 
@@ -788,6 +795,20 @@ function finishDbScenarioRunUi(code) {
   }
 }
 
+// DB接続設定/認証設定の一時ファイル（パスワード等を含む）は、proc-done の到達有無に
+// 関わらず必ず片付ける。run_script の起動そのものが失敗した場合もこの関数経由で
+// 片付けるため、呼び出し漏れによる平文認証情報の残存を防ぐ。
+function cleanupDbScenarioTempConfigFiles() {
+  if (dbScenarioTempDbConfigPath) {
+    invoke("delete_file", { path: dbScenarioTempDbConfigPath }).catch(() => {});
+    dbScenarioTempDbConfigPath = null;
+  }
+  if (dbScenarioTempAuthConfigPath) {
+    invoke("delete_file", { path: dbScenarioTempAuthConfigPath }).catch(() => {});
+    dbScenarioTempAuthConfigPath = null;
+  }
+}
+
 $("dbscenario-goto-settings").addEventListener("click", () => showPage("settings"));
 $("dbscenario-browse").addEventListener("click", () =>
   browseFile("dbscenario-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
@@ -875,7 +896,13 @@ $("dbscenario-run-button").addEventListener("click", async () => {
   $("dbscenario-open-result-button").disabled = true;
   setDbScenarioStatus("実行中...", "running");
 
-  invoke("run_script", { runId: dbScenarioRunId, script: "runner/db_scenario_runner.py", args });
+  const runId = dbScenarioRunId;
+  invoke("run_script", { runId, script: "runner/db_scenario_runner.py", args }).catch((e) => {
+    if (runId !== dbScenarioRunId) return;
+    appendDbScenarioLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
+    finishDbScenarioRunUi(3);
+    cleanupDbScenarioTempConfigFiles();
+  });
 });
 
 $("dbscenario-cancel-button").addEventListener("click", async () => {
@@ -1085,10 +1112,17 @@ $("run-button").addEventListener("click", async () => {
 
   currentRunId = `gen-${Date.now()}`;
   currentResultPath = resultPath;
+  const runId = currentRunId;
   startRunUi();
   pendingSecondStage = { script: "runner/runner.py", args: runArgs };
 
-  invoke("run_script", { runId: currentRunId, script: "src/cli.py", args: genArgs });
+  invoke("run_script", { runId, script: "src/cli.py", args: genArgs }).catch((e) => {
+    if (runId !== currentRunId) return;
+    appendLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
+    pendingSecondStage = null;
+    finishRunUi(3);
+    cleanupGenTempConfigFiles();
+  });
 });
 
 $("cancel-button").addEventListener("click", async () => {
@@ -1141,14 +1175,7 @@ listen("proc-done", async (event) => {
 
   if (runId === dbScenarioRunId) {
     finishDbScenarioRunUi(code);
-    if (dbScenarioTempDbConfigPath) {
-      invoke("delete_file", { path: dbScenarioTempDbConfigPath }).catch(() => {});
-      dbScenarioTempDbConfigPath = null;
-    }
-    if (dbScenarioTempAuthConfigPath) {
-      invoke("delete_file", { path: dbScenarioTempAuthConfigPath }).catch(() => {});
-      dbScenarioTempAuthConfigPath = null;
-    }
+    cleanupDbScenarioTempConfigFiles();
     return;
   }
 
@@ -1164,7 +1191,13 @@ listen("proc-done", async (event) => {
       return;
     }
     appendLog("");
-    invoke("run_script", { runId: currentRunId, script: stage.script, args: stage.args });
+    const runId = currentRunId;
+    invoke("run_script", { runId, script: stage.script, args: stage.args }).catch((e) => {
+      if (runId !== currentRunId) return;
+      appendLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
+      finishRunUi(3);
+      cleanupGenTempConfigFiles();
+    });
     return;
   }
 

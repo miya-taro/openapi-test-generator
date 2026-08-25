@@ -100,6 +100,26 @@ def test_get_postgres_config_missing_multiple_keys_raises():
         get_postgres_config({"postgres": {"host": "localhost"}})
 
 
+def test_get_postgres_config_empty_string_host_raises():
+    # キー自体は存在するが値が空文字の場合も未入力として扱う必要がある
+    config = {"postgres": {**VALID_POSTGRES, "host": ""}}
+    with pytest.raises(ValueError, match="host"):
+        get_postgres_config(config)
+
+
+def test_get_postgres_config_whitespace_only_dbname_raises():
+    config = {"postgres": {**VALID_POSTGRES, "dbname": "   "}}
+    with pytest.raises(ValueError, match="dbname"):
+        get_postgres_config(config)
+
+
+def test_get_postgres_config_port_zero_is_not_treated_as_missing():
+    # port は int で渡ってくるため、falsy な 0 が「未入力」扱いされてはならない
+    config = {"postgres": {**VALID_POSTGRES, "port": 0}}
+    pg = get_postgres_config(config)
+    assert pg["port"] == 0
+
+
 # ---------- get_influxdb_config ----------
 
 

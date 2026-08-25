@@ -28,6 +28,12 @@ def _resolve_auth_header() -> str | None:
     return None
 
 
+def _mask_secrets(text: str, secrets: list[str]) -> str:
+    for secret in secrets:
+        text = text.replace(secret, "***MASKED***")
+    return text
+
+
 def check_curl_available() -> None:
     if shutil.which("curl.exe") is None:
         raise RuntimeError(
@@ -56,6 +62,9 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
            "-w", "\n%{http_code}\n%{time_total}",
            "--max-time", str(CURL_TIMEOUT)]
 
+    # 記録用コマンド文字列（結果 Excel に保存される）からは機密値をマスクする
+    secrets: list[str] = []
+
     # 認証ヘッダの処理
     # param_in == "header" かつ Authorization 系フィールドが対象の場合は env var より優先
     if case.param_in == "header":
@@ -66,6 +75,9 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
         auth_header = _resolve_auth_header()
         if auth_header:
             cmd += ["-H", auth_header]
+            _, _, header_value = auth_header.partition(": ")
+            if header_value:
+                secrets.append(header_value)
 
     if case.param_in == "body":
         cmd += ["-H", "Content-Type: application/json; charset=utf-8"]
@@ -73,7 +85,7 @@ def _run_curl(case: RunCase, url: str, body_args: list[str]) -> RunResult:
     cmd += body_args
     cmd += ["--", url]
 
-    cmd_str = " ".join(cmd)
+    cmd_str = _mask_secrets(" ".join(cmd), secrets)
 
     try:
         result = subprocess.run(

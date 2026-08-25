@@ -90,10 +90,10 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
             success_status = _resolve_success_status(operation.get("responses"))
             responses_info = _build_responses_info(operation.get("responses"))
 
-            parameters = [
-                *(path_item.get("parameters") or []),
-                *(operation.get("parameters") or []),
-            ]
+            parameters = _merge_parameters(
+                path_item.get("parameters") or [],
+                operation.get("parameters") or [],
+            )
 
             for param in parameters:
                 name = param.get("name")
@@ -140,6 +140,19 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                 body_specs.extend(fields)
 
     return param_specs, body_specs
+
+
+def _merge_parameters(path_params: list[dict], operation_params: list[dict]) -> list[dict]:
+    """path 階層のパラメータに operation 階層のパラメータをマージする。
+
+    OpenAPI の仕様上、同じ name/in の組み合わせは operation 階層側が
+    path 階層側を上書きする（両方が有効になるわけではない）。
+    """
+    merged: dict[tuple[str | None, str | None], dict] = {}
+    for param in (*path_params, *operation_params):
+        key = (param.get("name"), param.get("in"))
+        merged[key] = param
+    return list(merged.values())
 
 
 def _resolve_success_status(responses: dict | None) -> str:

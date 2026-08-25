@@ -81,14 +81,39 @@ def test_curl_command_body_param_produces_json_payload():
         _tc(**{"in": "body"}, method="POST", path="/users", paramName="name", inputValue='"Alice"')
     )
     assert "Content-Type: application/json" in cmd
-    assert '{"name": "Alice"}' in cmd
+    # JSON中の " は cmd.exe/curl.exe への引数として安全に渡すため \" にエスケープされる
+    assert '{\\"name\\": \\"Alice\\"}' in cmd
 
 
 def test_curl_command_body_non_json_value_falls_back_to_raw_string():
     cmd = _build_curl_command(
         _tc(**{"in": "body"}, method="POST", path="/users", paramName="name", inputValue="not-an-int")
     )
-    assert '{"name": "not-an-int"}' in cmd
+    assert '{\\"name\\": \\"not-an-int\\"}' in cmd
+
+
+def test_curl_command_header_value_with_quote_does_not_break_out():
+    # ダブルクォートを含む値が -H の引数から脱出してコマンドを注入できないこと
+    cmd = _build_curl_command(
+        _tc(**{"in": "header"}, paramName="X-Api-Key", inputValue='secret" & calc.exe & "')
+    )
+    assert '-H "X-Api-Key: secret\\" & calc.exe & \\""' in cmd
+
+
+def test_curl_command_body_value_with_quote_does_not_break_out():
+    # openapi.json 由来の値にクォートやシェルメタ文字が含まれても -d の引数を脱出できないこと
+    cmd = _build_curl_command(
+        _tc(
+            **{"in": "body"},
+            method="POST",
+            path="/users",
+            paramName="name",
+            inputValue="O'Brien'; touch pwned #",
+        )
+    )
+    assert "-d \"" in cmd
+    # 生成されたコマンド全体が対応の取れた引用符で構成されていること（脱出していない）
+    assert cmd.count('"') % 2 == 0
 
 
 def test_curl_command_empty_marker_sends_empty_string():

@@ -111,6 +111,30 @@ def test_auth_token_added_when_env_set(monkeypatch):
     assert "Authorization: Bearer mytoken" in " ".join(cmd)
 
 
+def test_auth_token_masked_in_stored_curl_command(monkeypatch):
+    # 実行には実トークンを使うが、結果Excelに保存される curl_command には
+    # 平文のトークンを残してはならない。
+    monkeypatch.setenv("TEST_AUTH_TOKEN", "supersecrettoken")
+    case = make_case()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_curl('ok\n200\n0.010')
+        result = execute_with_openapi(case, "http://localhost:8080", None)
+    assert "supersecrettoken" not in result.curl_command
+    assert "***MASKED***" in result.curl_command
+
+
+def test_auth_header_env_masked_in_stored_curl_command(monkeypatch):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "X-Api-Key")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "leaked-secret-value")
+    monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
+    case = make_case()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_curl('ok\n200\n0.010')
+        result = execute_with_openapi(case, "http://localhost:8080", None)
+    assert "leaked-secret-value" not in result.curl_command
+    assert "***MASKED***" in result.curl_command
+
+
 def test_no_auth_header_without_token(monkeypatch):
     monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
     case = make_case()

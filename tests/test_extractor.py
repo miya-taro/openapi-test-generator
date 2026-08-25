@@ -81,6 +81,45 @@ def test_array_of_primitives_not_flattened_further():
     assert not any(p.startswith("tags[]") for p in field_paths)
 
 
+def test_operation_level_parameter_overrides_path_level_parameter():
+    # OpenAPI の仕様上、同じ name/in の組み合わせは operation 階層が path 階層を
+    # 上書きする。単純結合すると上書きされたはずの古い定義（string の id）も
+    # 残ってしまい、矛盾したテストケースが生成されていた。
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                "get": {
+                    "operationId": "getItem",
+                    "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "responses": {"200": {"description": "OK"}},
+                },
+            }
+        },
+    }
+    param_specs, _ = extract_specs(api)
+    id_specs = [s for s in param_specs if s["name"] == "id" and s["in"] == "path"]
+    assert len(id_specs) == 1
+    assert id_specs[0]["schema"]["type"] == "integer"
+
+
+def test_path_level_parameter_kept_when_not_overridden():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                "get": {"operationId": "getItem", "responses": {"200": {"description": "OK"}}},
+            }
+        },
+    }
+    param_specs, _ = extract_specs(api)
+    id_specs = [s for s in param_specs if s["name"] == "id" and s["in"] == "path"]
+    assert len(id_specs) == 1
+    assert id_specs[0]["schema"]["type"] == "string"
+
+
 def test_auth_specs_extracted_for_bearer_scheme():
     api = {
         "openapi": "3.1.0",

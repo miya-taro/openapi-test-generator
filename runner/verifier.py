@@ -20,7 +20,7 @@ def _find_header(actual_headers: dict[str, str], name: str) -> str | None:
 
 def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     """Return (verdict, detail). verdict is one of OK/NG/WARNING/SKIP."""
-    if result.error and result.curl_exit_code != 0:
+    if result.error:
         if result.curl_exit_code == 28:
             return FAIL, f"タイムアウト (curl exit 28)"
         return FAIL, f"curl エラー: {result.error}"

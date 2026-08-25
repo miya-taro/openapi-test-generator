@@ -35,10 +35,52 @@ COLUMNS: list[tuple[str, str | None, object, int]] = [
 _OMIT_MARKERS = {"（省略）", "（フィールドを省略）", "（認証ヘッダなし）"}
 _EMPTY_MARKER = "（空文字）"
 
+# Excel/CSV フォーミュラインジェクション対策: これらの文字で始まるセル値は
+# Excel が数式として評価しうるため、先頭にアポストロフィを付与して文字列扱いにする
+_FORMULA_TRIGGER_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_cell_value(value: object) -> object:
+    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGER_CHARS):
+        return "'" + value
+    return value
+
 
 def _encode_uri_component(value: str) -> str:
     # JS の encodeURIComponent は A-Z a-z 0-9 - _ . ! ~ * ' ( ) をエスケープしない
     return quote(value, safe="!~*'()")
+
+
+def _escape_cmd_arg(value: str) -> str:
+    """Windows cmd.exe 上でダブルクォート引数として curl.exe に渡す値をエスケープする。
+
+    curl.exe のような一般的な Windows プログラムは MSVCRT 互換の argv パース規則
+    （N 個の連続する \\ の直後に " が続く場合、\\ は N//2 個に圧縮され、N が奇数なら
+    リテラル " が1つ挿入される）でコマンドラインを解釈するため、その規則に従って
+    " と \\ をエスケープする。これにより外部入力（openapi.json 由来の値）で
+    ダブルクォートを脱出してコマンドを注入できないようにする。
+    """
+    result: list[str] = []
+    n_backslashes = 0
+    for ch in value:
+        if ch == "\\":
+            n_backslashes += 1
+            continue
+        if ch == '"':
+            result.append("\\" * (n_backslashes * 2 + 1))
+            result.append('"')
+        else:
+            if n_backslashes:
+                result.append("\\" * n_backslashes)
+            result.append(ch)
+        n_backslashes = 0
+    if n_backslashes:
+        result.append("\\" * n_backslashes)
+    return "".join(result)
+
+
+def _quote_cmd(value: str) -> str:
+    return '"' + _escape_cmd_arg(value) + '"'
 
 
 def _build_curl_command(tc: dict) -> str:
@@ -56,10 +98,10 @@ def _build_curl_command(tc: dict) -> str:
     if tc["in"] == "query" and not omit:
         url += f"?{tc['paramName']}={_encode_uri_component(url_val)}"
 
-    cmd = f'curl.exe -s -v -X {method} "{url}"'
+    cmd = f'curl.exe -s -v -X {method} {_quote_cmd(url)}'
 
     if tc["in"] == "header" and not omit:
-        cmd += f' -H "{tc["paramName"]}: {raw_val}"'
+        cmd += f' -H {_quote_cmd(f"{tc['paramName']}: {raw_val}")}'
 
     if tc["in"] == "body" and not omit:
         try:
@@ -67,7 +109,7 @@ def _build_curl_command(tc: dict) -> str:
         except (ValueError, TypeError):
             body_val = raw_val
         body = json.dumps({tc["paramName"]: body_val}, ensure_ascii=False)
-        cmd += f' -H "Content-Type: application/json" -d \'{body}\''
+        cmd += f' -H "Content-Type: application/json" -d {_quote_cmd(body)}'
 
     return cmd
 
@@ -154,7 +196,7 @@ def _write_data_rows(sheet, cases: list[dict], verdict_col_idx: int) -> None:
 
         for col_idx, (_header, key, compute, _width) in enumerate(COLUMNS):
             cell = sheet.cell(row=row_num, column=col_idx + 1)
-            cell.value = _build_curl_command(tc) if compute else (tc.get(key) or "")
+            cell.value = _build_curl_command(tc) if compute else _sanitize_cell_value(tc.get(key) or "")
             cell.font = Font(size=10)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = _THIN_BORDER
