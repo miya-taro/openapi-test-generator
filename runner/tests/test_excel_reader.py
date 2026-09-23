@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
-import pytest
+
+import openpyxl
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from excel_reader import read_excel
@@ -44,3 +45,34 @@ def test_third_case_is_post():
     assert c.method == "POST"
     assert c.param_in == "body"
     assert c.expected_status == "201"
+
+
+def _build_workbook(tmp_path, headers: list[str], rows: list[list]) -> Path:
+    """test_spec シート・row4ヘッダーという実際の生成物と同じ構造の最小ワークブックを作る。"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "test_spec"
+    for _ in range(3):  # ヘッダーは4行目（index 3）
+        ws.append([])
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    path = tmp_path / "spec.xlsx"
+    wb.save(str(path))
+    return path
+
+
+def test_blank_row_detection_with_extra_leading_column(tmp_path):
+    # 「試験ID」の前に別の列が挿入されていても、試験ID列を見て正しく判定できること
+    path = _build_workbook(
+        tmp_path,
+        headers=["メモ", "試験ID", "operationId"],
+        rows=[
+            [None, "TC-001", "getUsers"],   # メモ列は空だが試験IDはある → 読み込まれるべき
+            ["備考あり", None, None],        # 試験ID自体が空 → スキップされるべき
+        ],
+    )
+    cases = read_excel(path)
+    assert len(cases) == 1
+    assert cases[0].id == "TC-001"
+    assert cases[0].operation_id == "getUsers"

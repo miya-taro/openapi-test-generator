@@ -31,9 +31,9 @@ def test_write_report_row_values_match_input(tmp_path):
     ws = wb.active
     row1 = [c.value for c in ws[3]]
     row2 = [c.value for c in ws[4]]
-    assert row1[:4] == [1, "createUser", "OK", "201"]
-    assert not row1[4]  # openpyxlは空文字を書き込むとNoneとして読み戻す
-    assert row2 == [2, "deleteUser", "NG", "404", "該当する行が見つかりません"]
+    assert row1[:5] == [1, None, "createUser", "OK", "201"]
+    assert not row1[5]  # openpyxlは空文字を書き込むとNoneとして読み戻す
+    assert row2 == [2, None, "deleteUser", "NG", "404", "該当する行が見つかりません"]
 
 
 def test_write_report_ok_and_ng_rows_have_different_fill_colors(tmp_path):
@@ -59,3 +59,14 @@ def test_write_report_creates_parent_directory(tmp_path):
     output = tmp_path / "nested" / "dir" / "report.xlsx"
     write_report([("a", True, "200", "")], output)
     assert output.exists()
+
+
+def test_write_report_includes_shared_case_id_for_new_rows(tmp_path):
+    output = tmp_path / "report.xlsx"
+    write_report([("DB-case-1", "createUser", True, "201", "")], output)
+
+    wb = openpyxl.load_workbook(output, data_only=True)
+    ws = wb.active
+    assert "試験ID" in [cell.value for cell in ws[2]]
+    row = [cell.value for cell in ws[3]]
+    assert row[:5] == [1, "DB-case-1", "createUser", "OK", "201"]

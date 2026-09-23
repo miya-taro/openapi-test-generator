@@ -1,10 +1,8 @@
 import sys
-import json
 from pathlib import Path
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from request_builder import build_url, build_body_args
+from request_builder import build_url, build_request_body
 from models import RunCase
 
 
@@ -149,7 +147,6 @@ _MULTI_PATH_PARAM_OPENAPI = {
 def test_multiple_path_params_only_tested_one_uses_input_value():
     # 複数 path param を持つエンドポイントで postId をテストする場合、
     # テスト対象外の userId にもスキーマベースのベースライン値が必要
-    # （IMPLEMENTATION_PLAN_RUNNER.md で「将来対応」とされていたケース）。
     case = make_case(
         path="/users/{userId}/posts/{postId}", operation_id="getUserPost", method="GET",
         param_in="path", param_name="postId", input_value="999",
@@ -286,14 +283,14 @@ def test_array_query_param_without_openapi_falls_back_to_raw_value():
     assert "tags=%5B" in url  # JSON文字列がそのままURLエンコードされる（従来通り）
 
 
-# --- build_body_args tests ---
+# --- build_request_body tests ---
 
-def test_non_body_returns_empty():
+def test_non_body_returns_none():
     case = make_case(param_in="query")
-    assert build_body_args(case, None) == []
+    assert build_request_body(case, None) is None
 
 
-def test_body_produces_dash_d():
+def test_body_produces_json_body():
     case = make_case(
         operation_id="createUser",
         path="/users",
@@ -302,10 +299,9 @@ def test_body_produces_dash_d():
         param_name="name",
         input_value="Alice",
     )
-    args = build_body_args(case, None)
-    assert args[0] == "-d"
-    body = json.loads(args[1])
-    assert body["name"] == "Alice"
+    prepared = build_request_body(case, None)
+    assert prepared.is_multipart is False
+    assert prepared.json_body["name"] == "Alice"
 
 
 def test_field_omit_marker_excluded():
@@ -317,8 +313,7 @@ def test_field_omit_marker_excluded():
         param_name="name",
         input_value="（フィールドを省略）",
     )
-    args = build_body_args(case, None)
-    body = json.loads(args[1])
+    body = build_request_body(case, None).json_body
     assert "name" not in body
 
 
@@ -331,8 +326,7 @@ def test_body_empty_value_marker_sends_empty_string():
         param_name="name",
         input_value="（空文字）",
     )
-    args = build_body_args(case, None)
-    body = json.loads(args[1])
+    body = build_request_body(case, None).json_body
     assert body["name"] == ""
 
 
@@ -373,8 +367,7 @@ def test_baseline_fills_other_required_fields():
         param_name="name",
         input_value="Alice",
     )
-    args = build_body_args(case, SAMPLE_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, SAMPLE_OPENAPI).json_body
     assert body["name"] == "Alice"
     assert body["age"] == 0       # minimum: 0
     assert body["email"] == "test@example.com"  # format: email
@@ -389,8 +382,7 @@ def test_baseline_does_not_override_test_field():
         param_name="age",
         input_value="25",
     )
-    args = build_body_args(case, SAMPLE_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, SAMPLE_OPENAPI).json_body
     assert body["age"] == 25
 
 
@@ -431,8 +423,7 @@ def test_baseline_excludes_readonly_field_even_if_required():
         param_name="title",
         input_value="バグ報告",
     )
-    args = build_body_args(case, READONLY_DEFAULT_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, READONLY_DEFAULT_OPENAPI).json_body
     assert "id" not in body
     assert body["title"] == "バグ報告"
 
@@ -446,8 +437,7 @@ def test_baseline_uses_schema_default_over_generic_dummy():
         param_name="title",
         input_value="バグ報告",
     )
-    args = build_body_args(case, READONLY_DEFAULT_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, READONLY_DEFAULT_OPENAPI).json_body
     assert body["status"] == "open"
 
 
@@ -483,8 +473,7 @@ def test_baseline_minlength_string():
         param_name="name",
         input_value="Widget",
     )
-    args = build_body_args(case, openapi)
-    body = json.loads(args[1])
+    body = build_request_body(case, openapi).json_body
     assert body["code"] == "aaaaa"  # minLength: 5
     assert body["name"] == "Widget"
 
@@ -554,40 +543,35 @@ def _order_case(**kwargs) -> RunCase:
 
 def test_nested_field_is_set_at_correct_path_not_as_flat_key():
     case = _order_case(param_name="customer.address.zipCode", input_value="1234567")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["customer"]["address"]["zipCode"] == "1234567"
     assert "customer.address.zipCode" not in body
 
 
 def test_nested_field_omit_removes_only_that_key():
     case = _order_case(param_name="customer.address.zipCode", input_value="（フィールドを省略）")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert "zipCode" not in body["customer"]["address"]
     assert "name" in body["customer"]
 
 
 def test_array_item_field_is_set_inside_array_element():
     case = _order_case(param_name="lines[].sku", input_value="ABC123")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["lines"][0]["sku"] == "ABC123"
     assert body["lines"][0]["qty"] == 1  # baseline (minimum)
 
 
 def test_array_item_field_omit_removes_only_that_key():
     case = _order_case(param_name="lines[].qty", input_value="（フィールドを省略）")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert "qty" not in body["lines"][0]
     assert body["lines"][0]["sku"]
 
 
 def test_root_body_empty_marker_sends_actual_empty_object():
     case = _order_case(param_name="requestBody", input_value="{}")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body == {}
 
 
@@ -595,14 +579,13 @@ def test_root_body_additional_properties_marker_adds_extra_key_to_valid_body():
     case = _order_case(
         param_name="requestBody", input_value='{ ...validBody, "__extra__": "value" }'
     )
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["__extra__"] == "value"
     assert body["amount"] == 1
     assert body["customer"]["name"]
 
 
-# --one-of-full-coverage 用マーカーの解決（parser.py が残す _oneOfVariants を消費する側）
+# oneOf/anyOfバリアント網羅生成用マーカーの解決（parser.py が残す _oneOfVariants を消費する側）
 
 ONE_OF_OPENAPI = {
     "paths": {
@@ -646,29 +629,87 @@ def _contact_case(**kwargs) -> RunCase:
 
 def test_one_of_variant_marker_builds_that_variants_baseline_body():
     case = _contact_case(param_name="requestBody", input_value="__ONE_OF_VARIANT__1")
-    args = build_body_args(case, ONE_OF_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, ONE_OF_OPENAPI).json_body
     assert body == {"email": "test@example.com"}
 
 
 def test_one_of_variant_marker_out_of_range_falls_back_to_baseline():
     case = _contact_case(param_name="requestBody", input_value="__ONE_OF_VARIANT__99")
-    args = build_body_args(case, ONE_OF_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, ONE_OF_OPENAPI).json_body
     assert body == {"name": "a"}
+
+
+# ネストしたbodyフィールドでのoneOfバリアント解決（バリアントごとに型が異なるケースを含む）
+
+NESTED_ONE_OF_OPENAPI = {
+    "paths": {
+        "/orders": {
+            "post": {
+                "operationId": "createOrder",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["contact"],
+                                "properties": {
+                                    "contact": {
+                                        # 代表バリアント（インデックス0）はobject。
+                                        # インデックス1は全く異なる型（string）。
+                                        "type": "object",
+                                        "required": ["email"],
+                                        "properties": {"email": {"type": "string", "format": "email"}},
+                                        "_oneOfVariants": [
+                                            {
+                                                "type": "object",
+                                                "required": ["email"],
+                                                "properties": {"email": {"type": "string", "format": "email"}},
+                                            },
+                                            {"type": "string", "minLength": 3},
+                                        ],
+                                    },
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def _order_one_of_case(**kwargs) -> RunCase:
+    defaults = dict(operation_id="createOrder", path="/orders", method="POST", param_in="body")
+    defaults.update(kwargs)
+    return make_case(**defaults)
+
+
+def test_nested_field_one_of_variant_marker_builds_that_variants_value():
+    case = _order_one_of_case(param_name="contact", input_value="__ONE_OF_VARIANT__1")
+    body = build_request_body(case, NESTED_ONE_OF_OPENAPI).json_body
+    # 代表バリアント（object）とは異なる型（string）のバリアント値が、field_schemaの
+    # 型判定（_coerce_value）に引きずられず正しく文字列として設定されること
+    assert body["contact"] == "aaa"
+
+
+def test_nested_field_one_of_variant_marker_out_of_range_falls_back_to_coerce():
+    case = _order_one_of_case(param_name="contact", input_value="__ONE_OF_VARIANT__99")
+    body = build_request_body(case, NESTED_ONE_OF_OPENAPI).json_body
+    # 解決できない場合は通常の _coerce_value 経路にフォールバックする
+    # （field_schemaはobject型なので、文字列マーカーがそのまま raw 文字列として入る）
+    assert body["contact"] == "__ONE_OF_VARIANT__99"
 
 
 def test_null_marker_sends_actual_json_null_not_string():
     case = _order_case(param_name="amount", input_value="null")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["amount"] is None
 
 
 def test_null_marker_on_nested_field():
     case = _order_case(param_name="customer.address.zipCode", input_value="null")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["customer"]["address"]["zipCode"] is None
 
 
@@ -679,16 +720,14 @@ def test_null_marker_on_nested_field():
 
 def test_array_field_json_literal_is_parsed_not_sent_as_string():
     case = _order_case(param_name="lines", input_value='[{"sku": "abc", "qty": 1}]')
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["lines"] == [{"sku": "abc", "qty": 1}]
     assert isinstance(body["lines"], list)
 
 
 def test_array_field_empty_array_literal_is_parsed():
     case = _order_case(param_name="lines", input_value="[]")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["lines"] == []
 
 
@@ -696,21 +735,94 @@ def test_array_field_type_mismatch_literal_stays_a_string():
     # common.py の型不正テスト由来: '"not-an-array"' というJSON文字列リテラル
     # → パース後は python の str "not-an-array" になる（意図通り、配列ではなく文字列を送る）
     case = _order_case(param_name="lines", input_value='"not-an-array"')
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["lines"] == "not-an-array"
 
 
 def test_object_field_json_literal_is_parsed_not_sent_as_string():
     case = _order_case(param_name="customer", input_value='{"name": "a", "address": {"zipCode": "1234567"}}')
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["customer"] == {"name": "a", "address": {"zipCode": "1234567"}}
 
 
 def test_array_field_malformed_json_falls_back_to_raw_string():
     # 万一パースできない文字列が来ても、例外にせず生の文字列にフォールバックする
     case = _order_case(param_name="lines", input_value="not valid json at all")
-    args = build_body_args(case, NESTED_OPENAPI)
-    body = json.loads(args[1])
+    body = build_request_body(case, NESTED_OPENAPI).json_body
     assert body["lines"] == "not valid json at all"
+
+
+# --- multipart/form-data ---
+
+MULTIPART_OPENAPI = {
+    "paths": {
+        "/avatars": {
+            "post": {
+                "operationId": "uploadAvatar",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["file", "caption"],
+                                "properties": {
+                                    "file": {"type": "string", "format": "binary"},
+                                    "caption": {"type": "string", "minLength": 1},
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def _avatar_case(**kwargs) -> RunCase:
+    defaults = dict(operation_id="uploadAvatar", path="/avatars", method="POST", param_in="body")
+    defaults.update(kwargs)
+    return make_case(**defaults)
+
+
+def test_multipart_is_flagged_and_not_json():
+    case = _avatar_case(param_name="caption", input_value="hello")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    assert prepared.is_multipart is True
+    assert prepared.json_body is None
+
+
+def test_multipart_field_under_test_sent_as_form_field():
+    case = _avatar_case(param_name="caption", input_value="hello world")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    assert prepared.multipart_fields["caption"] == (None, "hello world")
+
+
+def test_multipart_file_upload_marker_sent_as_file_tuple():
+    case = _avatar_case(param_name="file", input_value="（ファイルアップロード：ダミーファイル）")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    filename, content, content_type = prepared.multipart_fields["file"]
+    assert filename  # ダミーファイル名が設定されている
+    assert content  # ダミーのバイナリ内容が設定されている
+    assert content_type
+
+
+def test_multipart_baseline_fills_other_required_fields():
+    # caption をテスト対象にしても、file（他のrequiredフィールド）もbaselineとして
+    # ダミーファイル参照で埋まっている必要がある
+    case = _avatar_case(param_name="caption", input_value="hello")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    assert "file" in prepared.multipart_fields
+    assert len(prepared.multipart_fields["file"]) == 3  # (filename, content, content_type)
+
+
+def test_multipart_omit_marker_removes_field():
+    case = _avatar_case(param_name="caption", input_value="（省略）")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    assert "caption" not in prepared.multipart_fields
+
+
+def test_multipart_empty_value_marker_sends_empty_string():
+    case = _avatar_case(param_name="caption", input_value="（空文字）")
+    prepared = build_request_body(case, MULTIPART_OPENAPI)
+    assert prepared.multipart_fields["caption"] == (None, "")

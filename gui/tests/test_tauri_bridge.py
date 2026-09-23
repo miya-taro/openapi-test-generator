@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import tauri_bridge
@@ -69,11 +71,68 @@ def test_dispatch_health_check_unreachable_host():
 
 
 def test_dispatch_unknown_command_raises():
-    try:
+    with pytest.raises(ValueError, match="nope"):
         tauri_bridge._dispatch("nope", {})
-        assert False, "should have raised"
-    except ValueError as e:
-        assert "nope" in str(e)
+
+
+def test_dispatch_loads_and_saves_case_master_review_state(tmp_path):
+    master_path = tmp_path / "case-master.json"
+    from workflow.case_master import write_case_master
+
+    write_case_master({
+        "format": "api-tester.case-master", "schemaVersion": 1,
+        "project": {"name": "sample"},
+        "cases": [{"caseId": "TC-1", "kind": "contract", "title": "case",
+                   "source": {}, "definition": {}, "expected": {}, "reviewStatus": "draft"}],
+    }, master_path)
+
+    loaded = tauri_bridge._dispatch("load_case_master", {"path": str(master_path)})
+    saved = tauri_bridge._dispatch("save_case_master_reviews", {
+        "path": str(master_path), "updates": {"TC-1": "reviewed"},
+    })
+
+    assert loaded["cases"][0]["caseId"] == "TC-1"
+    assert saved["cases"][0]["reviewStatus"] == "reviewed"
+
+
+def test_dispatch_loads_only_valid_failed_case_ids(tmp_path):
+    path = tmp_path / "failed-case-ids.json"
+    path.write_text('["TC-1", "DB-case-2"]', encoding="utf-8")
+
+    result = tauri_bridge._dispatch("load_failed_case_ids", {"path": str(path)})
+
+    assert result == ["TC-1", "DB-case-2"]
+
+
+def test_dispatch_load_project_returns_only_public_project_fields(tmp_path):
+    project = tmp_path / "project.json"
+    project.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "name": "orders",
+                "openapiPath": "openapi.json",
+                "baseUrl": "https://vm.local/api",
+                "outputDir": "results",
+                "selectedOperations": ["getOrders"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = tauri_bridge._dispatch("load_project", {"path": str(project)})
+
+    assert result == {
+        "schemaVersion": 1,
+        "name": "orders",
+        "openapiPath": str((tmp_path / "openapi.json").resolve()),
+        "baseUrl": "https://vm.local/api",
+        "outputDir": str((tmp_path / "results").resolve()),
+        "selectedOperations": ["getOrders"],
+        "setupSqlPath": None,
+        "teardownSqlPath": None,
+        "dbScenariosPath": None,
+    }
 
 
 def test_servers_url_returns_first_server(tmp_path):

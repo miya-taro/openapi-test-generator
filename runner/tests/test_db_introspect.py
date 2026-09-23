@@ -3,7 +3,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from db_introspect import (
-    ColumnInfo,
     ForeignKeyInfo,
     TableInfo,
     _extract_allowed_values,
@@ -86,3 +85,14 @@ def test_extract_allowed_values_returns_none_for_range_check():
 def test_extract_allowed_values_returns_none_when_no_literals_in_array():
     clause = "((x)::text = ANY ((ARRAY[])::text[]))"
     assert _extract_allowed_values(clause) is None
+
+
+def test_extract_allowed_values_unescapes_doubled_single_quote():
+    # PostgreSQLのSQL標準文字列リテラルは埋め込まれた ' を \' ではなく '' (二重化)で
+    # エスケープする。バックスラッシュエスケープ前提のパターンだと、二重化された ' を
+    # 別々の文字列境界と誤認し、1個の値が2個の断片に壊れて分割されてしまっていた。
+    clause = (
+        "(status = ANY ((ARRAY['active'::character varying, "
+        "'it''s-a-status'::character varying])::text[]))"
+    )
+    assert _extract_allowed_values(clause) == ["active", "it's-a-status"]

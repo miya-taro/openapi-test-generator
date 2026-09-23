@@ -24,7 +24,7 @@ def main() -> int:
     schema_sql = (DOCS / "schema.sql").read_text(encoding="utf-8")
 
     last_error: Exception | None = None
-    for attempt in range(30):
+    for _attempt in range(30):
         try:
             conn = psycopg2.connect(**config)
             break

@@ -8,7 +8,7 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
     opts = ctx["opts"]
 
     item_schema = schema.get("items") or {}
-    item_type = item_schema.get("type") or "string"
+    item_type = _infer_type(item_schema)
     sample_item = _get_sample_item(item_type, item_schema)
 
     # minItems
@@ -94,6 +94,23 @@ def _get_sample_item(item_type: str, item_schema: dict) -> str:
     return '"a"'
 
 
+def _infer_type(schema: dict) -> str:
+    """schema["type"]が無指定でも、propertiesがあればobject型として扱う。
+
+    JSON Schemaではtypeの明示は必須ではなく、properties/requiredだけを書いた
+    スキーマも正当（typeがobjectであることは暗黙的に分かる）。ここを見落として
+    素朴に"string"にフォールバックすると、object型を期待する要素に文字列
+    プレースホルダを埋めてしまい、境界値以外の理由（型不正）で失敗する
+    誤ったテストケースになる。
+    """
+    t = schema.get("type")
+    if t:
+        return t
+    if "properties" in schema:
+        return "object"
+    return "string"
+
+
 def _build_sample_object(item_schema: dict) -> dict:
     properties = item_schema.get("properties") or {}
     required = item_schema.get("required") or list(properties.keys())
@@ -101,7 +118,7 @@ def _build_sample_object(item_schema: dict) -> dict:
 
 
 def _sample_scalar(prop_schema: dict):
-    prop_type = prop_schema.get("type")
+    prop_type = _infer_type(prop_schema)
     if prop_type in ("integer", "number"):
         return 1
     if prop_type == "boolean":

@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.renderer.excel_output import COLOR
 
-HEADERS = ["No", "シナリオ名", "判定", "APIステータス", "詳細"]
+HEADERS = ["No", "試験ID", "シナリオ名", "判定", "APIステータス", "詳細"]
 
 _HEADER_FILL = PatternFill(fill_type="solid", fgColor=COLOR["headerBg"])
 _HEADER_FONT = Font(color=COLOR["headerFg"], bold=True)
@@ -28,11 +28,11 @@ _THIN_BORDER = Border(
     bottom=Side(style="thin", color=COLOR["border"]),
     right=Side(style="thin", color=COLOR["border"]),
 )
-_COL_WIDTHS = [6, 30, 8, 16, 60]
+_COL_WIDTHS = [6, 22, 30, 8, 16, 60]
 
 
-def write_report(rows: list[tuple[str, bool, str, str]], output_path: str | Path) -> None:
-    """rows: [(シナリオ名, 適合したか, APIステータス表示用文字列, 詳細メッセージ), ...]"""
+def write_report(rows: list[tuple], output_path: str | Path) -> None:
+    """Accept legacy 4-field rows and case-ID-aware 5-field rows."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "DBシナリオ結果"
@@ -46,8 +46,15 @@ def write_report(rows: list[tuple[str, bool, str, str]], output_path: str | Path
         cell.border = _THIN_BORDER
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    for i, (name, ok, api_status, detail) in enumerate(rows, start=1):
-        row = [i, name, "OK" if ok else "NG", api_status, detail]
+    for i, row_data in enumerate(rows, start=1):
+        if len(row_data) == 5:
+            case_id, name, ok, api_status, detail = row_data
+        elif len(row_data) == 4:
+            name, ok, api_status, detail = row_data
+            case_id = ""
+        else:
+            raise ValueError("DBシナリオ結果の行は4要素または5要素で指定してください")
+        row = [i, case_id, name, "OK" if ok else "NG", api_status, detail]
         ws.append(row)
         for cell in ws[i + 2]:
             cell.fill = _OK_FILL if ok else _NG_FILL

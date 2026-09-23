@@ -1,12 +1,75 @@
 from __future__ import annotations
-from models import RunResult, ResponseSchema
+import re
+
+from models import EXIT_TIMEOUT, RunResult, ResponseSchema
 from response_validator import validate_body
+from sensitive_data import (
+    contains_private_key_header,
+    credential_findings,
+    redact_header_value,
+    redact_sensitive_response,
+)
 
 # Verdict constants
 PASS = "OK"
 FAIL = "NG"
 WARN = "WARNING"
 SKIP = "SKIP"
+
+_PHP_RUNTIME_ERROR = re.compile(
+    r"\b(?:Fatal error|Parse error|Uncaught\s+[\w\\]*(?:Error|Exception))\b",
+    re.IGNORECASE,
+)
+_PHP_DIAGNOSTIC = re.compile(
+    r"\b(?:Warning|Notice|Deprecated):[^\r\n]*\bin\s+\S+\s+on line\s+\d+",
+    re.IGNORECASE,
+)
+_PYTHON_TRACEBACK = re.compile(r"Traceback \(most recent call last\):")
+_STACK_TRACE = re.compile(r"Stack trace:\s*(?:\r?\n)?\s*(?:#\d+|at\s+)", re.IGNORECASE)
+_DATABASE_ERROR = re.compile(
+    r"\b(?:SQLSTATE\s*\[[0-9A-Z]{5}\](?![0-9A-Z])|ORA-\d{5}\b|PDOException\b|"
+    r"mysqli_sql_exception\b|SQLITE_ERROR\b|You have an error in your SQL syntax\b|"
+    r"SQL syntax error\b|syntax error at or near\b|unterminated quoted string\b|"
+    r"no such table\b|unknown column\b)",
+    re.IGNORECASE,
+)
+def _response_error_leaks(body: str) -> list[str]:
+    """レスポンスへ漏れた明確な実行時エラーの種別だけを返す。
+
+    レスポンス本文やファイルパス自体は詳細へ含めず、報告書への二次漏えいを防ぐ。
+    """
+    findings: list[str] = []
+    if _PHP_RUNTIME_ERROR.search(body) or _PHP_DIAGNOSTIC.search(body):
+        findings.append("PHPエラー情報の露出")
+    if _PYTHON_TRACEBACK.search(body) or _STACK_TRACE.search(body):
+        findings.append("スタックトレースの露出")
+    if _DATABASE_ERROR.search(body):
+        findings.append("データベースエラー情報の露出")
+    if contains_private_key_header(body):
+        findings.append("秘密鍵ブロックの露出")
+    return findings
+
+
+def _response_credential_leaks(body: str) -> list[str]:
+    """既知プロバイダー形式の資格情報を検出し、値を含めず種別だけ返す。
+
+    一般的なJWTや任意の長い文字列は、通常のAPI応答にも現れるため対象外にする。
+    """
+    return credential_findings(body)
+
+
+def _content_type_matches(actual_ct: str, expected_ct: str) -> bool:
+    """メディアタイプ部分（`;`より前、charset等のパラメータを除いた部分）を
+    大小無視で完全一致比較する。
+
+    以前は単純な前方一致（str.startswith）だったため、"application/json" を期待している
+    ところに全く別のメディアタイプ "application/json-patch+json" が返ってきても、
+    文字列としては前方一致してしまい誤ってOK判定していた（RFC 7231上メディアタイプは
+    トークン単位で区別すべきで、部分文字列一致は不正確）。
+    """
+    actual_media_type = actual_ct.split(";", 1)[0].strip().lower()
+    expected_media_type = expected_ct.split(";", 1)[0].strip().lower()
+    return actual_media_type == expected_media_type
 
 
 def _find_header(actual_headers: dict[str, str], name: str) -> str | None:
@@ -20,19 +83,28 @@ def _find_header(actual_headers: dict[str, str], name: str) -> str | None:
 
 def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     """Return (verdict, detail). verdict is one of OK/NG/WARNING/SKIP."""
+    result.report_body = redact_sensitive_response(
+        result.actual_body, schema.expected_body_schema
+    )
     if result.error:
-        if result.curl_exit_code == 28:
-            return FAIL, f"タイムアウト (curl exit 28)"
-        return FAIL, f"curl エラー: {result.error}"
+        if result.exit_code == EXIT_TIMEOUT:
+            return FAIL, "タイムアウト"
+        return FAIL, f"リクエストエラー: {result.error}"
+
+    leak_details = [
+        *_response_error_leaks(result.actual_body),
+        *_response_credential_leaks(result.actual_body),
+    ]
 
     # Level 1: status code
     if result.actual_status != schema.expected_status:
-        return FAIL, (
+        status_detail = (
             f"ステータス不一致: 期待={schema.expected_status}, "
             f"実測={result.actual_status}"
         )
+        return FAIL, "; ".join([status_detail, *leak_details])
 
-    fail_details: list[str] = []
+    fail_details: list[str] = list(leak_details)
     warn_details: list[str] = []
 
     # Level 2: response time
@@ -45,7 +117,7 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     # Level 3: Content-Type
     if schema.expected_content_type:
         actual_ct = result.actual_headers.get("Content-Type", "")
-        if not actual_ct.startswith(schema.expected_content_type):
+        if not _content_type_matches(actual_ct, schema.expected_content_type):
             fail_details.append(
                 f"Content-Type不一致: 期待={schema.expected_content_type}, "
                 f"実測={actual_ct!r}"
@@ -57,8 +129,10 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
         if actual_value is None:
             fail_details.append(f"ヘッダ不足: {header_name} が存在しません")
         elif expected_value is not None and actual_value != expected_value:
+            safe_expected = redact_header_value(header_name, expected_value)
+            safe_actual = redact_header_value(header_name, actual_value)
             fail_details.append(
-                f"{header_name}不一致: 期待={expected_value}, 実測={actual_value!r}"
+                f"{header_name}不一致: 期待={safe_expected}, 実測={safe_actual!r}"
             )
 
     # Level 4: レスポンスボディの JSON Schema 適合

@@ -92,6 +92,45 @@ def test_object_array_without_required_falls_back_to_all_properties():
     assert json.loads(normal["inputValue"]) == [{"x": 1}]
 
 
+def test_object_array_without_explicit_type_still_inferred_as_object():
+    # items スキーマが "type": "object" を明示せず properties/required だけを書いている
+    # 場合（JSON Schema上typeの明示は必須ではない）でも、素朴に"string"へフォールバック
+    # せずobject型として扱えること。素朴にフォールバックすると要素が"a"という文字列に
+    # なり、構造的に不正な要素になってしまう（本テストの回帰対象）。
+    import json
+
+    schema = {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "required": ["name"],
+            "properties": {"name": {"type": "string"}},
+        },
+    }
+    cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
+    normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
+    assert json.loads(normal["inputValue"]) == [{"name": "a"}]
+
+
+def test_object_array_nested_property_without_explicit_type_still_inferred_as_object():
+    import json
+
+    schema = {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "type": "object",
+            "required": ["inner"],
+            "properties": {
+                "inner": {"required": ["id"], "properties": {"id": {"type": "integer"}}},
+            },
+        },
+    }
+    cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
+    normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
+    assert json.loads(normal["inputValue"]) == [{"inner": {"id": 1}}]
+
+
 def test_object_array_nested_object_property_recurses():
     import json
 

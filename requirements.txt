@@ -1,9 +1,6 @@
-openpyxl>=3.1.0
-psycopg2-binary>=2.9
+# Runtime dependencies are shared with the portable Windows package.
+-r requirements-runtime.txt
+
+# Test-only dependencies.
 pytest>=8.0.0
 pytest-httpserver>=1.1.0
-exrex>=0.11.0
-jsonschema>=4.20.0
-PyYAML>=6.0
-influxdb>=5.3.0
-PySide6>=6.7.0

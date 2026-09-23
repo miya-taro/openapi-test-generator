@@ -1,12 +1,11 @@
 import sys
-import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import patch
+import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from http_client import execute_with_openapi, health_check, check_curl_available
-from models import RunCase, RunResult
+from http_client import execute_with_openapi, health_check, _resolve_auth_header
+from models import EXIT_ERROR, EXIT_OK, EXIT_TIMEOUT, RunCase
 
 
 def make_case(**kwargs) -> RunCase:
@@ -28,87 +27,135 @@ def make_case(**kwargs) -> RunCase:
     return RunCase(**defaults)
 
 
-HEADER_BLOCK = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
-HEADER_BLOCK_400 = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\r\n"
+def mock_send(status: int = 200, body: str = "", headers: dict | None = None, capture: list | None = None):
+    """requests.Session.send を差し替えるフェイク。実際に送信される PreparedRequest を
+    capture リストに記録するので、テスト側で送信内容（メソッド・ヘッダ・URL等）を検証できる。
+    """
+    def _send(self, prepared_request, **kwargs):
+        if capture is not None:
+            capture.append(prepared_request)
+        resp = requests.Response()
+        resp.status_code = status
+        resp._content = body.encode("utf-8")
+        resp.headers.update(headers or {})
+        resp.request = prepared_request
+        resp.url = prepared_request.url
+        return resp
+    return _send
 
 
-def mock_curl(body_and_metrics: str, returncode: int = 0, header_block: str = HEADER_BLOCK):
-    m = MagicMock()
-    m.stdout = header_block + body_and_metrics
-    m.stderr = ""
-    m.returncode = returncode
-    return m
-
-
-# --- stdout parsing tests ---
+# --- レスポンス解析 ---
 
 def test_parse_200_response():
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('{"items":[]}\n200\n0.123')
+    with patch("requests.Session.send", mock_send(200, '{"items":[]}', {"Content-Type": "application/json"})):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert result.actual_status == 200
-    assert result.elapsed_ms == pytest.approx(123.0)
+    assert result.elapsed_ms >= 0
     assert result.actual_body == '{"items":[]}'
-    assert result.curl_exit_code == 0
+    assert result.exit_code == EXIT_OK
     assert result.error is None
 
 
 def test_parse_400_response():
     case = make_case(input_value="0")
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('{"error":"bad request"}\n400\n0.050', header_block=HEADER_BLOCK_400)
+    with patch("requests.Session.send", mock_send(400, '{"error":"bad request"}', {"Content-Type": "application/json"})):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert result.actual_status == 400
-    assert result.elapsed_ms == pytest.approx(50.0)
 
 
 def test_response_headers_parsed():
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    with patch("requests.Session.send", mock_send(200, "ok", {"Content-Type": "application/json"})):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert result.actual_headers.get("Content-Type") == "application/json"
 
 
 def test_curl_command_stored():
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    with patch("requests.Session.send", mock_send(200, "ok")):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert result.curl_command.startswith("curl.exe")
     assert "http://localhost:8080/users" in result.curl_command
 
 
-def test_curl_timeout_returns_error():
+# --- Session 共有・Cookie 永続化 ---
+
+def test_session_passed_in_is_used_for_send():
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl("", returncode=28, header_block="")
+    captured_self = []
+
+    def _send(self, prepared_request, **kwargs):
+        captured_self.append(self)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"ok"
+        return resp
+
+    session = requests.Session()
+    with patch("requests.Session.send", _send):
+        execute_with_openapi(case, "http://localhost:8080", None, session)
+    assert captured_self == [session]
+
+
+def test_persist_cookies_false_clears_session_cookies_after_call():
+    case = make_case()
+    session = requests.Session()
+    session.cookies.set("sid", "abc123")
+    with patch("requests.Session.send", mock_send(200, "ok")):
+        execute_with_openapi(case, "http://localhost:8080", None, session, persist_cookies=False)
+    assert len(session.cookies) == 0
+
+
+def test_persist_cookies_true_keeps_session_cookies():
+    case = make_case()
+    session = requests.Session()
+    session.cookies.set("sid", "abc123")
+    with patch("requests.Session.send", mock_send(200, "ok")):
+        execute_with_openapi(case, "http://localhost:8080", None, session, persist_cookies=True)
+    assert session.cookies.get("sid") == "abc123"
+
+
+# --- エラー系 ---
+
+def test_timeout_returns_error():
+    case = make_case()
+
+    def _send(self, prepared_request, **kwargs):
+        raise requests.exceptions.Timeout("timed out")
+
+    with patch("requests.Session.send", _send):
         result = execute_with_openapi(case, "http://localhost:8080", None)
-    assert result.curl_exit_code == 28
+    assert result.exit_code == EXIT_TIMEOUT
     assert result.actual_status == 0
     assert result.error is not None
 
 
-def test_curl_not_found_returns_error():
+def test_connection_error_returns_error():
     case = make_case()
-    with patch("subprocess.run", side_effect=FileNotFoundError):
+
+    def _send(self, prepared_request, **kwargs):
+        raise requests.exceptions.ConnectionError("connection refused")
+
+    with patch("requests.Session.send", _send):
         result = execute_with_openapi(case, "http://localhost:8080", None)
-    assert result.curl_exit_code == 127
-    assert "not found" in result.error
+    assert result.exit_code == EXIT_ERROR
+    assert result.actual_status == 0
+    assert "connection refused" in result.error
 
 
-HEADER_201 = "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\n\r\n"
+# --- 認証ヘッダ ---
+
+HEADER_201 = {"Content-Type": "application/json"}
 
 
 def test_auth_token_added_when_env_set(monkeypatch):
     monkeypatch.setenv("TEST_AUTH_TOKEN", "mytoken")
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    capture: list = []
+    with patch("requests.Session.send", mock_send(200, "ok", capture=capture)):
         execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert "Authorization: Bearer mytoken" in " ".join(cmd)
+    assert capture[0].headers.get("Authorization") == "Bearer mytoken"
 
 
 def test_auth_token_masked_in_stored_curl_command(monkeypatch):
@@ -116,8 +163,7 @@ def test_auth_token_masked_in_stored_curl_command(monkeypatch):
     # 平文のトークンを残してはならない。
     monkeypatch.setenv("TEST_AUTH_TOKEN", "supersecrettoken")
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    with patch("requests.Session.send", mock_send(200, "ok")):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert "supersecrettoken" not in result.curl_command
     assert "***MASKED***" in result.curl_command
@@ -128,8 +174,7 @@ def test_auth_header_env_masked_in_stored_curl_command(monkeypatch):
     monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "leaked-secret-value")
     monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    with patch("requests.Session.send", mock_send(200, "ok")):
         result = execute_with_openapi(case, "http://localhost:8080", None)
     assert "leaked-secret-value" not in result.curl_command
     assert "***MASKED***" in result.curl_command
@@ -138,73 +183,156 @@ def test_auth_header_env_masked_in_stored_curl_command(monkeypatch):
 def test_no_auth_header_without_token(monkeypatch):
     monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
     case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
+    capture: list = []
+    with patch("requests.Session.send", mock_send(200, "ok", capture=capture)):
         execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert "Authorization" not in " ".join(cmd)
+    assert "Authorization" not in capture[0].headers
 
 
-def test_body_param_adds_content_type():
+def test_auth_probe_bundle_sends_all_invalid_credentials_and_excludes_session_cookies(monkeypatch):
+    import json
+
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "Authorization")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "Bearer valid-login-token")
+    session = requests.Session()
+    session.cookies.set("existing-session", "must-not-leak-into-probe")
+    case = make_case(
+        param_in="header",
+        param_name="__openapi_security__",
+        input_value=json.dumps({
+            "headers": {"Authorization": "invalid-token-xxx", "X-Api-Key": "invalid-key"},
+            "query": {"api_key": "invalid-query-key"},
+            "cookies": {"session_key": "invalid-cookie"},
+        }),
+    )
+    capture: list = []
+
+    with patch("requests.Session.send", mock_send(401, "unauthorized", capture=capture)):
+        result = execute_with_openapi(case, "http://localhost:8080", None, session, persist_cookies=True)
+
+    prepared = capture[0]
+    assert prepared.headers["Authorization"] == "invalid-token-xxx"
+    assert prepared.headers["X-Api-Key"] == "invalid-key"
+    assert prepared.headers["Cookie"] == "session_key=invalid-cookie"
+    assert "existing-session" not in prepared.headers["Cookie"]
+    assert "api_key=invalid-query-key" in prepared.url
+    assert "valid-login-token" not in prepared.headers.values()
+    assert "api_key=invalid-query-key" in result.curl_command
+    assert '"X-Api-Key: invalid-key"' in result.curl_command
+    assert '"Cookie: session_key=invalid-cookie"' in result.curl_command
+    assert "valid-login-token" not in result.curl_command
+
+
+def test_auth_none_probe_omits_environment_and_persisted_cookie_credentials(monkeypatch):
+    monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "Authorization")
+    monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "Bearer valid-login-token")
+    session = requests.Session()
+    session.cookies.set("session", "valid-session-cookie")
+    case = make_case(
+        param_in="header",
+        param_name="__openapi_security__",
+        input_value="（認証ヘッダなし）",
+    )
+    capture: list = []
+
+    with patch("requests.Session.send", mock_send(401, "unauthorized", capture=capture)):
+        execute_with_openapi(case, "http://localhost:8080", None, session, persist_cookies=True)
+
+    assert "Authorization" not in capture[0].headers
+    assert "Cookie" not in capture[0].headers
+
+
+def test_auth_probe_does_not_mutate_persistent_session_cookie_jar():
+    import json
+
+    session = requests.Session()
+    session.cookies.set("sid", "valid-session-cookie")
+    case = make_case(
+        param_in="header",
+        param_name="__openapi_security__",
+        input_value=json.dumps({"headers": {"Authorization": "invalid-token-xxx"}}),
+    )
+    senders = []
+
+    def _send(self, prepared_request, **kwargs):
+        senders.append(self)
+        self.cookies.set("probe-cookie", "must-not-persist")
+        return mock_send(401, "unauthorized")(self, prepared_request, **kwargs)
+
+    with patch("requests.Session.send", _send):
+        execute_with_openapi(case, "http://localhost:8080", None, session, persist_cookies=True)
+
+    assert len(senders) == 1
+    assert senders[0] is not session
+    assert session.cookies.get("sid") == "valid-session-cookie"
+    assert session.cookies.get("probe-cookie") is None
+
+
+# --- body / Content-Type ---
+
+def test_body_param_adds_json_content_type():
     case = make_case(
         method="POST", param_in="body", param_name="name", input_value="Alice"
     )
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('{"id":1}\n201\n0.030', header_block=HEADER_201)
+    capture: list = []
+    with patch("requests.Session.send", mock_send(201, '{"id":1}', HEADER_201, capture=capture)):
         execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert any("Content-Type: application/json" in a for a in cmd)
+    assert capture[0].headers.get("Content-Type", "").startswith("application/json")
+    assert capture[0].body is not None
 
 
-def test_body_in_curl_args():
+MULTIPART_OPENAPI = {
+    "paths": {
+        "/avatars": {
+            "post": {
+                "operationId": "uploadAvatar",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["caption"],
+                                "properties": {"caption": {"type": "string", "minLength": 1}},
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+
+def test_multipart_body_does_not_add_json_content_type():
     case = make_case(
-        method="POST", param_in="body", param_name="name", input_value="Alice"
+        operation_id="uploadAvatar", path="/avatars", method="POST",
+        param_in="body", param_name="caption", input_value="hello",
     )
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('{"id":1}\n201\n0.030', header_block=HEADER_201)
-        execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert "-d" in cmd
+    capture: list = []
+    with patch("requests.Session.send", mock_send(201, '{"id":1}', HEADER_201, capture=capture)):
+        execute_with_openapi(case, "http://localhost:8080", MULTIPART_OPENAPI)
+    content_type = capture[0].headers.get("Content-Type", "")
+    assert content_type.startswith("multipart/form-data")
+    assert not content_type.startswith("application/json")
 
 
 # --- health_check tests ---
 
-def _mock_health(code: str, returncode: int = 0):
-    m = MagicMock()
-    m.stdout = code
-    m.stderr = ""
-    m.returncode = returncode
-    return m
-
-
 def test_health_check_success():
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = _mock_health("200")
+    with patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
         assert health_check("http://localhost:8080") is True
 
 
 def test_health_check_failure_5xx():
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = _mock_health("503")
+    with patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 503
         assert health_check("http://localhost:8080") is False
 
 
-def test_health_check_curl_not_found():
-    with patch("subprocess.run", side_effect=FileNotFoundError):
+def test_health_check_connection_error():
+    with patch("requests.get", side_effect=requests.exceptions.ConnectionError):
         assert health_check("http://localhost:8080") is False
-
-
-# --- check_curl_available tests ---
-
-def test_check_curl_available_raises_when_not_found():
-    with patch("shutil.which", return_value=None):
-        with pytest.raises(RuntimeError, match="curl.exe が見つかりません"):
-            check_curl_available()
-
-
-def test_check_curl_available_ok_when_found():
-    with patch("shutil.which", return_value="/usr/bin/curl.exe"):
-        check_curl_available()  # should not raise
 
 
 # --- _resolve_auth_header priority tests ---
@@ -213,35 +341,18 @@ def test_header_env_takes_priority_over_legacy_token(monkeypatch):
     monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "X-Api-Key")
     monkeypatch.setenv("TEST_AUTH_HEADER_VALUE", "abc123")
     monkeypatch.setenv("TEST_AUTH_TOKEN", "legacytoken")
-    case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
-        execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    joined = " ".join(cmd)
-    assert "X-Api-Key: abc123" in joined
-    assert "Authorization: Bearer legacytoken" not in joined
+    assert _resolve_auth_header() == "X-Api-Key: abc123"
 
 
 def test_falls_back_to_legacy_token_when_header_env_unset(monkeypatch):
     monkeypatch.delenv("TEST_AUTH_HEADER_NAME", raising=False)
     monkeypatch.delenv("TEST_AUTH_HEADER_VALUE", raising=False)
     monkeypatch.setenv("TEST_AUTH_TOKEN", "legacytoken")
-    case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
-        execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert "Authorization: Bearer legacytoken" in " ".join(cmd)
+    assert _resolve_auth_header() == "Authorization: Bearer legacytoken"
 
 
 def test_no_header_when_only_name_set(monkeypatch):
     monkeypatch.setenv("TEST_AUTH_HEADER_NAME", "X-Api-Key")
     monkeypatch.delenv("TEST_AUTH_HEADER_VALUE", raising=False)
     monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
-    case = make_case()
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = mock_curl('ok\n200\n0.010')
-        execute_with_openapi(case, "http://localhost:8080", None)
-        cmd = mock_run.call_args[0][0]
-    assert "X-Api-Key" not in " ".join(cmd)
+    assert _resolve_auth_header() is None

@@ -1,0 +1,14 @@
+# Lint設定。バグに直結するルールに絞っている（import順序等のスタイル系ルールは対象外）。
+#
+# F   (pyflakes): 未使用import・未定義名など
+# E9  : 構文エラー
+# B   (flake8-bugbear): except節でのraise-from漏れ、ループ変数の握りつぶし等、実バグになりやすいパターン
+[lint]
+select = ["F", "E9", "B"]
+
+# 生成物・ビルド出力・外部ライブラリのコピーは対象外
+exclude = [
+    "gui-tauri",
+    "*.generated",
+    "__pycache__",
+]

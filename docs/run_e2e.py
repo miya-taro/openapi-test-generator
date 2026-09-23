@@ -67,13 +67,21 @@ def main() -> int:
             print("[e2e][FAIL] Layer1 生成に失敗しました", file=sys.stderr)
             return 1
 
-        if _run([
+        # runner.py の終了コードは 1=NG（実失敗）, 2=WARNのみ（応答時間超過等、実失敗はゼロ）。
+        # ここでの目的はバリデーション網羅性ではなく配線が壊れていないことの確認なので、
+        # WARNのみ（実際には何も失敗していない）を実失敗と同じ扱いにしない
+        # （以前は != 0 で両方を一律FAIL扱いしており、WARNだけのケースを誤って
+        # 「Layer1 実行が失敗しました」と報告していた）。
+        run_code = _run([
             sys.executable, "runner/runner.py", str(spec_path), str(DOCS / "openapi.json"),
             "--base-url", BASE_URL, "--output", str(result_path),
             "--skip-health-check",
-        ]) != 0:
+        ])
+        if run_code == 1:
             print("[e2e][FAIL] Layer1 実行が失敗しました", file=sys.stderr)
             return 1
+        if run_code == 2:
+            print("[e2e][WARN] Layer1 実行でWARNが発生しました（実失敗はありません）")
         print("[e2e][OK] Layer1（正常系スモークテスト）")
 
         # ---------- Layer 2: DBシナリオ検証 ----------

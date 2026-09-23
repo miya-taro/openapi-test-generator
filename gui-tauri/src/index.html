@@ -17,18 +17,24 @@
             </div>
           </div>
           <div id="operations-list"><div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div></div>
-          <div class="footer">openapi-test-gen<br />API Test Generator &amp; Runner</div>
+          <div class="footer">
+            openapi-test-gen<br />API Test Generator &amp; Runner
+            <span id="app-version" class="app-version" aria-label="アプリのバージョン">バージョン確認中...</span>
+          </div>
         </nav>
 
         <div id="main-area">
           <header id="top-nav">
-            <div class="tabs">
-              <button class="tab active" data-page="gen">テスト生成・実行</button>
-              <button class="tab" data-page="db-prep">DB準備</button>
-              <button class="tab" data-page="db-scenario">DBシナリオ</button>
+            <div class="tabs" id="workflow-nav" aria-label="API試験の工程">
+              <button class="tab active" data-page="settings" data-step="target" data-target="project-source" aria-current="step">1. 対象を登録</button>
+              <button class="tab" data-page="gen" data-step="spec" data-target="operations-list">2. 仕様を確認</button>
+              <button class="tab" data-page="gen" data-step="review" data-target="test-preview">3. 試験を確認</button>
+              <button class="tab" data-page="gen" data-step="run" data-target="run-panel">4. 実行</button>
+              <button class="tab" data-page="gen" data-step="result" data-target="run-panel">5. 結果</button>
             </div>
             <div class="tabs tabs-secondary">
-              <button class="tab" data-page="settings">設定</button>
+              <button class="tab" data-page="db-prep">DB準備</button>
+              <button class="tab" data-page="db-scenario">DBシナリオ</button>
             </div>
           </header>
 
@@ -43,13 +49,29 @@
                 <button class="secondary goto-settings-btn" id="goto-settings">設定を変更</button>
               </div>
 
+              <div id="test-preview" class="form-section">
+                <h3 class="form-section-title">2. 仕様と試験を確認</h3>
+                <p class="form-section-desc">左の「対象API」で実行対象を選びます。OpenAPI定義から、選択した操作の正常系・異常系ケースを生成します。</p>
+                <div id="case-review-panel" class="case-review-panel" hidden>
+                  <div class="case-review-heading">
+                    <strong id="case-review-summary"></strong>
+                    <span class="draft-badge">自動生成・人の確認が必要</span>
+                  </div>
+                  <p class="field-caption">各ケースの内容を開いて確認し、「レビュー済み」から「承認」へ進めてください。入力・期待結果はOpenAPIを修正して再準備してください。承認前でも予備実行できます。</p>
+                  <p id="case-review-message" class="field-caption" aria-live="polite"></p>
+                  <div id="case-review-list" class="case-review-list"></div>
+                </div>
+              </div>
+
+              <details id="advanced-settings">
+                <summary>詳細設定（認証・DB・実行方法）</summary>
               <div class="form-section">
                 <h3 class="form-section-title">1. 認証・DBデータ準備<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">ログイン認証が必要なAPI、またはDBへのデータ投入・後片付けが必要な試験でのみ入力してください。</p>
 
                 <label class="checkbox"><input type="checkbox" id="auth-enabled" /> ログイン認証を行う</label>
                 <div class="form-field">
-                  <label>ログイン操作</label>
+                  <label for="auth-login-op">ログイン操作</label>
                   <select id="auth-login-op">
                     <option value="">「設定」画面でopenapi.jsonを選択すると一覧から選べます</option>
                   </select>
@@ -59,8 +81,13 @@
                   </p>
                 </div>
                 <div class="form-field">
-                  <label>ログインリクエストのボディ</label>
+                  <label for="auth-body">ログインリクエストのボディ</label>
                   <textarea id="auth-body" rows="3" placeholder='{"username": "test", "password": "test1234"}'></textarea>
+                </div>
+                <div class="form-field">
+                  <label for="auth-profiles">役割別ログイン情報（任意）</label>
+                  <textarea id="auth-profiles" rows="3" placeholder='{"read_only": {"username": "reader", "password": "..."}}'></textarea>
+                  <p class="field-caption">DBシナリオで <code>auth_profile: read_only</code> のように指定します。ログイン先・token設定は共通です。通常設定には保存されず、起動ごとに再入力します（「ファイルに保存」を押した場合は選択先に保存されます）。</p>
                 </div>
                 <div class="db-fields-grid">
                   <input id="auth-token-path" type="text" placeholder="token_path（既定: access_token。任意）" />
@@ -73,14 +100,14 @@
                 <div id="auth-config-status" class="field-caption status-message"></div>
 
                 <div class="form-field" style="margin-top: 14px">
-                  <label>試験前SQL</label>
+                  <label for="setup-sql-path">試験前SQL</label>
                   <div class="row">
                     <input id="setup-sql-path" type="text" placeholder="試験の前にDBへ流すSQL（ダミーデータの投入など。setup.sql）" />
                     <button class="secondary" id="browse-setup-sql">参照...</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>試験後SQL</label>
+                  <label for="teardown-sql-path">試験後SQL</label>
                   <div class="row">
                     <input id="teardown-sql-path" type="text" placeholder="試験の後にDBへ流すSQL（作成したデータの後片付けなど。teardown.sql）" />
                     <button class="secondary" id="browse-teardown-sql">参照...</button>
@@ -90,31 +117,49 @@
 
               <div class="form-section">
                 <h3 class="form-section-title">2. 実行設定</h3>
-
-                <div class="form-field">
-                  <label>出力先フォルダ</label>
-                  <div class="row">
-                    <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
-                    <button class="secondary" id="browse-output-dir">参照...</button>
-                  </div>
-                  <p class="field-caption">生成される試験仕様Excel・結果Excel・test_cases.jsonの出力先フォルダです。</p>
-                </div>
-
                 <label class="checkbox"><input type="checkbox" id="dry-run" /> dry-run（実際にはリクエストを送信しない。生成内容の確認用）</label>
                 <label class="checkbox"><input type="checkbox" id="full-body" /> full-body（結果Excelの実測ボディを省略せず全文出力する）</label>
                 <label class="checkbox"><input type="checkbox" id="fail-fast" /> fail-fast（最初のNGが出た時点で試験を打ち切る）</label>
+                <label class="checkbox"><input type="checkbox" id="no-normal" /> 正常系ケースを生成しない</label>
+                <label class="checkbox"><input type="checkbox" id="no-abnormal" /> 異常系ケースを生成しない</label>
+
+                <div class="form-field">
+                  <label for="parallel">同時実行数</label>
+                  <input id="parallel" type="number" min="1" placeholder="空欄可: 既定は1（順次実行）" />
+                  <p class="field-caption">2以上を指定すると複数ケースを並列実行します（cookie-jarとは併用できません）。</p>
+                </div>
+                <label class="checkbox"><input type="checkbox" id="cookie-jar" /> cookie-jar（セッションCookieを実行全体で自動的に維持する。同時実行数1のときのみ指定可）</label>
               </div>
+              </details>
 
               <div id="run-panel" class="run-panel">
                 <h3 class="form-section-title">3. 実行</h3>
                 <div class="btn-row">
-                  <button id="run-button">生成して実行</button>
+                  <button id="run-button">試験ケースを作成して確認</button>
+                  <button id="execute-approved-button" hidden>承認済みケースを実行</button>
+                  <button class="secondary" id="execute-draft-button" hidden>未承認で予備実行</button>
                   <button class="secondary" id="cancel-button" disabled>キャンセル</button>
                   <button class="secondary" id="open-result-button" disabled>結果Excelを開く</button>
+                  <button class="secondary" id="rerun-failed-button" hidden disabled>失敗ケースを再実行</button>
                 </div>
                 <div id="run-status" class="run-status-line"></div>
                 <div id="run-progress"><div id="run-progress-bar"></div></div>
+                <div id="run-artifacts" class="artifact-list" aria-live="polite"></div>
                 <div id="run-log" class="run-log"></div>
+                <details id="schemathesis-panel" class="exploration-panel">
+                  <summary>探索的なAPI試験（Schemathesis）</summary>
+                  <p class="field-caption">選択中のAPIを対象にOpenAPIからリクエストを生成します。対象操作は初期設定でGETのみです。認証設定がある場合はtoken取得のためログインAPIへPOSTし、認証定義がある操作では未認証・不正認証が401/403で拒否されるか確認します。</p>
+                  <div class="form-field">
+                    <label for="schemathesis-max-examples">最大生成数（API操作ごと）</label>
+                    <input id="schemathesis-max-examples" type="number" min="1" max="100" value="10" />
+                  </div>
+                  <label class="checkbox"><input type="checkbox" id="schemathesis-include-mutating" /> POST/PUT/PATCH/DELETEも含める</label>
+                  <label class="checkbox"><input type="checkbox" id="schemathesis-save-cassette" /> リクエスト・レスポンス証跡（VCR）も保存</label>
+                  <p class="field-caption">VCRや失敗レポートには応答本文が記録される場合があります。社内の開発環境で使い、成果物をローカルで管理してください。</p>
+                  <div class="btn-row">
+                    <button class="secondary" id="run-schemathesis-button">探索的試験を実行</button>
+                  </div>
+                </details>
               </div>
             </section>
 
@@ -137,7 +182,7 @@
                   <input id="dbprep-sql-tables" type="text" placeholder="対象テーブル（任意・カンマ区切り。空欄で全テーブル）" />
                 </div>
                 <div class="form-field">
-                  <label>出力先フォルダ</label>
+                  <label for="dbprep-sql-output-dir">出力先フォルダ</label>
                   <div class="row">
                     <input id="dbprep-sql-output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに出力します" />
                     <button class="secondary" id="dbprep-browse-sql-output-dir">参照...</button>
@@ -154,16 +199,24 @@
                 <h3 class="form-section-title">2. APIとDBテーブルの対応表を生成<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">
                   「どのAPI操作がDBのどのテーブルを更新するか」の対応表（mapping.yaml）の叩き台を、
-                  openapi.jsonのリクエストボディとDBのカラム名を突き合わせて自動生成します（名前ベースの推定です）。
+                  openapi.jsonのリクエストボディとDBカラム名から推定します。PHP SQLのCopilot調査結果も任意で照合できます。
                   次の手順3で使います。確信度が「低」の項目は必ず確認・修正してください。
                 </p>
                 <div class="form-field">
-                  <label>出力先</label>
+                  <label for="dbprep-mapping-output">出力先</label>
                   <div class="row">
                     <input id="dbprep-mapping-output" type="text" placeholder="空欄可: mapping.yaml.generated として出力" />
                     <button class="secondary" id="dbprep-browse-mapping-output">参照...</button>
                   </div>
                 </div>
+                <details class="form-field">
+                  <summary>PHP SQLのCopilot調査結果を使う（任意）</summary>
+                  <p class="field-caption">CopilotがPHPソースから出した openapi.db-evidence.json を選ぶと、SQLの根拠行を接続先PostgreSQLのテーブル・カラムと照合します。一致しても候補のままです。</p>
+                  <div class="row">
+                    <input id="dbprep-php-db-evidence-path" type="text" placeholder="openapi.db-evidence.json（任意）" />
+                    <button class="secondary" id="dbprep-browse-php-db-evidence">参照...</button>
+                  </div>
+                </details>
                 <div class="btn-row">
                   <button id="dbprep-gen-mapping-button">対応表を生成</button>
                 </div>
@@ -179,14 +232,14 @@
                   where/columns等の検証条件は必ず確認・修正してください。
                 </p>
                 <div class="form-field">
-                  <label>手順2で生成した対応表（mapping.yaml）</label>
+                  <label for="dbprep-scenario-mapping-path">手順2で生成した対応表（mapping.yaml）</label>
                   <div class="row">
                     <input id="dbprep-scenario-mapping-path" type="text" placeholder="上で生成した対応表、または既存のファイル" />
                     <button class="secondary" id="dbprep-browse-scenario-mapping">参照...</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>出力先</label>
+                  <label for="dbprep-scenario-output">出力先</label>
                   <div class="row">
                     <input id="dbprep-scenario-output" type="text" placeholder="空欄可: scenarios.generated.yaml として出力" />
                     <button class="secondary" id="dbprep-browse-scenario-output">参照...</button>
@@ -197,6 +250,14 @@
                 </div>
                 <div id="dbprep-scenario-status" class="field-caption status-message"></div>
                 <div id="dbprep-scenario-log" class="mini-log" hidden></div>
+                <details class="form-field">
+                  <summary>Copilotで業務シナリオ候補をレビュー（任意）</summary>
+                  <p class="field-caption">選択中のOpenAPI・対応表・シナリオ・PHP SQL根拠JSONのパスを依頼文に入れます。Copilot Chatから読めないファイルは、VS Codeで開くか添付してください。</p>
+                  <div class="btn-row">
+                    <button class="secondary" id="dbprep-copilot-scenario-prompt-copy">Copilot用の依頼文をコピー</button>
+                  </div>
+                  <div id="dbprep-copilot-scenario-status" class="field-caption status-message" aria-live="polite"></div>
+                </details>
               </div>
             </section>
 
@@ -218,7 +279,7 @@
                   （「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）。
                 </p>
                 <div class="form-field">
-                  <label>検証シナリオファイル（scenarios.yaml）</label>
+                  <label for="dbscenario-path">検証シナリオファイル（scenarios.yaml）</label>
                   <div class="row">
                     <input id="dbscenario-path" type="text" placeholder="scenarios.yaml のパス" />
                     <button class="secondary" id="dbscenario-browse">参照...</button>
@@ -226,50 +287,79 @@
                 </div>
               </div>
 
+              <div id="dbscenario-case-review-panel" class="case-review-panel" hidden>
+                <div class="case-review-heading">
+                  <strong id="dbscenario-case-review-summary"></strong>
+                  <span class="draft-badge">実行前レビュー</span>
+                </div>
+                <p class="field-caption">各シナリオの前提データ・API操作・DB確認内容を確認してください。内容を直す場合はシナリオYAMLを修正して再準備します。未承認での実行は予備扱いとして記録します。</p>
+                <p id="dbscenario-case-review-message" class="field-caption" aria-live="polite"></p>
+                <div id="dbscenario-case-review-list" class="case-review-list"></div>
+              </div>
+
               <div class="form-section">
                 <h3 class="form-section-title">2. 実行設定</h3>
                 <label class="checkbox"><input type="checkbox" id="dbscenario-dry-run" /> dry-run（実際のHTTP送信・DB接続を行わない。シナリオ/openapi/configの読み込み確認用）</label>
-                <div class="form-field">
-                  <label>結果Excel出力先<span class="optional-tag">任意</span></label>
-                  <div class="row">
-                    <input id="dbscenario-report-output" type="text" placeholder="空欄可: レポートを出力しない" />
-                    <button class="secondary" id="dbscenario-browse-report">参照...</button>
-                  </div>
-                </div>
+                <label class="checkbox"><input type="checkbox" id="dbscenario-cookie-jar" /> cookie-jar（セッションCookieをシナリオ実行全体で自動的に維持する）</label>
               </div>
 
               <div id="dbscenario-run-panel" class="run-panel">
                 <h3 class="form-section-title">3. 実行</h3>
                 <div class="btn-row">
-                  <button id="dbscenario-run-button">検証シナリオを実行</button>
+                  <button id="dbscenario-run-button">シナリオケースを作成して確認</button>
+                  <button id="dbscenario-execute-approved-button" hidden>承認済みシナリオを実行</button>
+                  <button class="secondary" id="dbscenario-execute-draft-button" hidden>未承認で予備実行</button>
                   <button class="secondary" id="dbscenario-cancel-button" disabled>キャンセル</button>
                   <button class="secondary" id="dbscenario-open-result-button" disabled>結果Excelを開く</button>
+                  <button class="secondary" id="dbscenario-rerun-failed-button" hidden disabled>失敗ケースを再実行</button>
                 </div>
                 <div id="dbscenario-status" class="run-status-line"></div>
+                <div id="dbscenario-artifacts" class="artifact-list" aria-live="polite"></div>
                 <div id="dbscenario-log" class="run-log"></div>
               </div>
             </section>
             <section id="page-settings" class="page">
-              <div class="form-section">
-                <h3 class="form-section-title">openapi.json</h3>
-                <p class="form-section-desc">試験対象APIの定義ファイル。ここで選ぶと全タブで共通に使われます。</p>
+              <div id="project-source" class="form-section">
+                <h3 class="form-section-title">1. 試験対象を登録</h3>
+                <p class="form-section-desc">通常は、この3項目だけを指定して試験を開始できます。</p>
+                <details id="copilot-openapi-guide">
+                  <summary>openapi.jsonがない場合（素のPHP）</summary>
+                  <p class="field-caption">VS CodeでPHPプロジェクトを開き、下の依頼文をCopilot Chatへ貼り付けてください。Copilotが作成した下書きと根拠・要確認事項を読み、修正してから取り込みます。</p>
+                  <div class="btn-row">
+                    <button class="secondary" id="copilot-prompt-copy">Copilot用の依頼文をコピー</button>
+                    <button class="secondary" id="copilot-draft-import">OpenAPI下書きを選ぶ</button>
+                  </div>
+                  <div id="copilot-status" class="field-caption status-message" aria-live="polite"></div>
+                  <label class="checkbox"><input type="checkbox" id="copilot-draft-reviewed" /> openapi.review.mdと下書きを確認・修正しました</label>
+                  <button class="secondary" id="copilot-draft-apply" disabled>確認済み下書きを試験対象に設定</button>
+                </details>
                 <div class="form-field">
+                  <label for="openapi-path">openapi.json</label>
                   <div class="row">
                     <input id="openapi-path" type="text" placeholder="openapi.jsonのパス" />
                     <button class="secondary" id="browse-openapi">参照...</button>
                   </div>
                 </div>
-              </div>
-
-              <div class="form-section">
-                <h3 class="form-section-title">Base URL</h3>
-                <p class="form-section-desc">試験対象サーバーのURL。openapi.jsonにserversがあれば自動入力されます。</p>
                 <div class="form-field">
+                  <label for="base-url">Base URL</label>
                   <input id="base-url" type="text" placeholder="例: https://api.example.com" />
                 </div>
+                <div class="form-field">
+                  <label for="output-dir">出力先フォルダ</label>
+                  <div class="row">
+                    <input id="output-dir" type="text" placeholder="空欄可: openapi.jsonと同じフォルダに実行結果を出力します" />
+                    <button class="secondary" id="browse-output-dir">参照...</button>
+                  </div>
+                </div>
+                <div class="btn-row" aria-label="プロジェクト設定">
+                  <button class="secondary" id="project-open">プロジェクトを開く</button>
+                  <button class="secondary" id="project-save">プロジェクトを保存</button>
+                </div>
+                <div id="project-status" class="field-caption status-message" aria-live="polite"></div>
+                <div id="runtime-status" class="field-caption status-message" aria-live="polite">実行環境を確認しています...</div>
 
                 <div class="form-field" style="margin-top: 14px">
-                  <label>API疎通確認<span class="optional-tag">任意</span></label>
+                  <label for="hc-path">API疎通確認<span class="optional-tag">任意</span></label>
                   <p class="field-caption">上のBase URLに対して指定したパスへGETリクエストを送り、2xxが返るか確認します。試験実行そのものには影響しません。</p>
                   <div class="row">
                     <input id="hc-path" type="text" placeholder="/health" />

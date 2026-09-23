@@ -1,9 +1,12 @@
 """DBシナリオの db_check（engine: postgres）を実行・検証する。"""
 from __future__ import annotations
 import re
+from decimal import Decimal, InvalidOperation
 
 import psycopg2
 import psycopg2.extras
+
+from db_backends import invariant_eval
 
 _IDENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -24,7 +27,7 @@ def check(db_check, db_config: dict) -> tuple[bool, str]:
     finally:
         conn.close()
 
-    return _compare(rows, db_check.expect)
+    return _compare(rows, db_check.expect, db_check.invariants)
 
 
 def _build_select(table: str, where: dict) -> tuple[str, list]:
@@ -42,7 +45,26 @@ def _quote_ident(name: str) -> str:
     return f'"{name}"'
 
 
-def _compare(rows: list[dict], expect: dict) -> tuple[bool, str]:
+def _values_equal(actual_val: object, expected_val: object) -> bool:
+    """DB実測値とYAMLの期待値を比較する。
+
+    psycopg2はPostgreSQLの NUMERIC/DECIMAL 列を Decimal で返すが、YAMLシナリオ側の
+    期待値（例: price: 19.99）はPythonの float としてパースされる。Decimal と float を
+    直接 == で比較すると、float の「見た目通り」の値ではなく二進浮動小数点としての
+    厳密値で比較されるため（例: Decimal("19.99") == 19.99 は False。19.99 は二進数で
+    正確に表現できないため）、値としては等しいのに誤ってNG判定してしまう。
+    どちらかが Decimal の場合は、両者を文字列経由でDecimal化してから比較することで、
+    人間が書いた10進数リテラルの見た目通りに比較する。
+    """
+    if isinstance(actual_val, Decimal) or isinstance(expected_val, Decimal):
+        try:
+            return Decimal(str(actual_val)) == Decimal(str(expected_val))
+        except (InvalidOperation, ValueError, TypeError):
+            return actual_val == expected_val
+    return actual_val == expected_val
+
+
+def _compare(rows: list[dict], expect: dict, invariants: list[str] | None = None) -> tuple[bool, str]:
     exists_expected = expect.get("exists", True)
 
     if not exists_expected:
@@ -61,8 +83,18 @@ def _compare(rows: list[dict], expect: dict) -> tuple[bool, str]:
             mismatches.append(f"{col}: カラムが存在しません")
             continue
         actual_val = row[col]
-        if actual_val != expected_val:
+        if not _values_equal(actual_val, expected_val):
             mismatches.append(f"{col}: 期待={expected_val!r} 実測={actual_val!r}")
+
+    for expr in invariants or []:
+        try:
+            resolved_expr = invariant_eval.substitute_db_placeholders(expr, row)
+            ok = invariant_eval.evaluate(resolved_expr)
+        except invariant_eval.InvariantError as e:
+            mismatches.append(str(e))
+            continue
+        if not ok:
+            mismatches.append(f"不変条件を満たしません: {expr}（実測を当てはめると: {resolved_expr}）")
 
     if mismatches:
         return False, "; ".join(mismatches)

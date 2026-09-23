@@ -98,6 +98,16 @@ def test_multiple_of_unit_fraction_abnormal_value_is_not_actually_a_multiple():
     assert abs(ratio - round(ratio)) > 1e-6, f"{value} は 0.01 の倍数であってはならない"
 
 
+def test_boundary_subtraction_does_not_leak_floating_point_noise():
+    # 回帰テスト: 0.3 - 0.1 はIEEE754の丸め誤差で 0.19999999999999998 になるため、
+    # 生成される inputValue にその誤差がそのまま出力されてはならない。
+    cases = generate_integer_cases(
+        {"type": "number", "minimum": 0.3}, {"paramName": "n", "opts": ABNORMAL_ONLY}
+    )
+    abnormal = next(c for c in cases if c["keyword"] == "minimum")
+    assert abnormal["inputValue"] == "0.2"
+
+
 def test_number_type_as_nullable_array_form_uses_decimal_step():
     # parser.py の nullable 正規化後は type が ["number", "null"] のような配列になる。
     # 配列形式でも number 型として扱われ、増減幅に 0.1 が使われる必要がある。

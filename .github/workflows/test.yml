@@ -7,9 +7,60 @@ on:
     branches: [master]
 
 jobs:
+  lint:
+    # 実バグに直結する項目（未使用/未定義変数、raise-from漏れ等）に絞ったLintと、
+    # gui-tauri（フロントエンド）のロジック単体テスト。
+    # Windows依存が無いため、高速な ubuntu-latest で実行する。
+    name: Lint (ruff / eslint / clippy) & GUI unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install ruff
+        run: pip install -r requirements-dev.txt
+
+      - name: Run ruff (Python)
+        run: ruff check .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: gui-tauri/package-lock.json
+
+      - name: Install gui-tauri dependencies
+        run: npm ci
+        working-directory: gui-tauri
+
+      - name: Run eslint (gui-tauri/src)
+        run: npm run lint
+        working-directory: gui-tauri
+
+      - name: Run gui-tauri unit tests (vitest)
+        run: npm test
+        working-directory: gui-tauri
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui-tauri/src-tauri
+
+      - name: Run clippy (gui-tauri/src-tauri)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: gui-tauri/src-tauri
+
   test:
-    # curl.exe / os.startfile / os.devnull など、このツールセットはWindows専用の
-    # 前提で作られているため windows-latest で実行する。
+    # os.startfile など、このツールセットはWindows専用の前提で作られているため
+    # windows-latest で実行する。
     runs-on: windows-latest
 
     steps:
@@ -56,6 +107,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r docs/requirements-mock.txt
+          pip install -r docs/requirements-schemathesis.txt
 
       - name: Start PostgreSQL
         # windows-latest ランナーの GitHub Actions `services:` コンテナは Linux 専用で
@@ -74,6 +126,19 @@ jobs:
 
       - name: Run E2E (generate -> execute -> DB scenario verification)
         run: python docs/run_e2e.py
+
+      - name: Run schemathesis (契約層の探索的ファジング。決定論的スイートとは別レーン、失敗してもブロックしない)
+        run: python docs/run_schemathesis.py
+
+      - name: Upload schemathesis evidence (JUnit XML / cassette)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schemathesis-report
+          path: |
+            docs/_ci_schemathesis_result.xml
+            docs/_ci_schemathesis_cassette.yaml
+          if-no-files-found: ignore
 
       - name: Stop PostgreSQL
         if: always()

@@ -1,18 +1,10 @@
-"""Integration tests using pytest-httpserver + curl.exe (Windows host → localhost)."""
+"""Integration tests using pytest-httpserver (real HTTP requests via requests library)."""
 import sys
-import shutil
 from pathlib import Path
-import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from http_client import execute_with_openapi
-from models import RunCase
-
-# Skip entire module if curl.exe is not available
-pytestmark = pytest.mark.skipif(
-    shutil.which("curl.exe") is None,
-    reason="curl.exe not found on PATH",
-)
+from models import EXIT_OK, RunCase
 
 
 def make_case(**kwargs) -> RunCase:
@@ -41,7 +33,7 @@ def test_get_200(httpserver):
     case = make_case()
     result = execute_with_openapi(case, httpserver.url_for("").rstrip("/"), None)
     assert result.actual_status == 200
-    assert result.curl_exit_code == 0
+    assert result.exit_code == EXIT_OK
 
 
 def test_get_404(httpserver):

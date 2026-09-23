@@ -15,9 +15,29 @@ def test_additional_properties_false_generates_abnormal_case():
     assert case["perspective"] == "異常系_additionalProperties"
 
 
-def test_additional_properties_not_false_no_case():
+def test_additional_properties_unspecified_generates_normal_case_allowing_extra_prop():
+    # additionalProperties が未指定の場合、JSON Schemaの既定は additionalProperties: true
+    # （制限なし）。「許可されているはずの追加プロパティを実装が誤って拒否していないか」は
+    # これまで一切検証されていなかった（正常系_additionalProperties制限なし、参照）。
     cases = generate_object_cases(
         {"type": "object"}, {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True}
+    )
+    case = next(c for c in cases if c["keyword"] == "additionalProperties")
+    assert case["perspective"] == "正常系_additionalProperties制限なし"
+    assert case["expectedStatus"] != "400"
+
+
+def test_additional_properties_unspecified_normal_only_generates_case():
+    cases = generate_object_cases(
+        {"type": "object"}, {"paramName": "requestBody", "opts": NORMAL_ONLY, "isRootBody": True}
+    )
+    assert any(c["perspective"] == "正常系_additionalProperties制限なし" for c in cases)
+
+
+def test_additional_properties_unspecified_abnormal_only_generates_nothing():
+    # 「未指定/true」は許可されているケースの正常系のみが対象で、異常系は存在しない
+    cases = generate_object_cases(
+        {"type": "object"}, {"paramName": "requestBody", "opts": ABNORMAL_ONLY, "isRootBody": True}
     )
     assert not any(c["keyword"] == "additionalProperties" for c in cases)
 
@@ -115,9 +135,10 @@ def test_additional_properties_schema_string_type_has_no_abnormal_case():
     assert not any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
 
 
-def test_additional_properties_true_generates_no_cases():
+def test_additional_properties_true_generates_normal_case_allowing_extra_prop():
     cases = generate_object_cases(
         {"type": "object", "additionalProperties": True},
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
     )
-    assert not any(c["keyword"] == "additionalProperties" for c in cases)
+    case = next(c for c in cases if c["keyword"] == "additionalProperties")
+    assert case["perspective"] == "正常系_additionalProperties制限なし"

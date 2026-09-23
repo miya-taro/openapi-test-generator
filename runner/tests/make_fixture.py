@@ -4,7 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import openpyxl
-from openpyxl.styles import Font
 
 def make_sample():
     wb = openpyxl.Workbook()

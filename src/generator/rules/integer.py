@@ -152,9 +152,17 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
 
 
 def _num_str(value: float) -> str:
-    """JS の String(number) 相当（整数値は小数点なしで出力）。"""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
+    """JS の String(number) 相当（整数値は小数点なしで出力）。
+
+    minimum ± step のような減算・加算の結果は、IEEE754の丸め誤差で
+    "0.19999999999999998" のような値になることがある（例: 0.3 - 0.1）。
+    表示・送信するテストケースの入力値としては不自然かつ誤解を招くため、
+    実用上十分な精度（小数点以下10桁）に丸めてから文字列化する。
+    """
+    if isinstance(value, float):
+        value = round(value, 10)
+        if value.is_integer():
+            return str(int(value))
     return str(value)
 
 

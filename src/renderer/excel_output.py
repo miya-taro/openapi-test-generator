@@ -1,13 +1,16 @@
 """Excel 出力（test_spec シート）。openpyxl を使用。"""
 from __future__ import annotations
 import json
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.utils import get_column_letter
+
+from src.cmd_escape import quote_cmd_arg as _quote_cmd
+from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
 
 # ── 列定義 ─────────────────────────────────────────────────────────
 # (header, key, compute, width) — key と compute はどちらか一方のみ指定する
@@ -32,7 +35,7 @@ COLUMNS: list[tuple[str, str | None, object, int]] = [
     ("curl コマンド", None, True, 80),
 ]
 
-_OMIT_MARKERS = {"（省略）", "（フィールドを省略）", "（認証ヘッダなし）"}
+_OMIT_MARKERS = {"（省略）", "（フィールドを省略）", AUTH_NONE_MARKER}
 _EMPTY_MARKER = "（空文字）"
 
 # Excel/CSV フォーミュラインジェクション対策: これらの文字で始まるセル値は
@@ -51,38 +54,6 @@ def _encode_uri_component(value: str) -> str:
     return quote(value, safe="!~*'()")
 
 
-def _escape_cmd_arg(value: str) -> str:
-    """Windows cmd.exe 上でダブルクォート引数として curl.exe に渡す値をエスケープする。
-
-    curl.exe のような一般的な Windows プログラムは MSVCRT 互換の argv パース規則
-    （N 個の連続する \\ の直後に " が続く場合、\\ は N//2 個に圧縮され、N が奇数なら
-    リテラル " が1つ挿入される）でコマンドラインを解釈するため、その規則に従って
-    " と \\ をエスケープする。これにより外部入力（openapi.json 由来の値）で
-    ダブルクォートを脱出してコマンドを注入できないようにする。
-    """
-    result: list[str] = []
-    n_backslashes = 0
-    for ch in value:
-        if ch == "\\":
-            n_backslashes += 1
-            continue
-        if ch == '"':
-            result.append("\\" * (n_backslashes * 2 + 1))
-            result.append('"')
-        else:
-            if n_backslashes:
-                result.append("\\" * n_backslashes)
-            result.append(ch)
-        n_backslashes = 0
-    if n_backslashes:
-        result.append("\\" * n_backslashes)
-    return "".join(result)
-
-
-def _quote_cmd(value: str) -> str:
-    return '"' + _escape_cmd_arg(value) + '"'
-
-
 def _build_curl_command(tc: dict) -> str:
     method = tc["method"].upper()
     omit = tc["inputValue"] in _OMIT_MARKERS
@@ -91,6 +62,9 @@ def _build_curl_command(tc: dict) -> str:
     url_val = raw_val[1:-1] if raw_val.startswith('"') and raw_val.endswith('"') and len(raw_val) >= 2 else raw_val
 
     url = "{BASE_URL}" + tc["path"]
+    security_payload = None
+    if tc.get("paramName") == OPENAPI_SECURITY_PARAM and raw_val != AUTH_NONE_MARKER:
+        security_payload = parse_security_payload(raw_val)
 
     if tc["in"] == "path" and not omit:
         url = url.replace("{" + tc["paramName"] + "}", _encode_uri_component(url_val))
@@ -98,10 +72,21 @@ def _build_curl_command(tc: dict) -> str:
     if tc["in"] == "query" and not omit:
         url += f"?{tc['paramName']}={_encode_uri_component(url_val)}"
 
+    if security_payload and security_payload["query"]:
+        query = urlencode(security_payload["query"])
+        url += ("&" if "?" in url else "?") + query
+
     cmd = f'curl.exe -s -v -X {method} {_quote_cmd(url)}'
 
-    if tc["in"] == "header" and not omit:
+    if tc["in"] == "header" and not omit and tc.get("paramName") != OPENAPI_SECURITY_PARAM:
         cmd += f' -H {_quote_cmd(f"{tc['paramName']}: {raw_val}")}'
+
+    if security_payload:
+        for name, value in security_payload["headers"].items():
+            cmd += f' -H {_quote_cmd(f"{name}: {value}")}'
+        if security_payload["cookies"]:
+            cookie_value = "; ".join(f"{name}={value}" for name, value in security_payload["cookies"].items())
+            cmd += f' -H {_quote_cmd(f"Cookie: {cookie_value}")}'
 
     if tc["in"] == "body" and not omit:
         try:

@@ -38,22 +38,49 @@ def extract_auth_specs(api: dict) -> list[dict]:
             op_security = operation["security"] if "security" in operation else global_security
             if not op_security:
                 continue
-
-            first_scheme_name = next(iter(op_security[0]), None) if op_security else None
-            if not first_scheme_name:
+            # Security Requirement Object 配列は OR、各オブジェクト内のキーは AND。
+            # 空オブジェクトが一つでもあれば認証なしの選択肢があるため、401/403期待の
+            # 認証拒否ケースは作らない（公開操作を誤ってNGにしない）。
+            if any(isinstance(requirement, dict) and not requirement for requirement in op_security):
                 continue
 
-            scheme = security_schemes.get(first_scheme_name, {}) or {}
-            scheme_type = "other"
-            header_name = "Authorization"
+            credentials: list[dict] = []
+            seen_credentials: set[tuple[str, str]] = set()
+            for requirement in op_security:
+                if not isinstance(requirement, dict):
+                    continue
+                for scheme_name in requirement:
+                    scheme = security_schemes.get(scheme_name, {}) or {}
+                    scheme_type = "other"
+                    location = "header"
+                    name = "Authorization"
 
-            if scheme.get("type") == "http" and scheme.get("scheme") == "bearer":
-                scheme_type = "bearer"
-            elif scheme.get("type") == "http" and scheme.get("scheme") == "basic":
-                scheme_type = "basic"
-            elif scheme.get("type") == "apiKey":
-                scheme_type = "apiKey"
-                header_name = scheme.get("name") or "X-Api-Key"
+                    if scheme.get("type") == "http" and scheme.get("scheme", "").lower() == "bearer":
+                        scheme_type = "bearer"
+                    elif scheme.get("type") == "http" and scheme.get("scheme", "").lower() == "basic":
+                        scheme_type = "basic"
+                    elif scheme.get("type") == "apiKey":
+                        scheme_type = "apiKey"
+                        location = scheme.get("in", "header")
+                        if location not in {"header", "query", "cookie"}:
+                            location = "header"
+                        name = scheme.get("name") or "X-Api-Key"
+
+                    identity = (location, name.lower() if location == "header" else name)
+                    if identity in seen_credentials:
+                        continue
+                    seen_credentials.add(identity)
+                    credentials.append({
+                        "schemeName": str(scheme_name),
+                        "schemeType": scheme_type,
+                        "in": location,
+                        "name": name,
+                    })
+
+            if not credentials:
+                continue
+
+            first_credential = credentials[0]
 
             operation_id = _resolve_operation_id(operation, method, path)
             success_status = _resolve_success_status(operation.get("responses"))
@@ -63,8 +90,9 @@ def extract_auth_specs(api: dict) -> list[dict]:
                 "operationId": operation_id,
                 "path": path,
                 "method": method.upper(),
-                "schemeType": scheme_type,
-                "headerName": header_name,
+                "schemeType": first_credential["schemeType"],
+                "headerName": first_credential["name"],
+                "securitySchemes": credentials,
                 "successStatus": success_status,
                 "responsesInfo": responses_info,
             })
@@ -125,17 +153,30 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
 
             request_body = operation.get("requestBody")
             if request_body:
-                json_content = (request_body.get("content") or {}).get("application/json")
-                if not json_content:
-                    log.debug({"operationId": operation_id}, "application/json 以外の requestBody をスキップ")
+                content = request_body.get("content") or {}
+                json_content = content.get("application/json")
+                multipart_content = content.get("multipart/form-data")
+
+                if json_content:
+                    content_type = "application/json"
+                    picked_content = json_content
+                elif multipart_content:
+                    content_type = "multipart/form-data"
+                    picked_content = multipart_content
+                else:
+                    log.debug(
+                        {"operationId": operation_id},
+                        "application/json / multipart/form-data 以外の requestBody をスキップ",
+                    )
                     continue
 
-                body_schema = json_content.get("schema")
+                body_schema = picked_content.get("schema")
                 if not body_schema:
                     continue
 
                 fields = _flatten_body_schema(
-                    body_schema, "", operation_id, path, method.upper(), success_status, responses_info
+                    body_schema, "", operation_id, path, method.upper(), success_status, responses_info,
+                    content_type,
                 )
                 body_specs.extend(fields)
 
@@ -189,6 +230,15 @@ def _resolve_operation_id(operation: dict, method: str, path: str) -> str:
     return f"{method.upper()}_{normalized}"
 
 
+def _has_type(schema: dict, type_name: str) -> bool:
+    """schema["type"] が文字列（従来形式）でも配列（OAS 3.1、例: ["array", "null"]）
+    でも type_name を含むかどうかを判定する。"""
+    t = schema.get("type")
+    if isinstance(t, list):
+        return type_name in t
+    return t == type_name
+
+
 def _flatten_body_schema(
     schema: dict,
     parent_path: str,
@@ -197,15 +247,19 @@ def _flatten_body_schema(
     method: str,
     success_status: str,
     responses_info: dict,
+    content_type: str = "application/json",
 ) -> list[dict]:
     results: list[dict] = []
+    is_multipart = content_type == "multipart/form-data"
 
     if schema.get("type") == "object" or "properties" in schema:
         required_fields = set(schema.get("required") or [])
         properties = schema.get("properties") or {}
 
-        # オブジェクト自体のスペック（空body チェック等に使う）
-        if parent_path == "":
+        # オブジェクト自体のスペック（空body / additionalProperties チェック等に使う）。
+        # multipart/form-data はJSONのオブジェクト構造ではなくフォームフィールドの集合
+        # なので、「空body」「未定義プロパティ追加」というJSON観点の検証は意味を持たない。
+        if parent_path == "" and not is_multipart:
             results.append({
                 "operationId": operation_id,
                 "path": path,
@@ -215,6 +269,7 @@ def _flatten_body_schema(
                 "schema": schema,
                 "successStatus": success_status,
                 "responsesInfo": responses_info,
+                "contentType": content_type,
             })
 
         for prop_name, prop_schema in properties.items():
@@ -223,7 +278,9 @@ def _flatten_body_schema(
 
             field_path = f"{parent_path}.{prop_name}" if parent_path else prop_name
 
-            if prop_schema.get("format") == "binary":
+            if prop_schema.get("format") == "binary" and not is_multipart:
+                # application/json のボディにバイナリフィールドは現れない想定
+                # （multipart/form-data のファイルアップロードフィールドとして本来送るべき値）。
                 log.debug({"fieldPath": field_path}, "binary フィールドをスキップ")
                 continue
 
@@ -243,19 +300,24 @@ def _flatten_body_schema(
                 "schema": prop_schema,
                 "successStatus": success_status,
                 "responsesInfo": responses_info,
+                "contentType": content_type,
             })
 
             # ネストされたオブジェクトを再帰的に展開
             if prop_schema.get("type") == "object" or "properties" in prop_schema:
                 results.extend(
                     _flatten_body_schema(
-                        prop_schema, field_path, operation_id, path, method, success_status, responses_info
+                        prop_schema, field_path, operation_id, path, method, success_status, responses_info,
+                        content_type,
                     )
                 )
 
             # 配列の要素がオブジェクトの場合、その要素のプロパティも再帰的に展開する
             # （フィールドパスは "lines[].sku" のように "[]" で配列であることを表す）
-            elif prop_schema.get("type") == "array":
+            # OAS 3.1 の type は配列形式（例: ["array", "null"]、nullable な配列でよくある
+            # 書き方）もありうるため、文字列との等値比較だけだと素通りしてしまい、
+            # ネストしたオブジェクトのフィールド単位テストが丸ごと生成されなくなる。
+            elif _has_type(prop_schema, "array"):
                 items_schema = prop_schema.get("items")
                 if isinstance(items_schema, dict) and (
                     items_schema.get("type") == "object" or "properties" in items_schema
@@ -269,6 +331,7 @@ def _flatten_body_schema(
                             method,
                             success_status,
                             responses_info,
+                            content_type,
                         )
                     )
 

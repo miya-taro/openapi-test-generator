@@ -119,8 +119,22 @@ def _normalize_nullable(schema: dict) -> None:
     type_ = schema.get("type")
     if isinstance(type_, str):
         schema["type"] = [type_, "null"]
-    elif isinstance(type_, list) and "null" not in type_:
-        schema["type"] = [*type_, "null"]
+        return
+    if isinstance(type_, list):
+        if "null" not in type_:
+            schema["type"] = [*type_, "null"]
+        return
+
+    # type が無い（enum のみ、const のみ、format のみ等）場合、"null" を追加した type
+    # 配列だけを付与すると、type の許容集合が {null} だけになり enum/const の許容値と
+    # 矛盾して逆に何も通らないスキーマになってしまう（type: object を勝手に補うのも
+    # 不正確）。type を触らず、enum/const 側に null を直接含める形にする。
+    if "const" in schema:
+        schema["enum"] = [schema.pop("const"), None]
+    elif isinstance(schema.get("enum"), list) and None not in schema["enum"]:
+        schema["enum"] = [*schema["enum"], None]
+    # enum も const も無い場合（format のみ等）は、jsonschema は type 未指定なら
+    # 既定で null も許容するため、何もしなくてよい。
 
 
 def _normalize_exclusive_bound(schema: dict, bound_key: str, exclusive_key: str) -> None:
@@ -268,4 +282,13 @@ def _walk_schemas(obj: Any, visitor, visited: set[int]) -> None:
 
 
 def _is_schema_object(obj: dict) -> bool:
-    return any(k in obj for k in ("type", "properties", "items", "allOf", "anyOf", "oneOf"))
+    # "type" が無くても正当なスキーマはある（例: enum のみ、format のみで型を暗示する等）。
+    # ここに漏れると _walk_schemas に一切訪問されず、nullable（OAS 3.0形式）や
+    # exclusiveMinimum/Maximum（bool形式）が正規化されないまま残る。特に nullable の
+    # 正規化漏れは深刻で、正当な null 値を返すレスポンスがLevel4検証で誤ってNGになる
+    # （jsonschemaは nullable を認識しないため）。normalize対象のキーワードを持つかで判定する。
+    return any(
+        k in obj
+        for k in ("type", "properties", "items", "allOf", "anyOf", "oneOf",
+                   "nullable", "enum", "const", "format", "exclusiveMinimum", "exclusiveMaximum")
+    )

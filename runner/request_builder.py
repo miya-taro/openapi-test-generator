@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import re
+from dataclasses import dataclass, field
 from urllib.parse import urlencode
 from models import RunCase
 
@@ -15,11 +16,15 @@ NULL_VALUE_MARKER = "null"
 _ROOT_BODY_EMPTY_MARKER = "{}"
 _ROOT_BODY_EXTRA_PROP_MARKER = '{ ...validBody, "__extra__": "value" }'
 
-# --one-of-full-coverage 用マーカー。
+# oneOf/anyOfバリアント網羅生成用マーカー。
 # src/generator/rules/common.py の ONE_OF_VARIANT_MARKER_PREFIX と対応させている。
 # 末尾の数字が schema["_oneOfVariants"]（parser.py が残す正規化済みバリアント一覧）
 # のインデックス。
 _ONE_OF_VARIANT_MARKER_PREFIX = "__ONE_OF_VARIANT__"
+
+# multipart/form-data のファイルアップロードフィールド用マーカー。
+# src/generator/rules/file.py の FILE_UPLOAD_MARKER と対応させている。
+_FILE_UPLOAD_MARKER = "（ファイルアップロード：ダミーファイル）"
 
 FORMAT_SAMPLES: dict[str, str | int | bool] = {
     "email": "test@example.com",
@@ -151,12 +156,113 @@ def _resolve_query_param_schema(openapi: dict, case: RunCase) -> dict | None:
     return None
 
 
-def build_body_args(case: RunCase, openapi: dict | None) -> list[str]:
+@dataclass
+class PreparedBody:
+    """requests に渡す body 情報。
+
+    json_body が None でない場合（空dict {} も含む）は json= として送る。
+    is_multipart が True の場合は multipart_fields を files= として送る
+    （テキストフィールドも (None, value) 形式で files= に含めることで、ファイル
+    フィールドが1つも無いスキーマでも確実に multipart/form-data エンコードになる。
+    requests は files= に何も渡さないと application/x-www-form-urlencoded に
+    フォールバックしてしまうため）。
+    どちらでもない場合（build_request_body が None を返す場合）は body なし。
+    """
+    json_body: object | None = None
+    is_multipart: bool = False
+    multipart_fields: dict[str, tuple] = field(default_factory=dict)
+
+
+def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | None:
     if case.param_in != "body":
-        return []
+        return None
+
+    content_type = (
+        _resolve_request_body_content_type(case.operation_id, case.path, case.method, openapi)
+        if openapi else "application/json"
+    )
+    if content_type == "multipart/form-data":
+        fields = _build_multipart_fields(case, openapi)
+        return PreparedBody(is_multipart=True, multipart_fields=fields)
 
     body = _build_body(case, openapi)
-    return ["-d", json.dumps(body, ensure_ascii=False)]
+    return PreparedBody(json_body=body)
+
+
+def _resolve_request_body_content_type(operation_id: str, path: str, method: str, openapi: dict) -> str:
+    paths = openapi.get("paths", {})
+    path_item = paths.get(path)
+    if path_item is None:
+        path_item = _find_path_by_operation_id(paths, operation_id)
+    if path_item is None:
+        return "application/json"
+    op = path_item.get(method.lower())
+    if not isinstance(op, dict):
+        return "application/json"
+    content = ((op.get("requestBody") or {}).get("content")) or {}
+    if "application/json" not in content and "multipart/form-data" in content:
+        return "multipart/form-data"
+    return "application/json"
+
+
+_DUMMY_UPLOAD_FILENAME = "dummy_upload.txt"
+_DUMMY_UPLOAD_CONTENT = b"dummy upload content for automated testing\n"
+_DUMMY_UPLOAD_CONTENT_TYPE = "text/plain"
+
+
+def _build_multipart_fields(case: RunCase, openapi: dict | None) -> dict[str, tuple]:
+    """multipart/form-data 用のフォームフィールドを requests の files= 形式で組み立てる。
+
+    テキストフィールドは (None, value)、ファイルフィールドは
+    (filename, content, content_type) というタプルで表現する（requests の作法）。
+    全フィールドを files= 経由にすることで、ファイルフィールドが1つも
+    含まれないスキーマでも確実に multipart/form-data エンコードになる
+    （files= が空だと requests は application/x-www-form-urlencoded に
+    フォールバックしてしまうため）。multipart のスキーマは通常フラット
+    （フォームフィールドの集合）なので、_build_body のようなネスト対応は行わず、
+    トップレベルの properties のみを扱う。
+    """
+    schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi) if openapi else None
+    fields = _expand_multipart_baseline(schema) if schema is not None else {}
+
+    if case.input_value in OMIT_MARKERS:
+        fields.pop(case.param_name, None)
+    elif case.input_value == _FILE_UPLOAD_MARKER:
+        fields[case.param_name] = _FileUploadValue()
+    elif case.input_value == NULL_VALUE_MARKER:
+        fields[case.param_name] = ""
+    else:
+        raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+        fields[case.param_name] = raw
+
+    result: dict[str, tuple] = {}
+    for key, value in fields.items():
+        if isinstance(value, _FileUploadValue):
+            result[key] = (_DUMMY_UPLOAD_FILENAME, _DUMMY_UPLOAD_CONTENT, _DUMMY_UPLOAD_CONTENT_TYPE)
+        else:
+            result[key] = (None, value)
+    return result
+
+
+class _FileUploadValue:
+    """multipart baseline 内でファイルアップロードフィールドを表すマーカー型。"""
+
+
+def _expand_multipart_baseline(schema: dict) -> dict:
+    """required なフォームフィールドを、テスト対象フィールド以外も含めて有効な値で埋める。"""
+    props = schema.get("properties") or {}
+    required = schema.get("required") or []
+    baseline: dict = {}
+    for name in required:
+        prop_schema = props.get(name)
+        if not isinstance(prop_schema, dict) or prop_schema.get("readOnly"):
+            continue
+        if prop_schema.get("format") == "binary":
+            baseline[name] = _FileUploadValue()
+        else:
+            value = _expand_value(prop_schema)
+            baseline[name] = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return baseline
 
 
 def _build_body(case: RunCase, openapi: dict | None) -> dict:
@@ -174,9 +280,9 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
         if case.input_value == _ROOT_BODY_EXTRA_PROP_MARKER:
             return {**body, "__extra__": "value"}
         if case.input_value.startswith(_ONE_OF_VARIANT_MARKER_PREFIX):
-            variant_body = _resolve_one_of_variant_body(schema, case.input_value)
-            if variant_body is not None:
-                return variant_body
+            variant_value = _resolve_one_of_variant_value(schema, case.input_value)
+            if isinstance(variant_value, dict):
+                return variant_value
         return body
 
     if case.input_value in OMIT_MARKERS:
@@ -186,30 +292,42 @@ def _build_body(case: RunCase, openapi: dict | None) -> dict:
     else:
         raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
         field_schema = _resolve_nested_schema(schema, case.param_name) if schema is not None else {}
+        if raw.startswith(_ONE_OF_VARIANT_MARKER_PREFIX):
+            # バリアントごとに型が異なりうるため、field_schema（代表バリアントの型）を
+            # 基準にした _coerce_value の型判定には委ねず、対象バリアントのスキーマから
+            # 直接ベースライン値を組み立てる。
+            variant_value = _resolve_one_of_variant_value(field_schema, raw)
+            if variant_value is not _MISSING:
+                _set_nested(body, case.param_name, variant_value, schema)
+                return body
         _set_nested(body, case.param_name, _coerce_value(raw, field_schema), schema)
 
     return body
 
 
-def _resolve_one_of_variant_body(schema: dict | None, input_value: str) -> dict | None:
-    """`__ONE_OF_VARIANT__{index}` マーカーから、対応するバリアントのベースラインbodyを組み立てる。
+_MISSING = object()
+
+
+def _resolve_one_of_variant_value(schema: dict | None, input_value: str) -> object:
+    """`__ONE_OF_VARIANT__{index}` マーカーから、対応するバリアントのベースライン値を組み立てる。
 
     schema や index が想定外（schema に _oneOfVariants が無い、index範囲外等）の場合は
-    None を返し、呼び出し側で通常のベースラインbodyにフォールバックする。
+    _MISSING を返し、呼び出し側で通常のベースライン値にフォールバックする。
+    ルートbody・ネストしたbodyフィールドの両方から共通で使う（ルート側は戻り値が
+    dict であることを呼び出し側で確認する）。
     """
     if schema is None:
-        return None
+        return _MISSING
     variants = schema.get("_oneOfVariants")
     if not variants:
-        return None
+        return _MISSING
     try:
         index = int(input_value[len(_ONE_OF_VARIANT_MARKER_PREFIX):])
     except ValueError:
-        return None
+        return _MISSING
     if not (0 <= index < len(variants)):
-        return None
-    value = _expand_value(variants[index])
-    return value if isinstance(value, dict) else None
+        return _MISSING
+    return _expand_value(variants[index])
 
 
 def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) -> tuple[dict, str]:
@@ -296,8 +414,8 @@ def _resolve_request_body_schema(operation_id: str, path: str, method: str, open
 
     rb = op.get("requestBody", {})
     content = rb.get("content", {})
-    json_content = content.get("application/json", {})
-    schema = json_content.get("schema", {})
+    picked_content = content.get("application/json") or content.get("multipart/form-data") or {}
+    schema = picked_content.get("schema", {})
     return _resolve_ref(schema, openapi) if schema else None
 
 

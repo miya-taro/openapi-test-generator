@@ -1,6 +1,15 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 
+# RunResult.exit_code の意味（requests 移行後は curl の終了コードではなく、
+# このツール自身が定義する分類コード）。
+EXIT_OK = 0
+EXIT_TIMEOUT = 1
+EXIT_ERROR = 2
+
+# HTTPリクエストのタイムアウト秒数（http_client.py/auth_login.py/db_scenario_runner.py で共有）。
+DEFAULT_REQUEST_TIMEOUT = 10
+
 
 @dataclass
 class RunCase:
@@ -25,9 +34,11 @@ class RunResult:
     actual_body: str
     actual_headers: dict[str, str]
     elapsed_ms: float
-    curl_exit_code: int
+    exit_code: int
     curl_command: str = ""
     error: str | None = None
+    # Excel証跡用。verify() が OpenAPI writeOnly 定義も含めて伏せた本文を設定する。
+    report_body: str | None = None
 
 
 @dataclass

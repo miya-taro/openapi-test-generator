@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
 
 // Tauri公式ドキュメントの推奨設定に準拠。
 // https://tauri.app/start/frontend/vanillajs/
@@ -11,6 +12,9 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
+    fs: {
+      allow: [fileURLToPath(new URL("../docs/", import.meta.url))],
+    },
     watch: {
       // src-tauri側の変更でフロントエンドを再読み込みしない。
       ignored: ["**/src-tauri/**"],

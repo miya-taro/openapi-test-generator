@@ -36,10 +36,42 @@ def test_one_of_variant_cases_generated_when_flag_enabled():
     assert cases[1]["inputValue"] == f"{ONE_OF_VARIANT_MARKER_PREFIX}2"
 
 
-def test_one_of_variant_cases_skipped_when_not_root_body():
+def test_one_of_variant_cases_generated_for_nested_body_field_too():
+    # ネストしたbodyフィールド（isRootBody=False）でもマーカー方式で対応する
     ctx = {"paramIn": "body", "paramName": "user.contact", "opts": ONE_OF_OPTS, "successStatus": "200", "isRootBody": False}
     cases = generate_one_of_variant_cases(_VARIANTS_SCHEMA, ctx)
-    assert cases == []
+    assert len(cases) == 2
+    assert cases[0]["inputValue"] == f"{ONE_OF_VARIANT_MARKER_PREFIX}1"
+    assert cases[1]["inputValue"] == f"{ONE_OF_VARIANT_MARKER_PREFIX}2"
+
+
+def test_one_of_variant_cases_generated_for_query_param_with_stringified_value():
+    # path/query/header/cookie パラメータはマーカーを使わず、直接文字列化した値を埋め込む
+    schema = {
+        "type": "string",
+        "_oneOfVariants": [
+            {"type": "string", "minLength": 3},
+            {"type": "integer", "minimum": 5},
+        ],
+    }
+    ctx = {"paramIn": "query", "paramName": "filter", "opts": ONE_OF_OPTS, "successStatus": "200"}
+    cases = generate_one_of_variant_cases(schema, ctx)
+    assert len(cases) == 1
+    assert cases[0]["inputValue"] == "5"  # 2番目のバリアント（integer, minimum:5）の代表値
+    assert not cases[0]["inputValue"].startswith(ONE_OF_VARIANT_MARKER_PREFIX)
+
+
+def test_one_of_variant_cases_for_param_stringifies_object_variant_as_json():
+    schema = {
+        "type": "string",
+        "_oneOfVariants": [
+            {"type": "string"},
+            {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer", "minimum": 1}}},
+        ],
+    }
+    ctx = {"paramIn": "query", "paramName": "filter", "opts": ONE_OF_OPTS, "successStatus": "200"}
+    cases = generate_one_of_variant_cases(schema, ctx)
+    assert cases[0]["inputValue"] == '{"id": 1}'
 
 
 def test_one_of_variant_cases_skipped_when_no_variants():
@@ -74,6 +106,35 @@ def test_required_false_no_missing_case():
         {"type": "string"}, False, {"paramIn": "query", "paramName": "name", "opts": ALL_OPTS}
     )
     assert not any(c["keyword"] == "required" for c in cases)
+
+
+def test_binary_format_field_has_no_empty_value_case():
+    # ファイルアップロードフィールド（type: string, format: binary）に「空文字」異常系は
+    # 意味を持たないため生成されない（required欠落の異常系はfile.pyの範囲外で別途生成される）
+    cases = generate_common_cases(
+        {"type": "string", "format": "binary"}, True,
+        {"paramIn": "body", "paramName": "avatar", "opts": ALL_OPTS},
+    )
+    assert not any(c["perspective"] == "異常系_空値" for c in cases)
+    assert any(c["keyword"] == "required" for c in cases)  # 必須欠落自体は引き続き生成される
+
+
+def test_empty_value_case_generated_when_type_array_has_string_first():
+    cases = generate_common_cases(
+        {"type": ["string", "null"]}, True,
+        {"paramIn": "body", "paramName": "name", "opts": ALL_OPTS},
+    )
+    assert any(c["perspective"] == "異常系_空値" for c in cases)
+
+
+def test_empty_value_case_generated_when_type_array_has_null_first():
+    # OAS 3.1のtype配列は順不同（"null"を先頭に書いても文法上は正当）。
+    # type[0]だけを見て判定すると、この並びでは "string" を見逃してしまう回帰テスト。
+    cases = generate_common_cases(
+        {"type": ["null", "string"]}, True,
+        {"paramIn": "body", "paramName": "name", "opts": ALL_OPTS},
+    )
+    assert any(c["perspective"] == "異常系_空値" for c in cases)
 
 
 def test_type_integer_invalid_value_is_abc():

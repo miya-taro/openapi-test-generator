@@ -48,6 +48,22 @@ def generate_object_cases(schema: dict, ctx: dict) -> list[dict]:
                     "expectedResult": "バリデーションエラーが返ること",
                     "notes": "additionalProperties のスキーマに適合しない型の追加プロパティ",
                 })
+    elif additional_props is not False:
+        # additionalProperties が未指定、または明示的に true の場合。
+        # JSON Schema の既定は additionalProperties: true（任意の追加プロパティを許可）であり、
+        # このケースが最も多い（多くのスキーマはそもそも additionalProperties を書かない）。
+        # 「許可されているはずの追加プロパティを、実装が誤って拒否していないか」は
+        # 上の2分岐（false/スキーマ指定）では一切カバーされず、これまで未検証だった。
+        if opts["includeNormal"]:
+            cases.append({
+                "summary": f"{ctx['paramName']} 未定義プロパティ追加・制限なし（正常）",
+                "keyword": "additionalProperties",
+                "perspective": "正常系_additionalProperties制限なし",
+                "inputValue": '{ ...validBody, "__extra__": "value" }',
+                "expectedStatus": ctx.get("successStatus"),
+                "expectedResult": "正常に処理されること",
+                "notes": "additionalProperties が未指定/true のためスキーマ外のキーがあっても許可されるはず",
+            })
 
     # 空 body（required プロパティが 1 件以上ある場合のみ）
     if opts["includeAbnormal"]:

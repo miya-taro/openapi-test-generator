@@ -1,13 +1,15 @@
 import sys
+import json
 import shutil
-import tempfile
 from pathlib import Path
 import pytest
 import openpyxl
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from excel_writer import write_results
-from models import RunCase, RunResult
+from models import ResponseSchema, RunCase, RunResult
+from response_validator import _strip_write_only
+from verifier import verify
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.xlsx"
 
@@ -30,7 +32,7 @@ def make_result(case: RunCase, status: int = 200, elapsed_ms: float = 150.0) -> 
         actual_headers={"Content-Type": "application/json"},
         curl_command='curl.exe -s -X GET -D - http://localhost:8080/users?page=1',
         elapsed_ms=elapsed_ms,
-        curl_exit_code=0,
+        exit_code=0,
         error=None,
     )
 
@@ -80,7 +82,7 @@ def test_body_truncated_over_21_chars(output_file):
     long_body = "x" * 30
     result = RunResult(
         case=case, actual_status=200, actual_body=long_body,
-        actual_headers={}, elapsed_ms=100.0, curl_exit_code=0, error=None,
+        actual_headers={}, elapsed_ms=100.0, exit_code=0, error=None,
     )
     write_results(FIXTURE, [(result, "OK", "")], str(output_file))
 
@@ -123,7 +125,7 @@ def test_full_body_not_truncated(output_file):
     long_body = "x" * 100
     result = RunResult(
         case=case, actual_status=200, actual_body=long_body,
-        actual_headers={}, elapsed_ms=100.0, curl_exit_code=0,
+        actual_headers={}, elapsed_ms=100.0, exit_code=0,
         curl_command="", error=None,
     )
     write_results(FIXTURE, [(result, "OK", "")], str(output_file), full_body=True)
@@ -141,7 +143,7 @@ def test_body_truncated_by_default(output_file):
     long_body = "x" * 100
     result = RunResult(
         case=case, actual_status=200, actual_body=long_body,
-        actual_headers={}, elapsed_ms=100.0, curl_exit_code=0,
+        actual_headers={}, elapsed_ms=100.0, exit_code=0,
         curl_command="", error=None,
     )
     write_results(FIXTURE, [(result, "OK", "")], str(output_file), full_body=False)
@@ -152,3 +154,72 @@ def test_body_truncated_by_default(output_file):
     body_col = list(header_row).index("実測ボディ") + 1
     val = str(ws.cell(row=5, column=body_col).value)
     assert len(val) <= 22  # 21 chars + ellipsis
+
+
+def test_full_report_redacts_credentials_from_response_body_and_headers(output_file):
+    case = make_case("TC-001-001")
+    provider_token = "ghp_123456789012345678901234567890123456"
+    password = "response-password-value"
+    private_key_body = "-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----"
+    result = make_result(case)
+    result.actual_body = json.dumps(
+        {
+            "access_token": provider_token,
+            "password": password,
+            "debug": private_key_body,
+        }
+    )
+    result.actual_headers = {
+        "Content-Type": "application/json",
+        "Set-Cookie": "sessionid=session-cookie-secret; HttpOnly",
+        "X-Api-Key": "header-api-key-secret",
+    }
+
+    write_results(FIXTURE, [(result, "NG", "秘密情報らしき値")], str(output_file), full_body=True)
+
+    wb = openpyxl.load_workbook(str(output_file))
+    ws = wb["test_spec"]
+    header_row = list(ws.iter_rows(min_row=4, max_row=4, values_only=True))[0]
+    body_col = list(header_row).index("実測ボディ") + 1
+    headers_col = list(header_row).index("実測ヘッダ") + 1
+    body_value = str(ws.cell(row=5, column=body_col).value)
+    headers_value = str(ws.cell(row=5, column=headers_col).value)
+
+    for secret in (provider_token, password, "private-key-material"):
+        assert secret not in body_value
+    for secret in ("session-cookie-secret", "header-api-key-secret"):
+        assert secret not in headers_value
+    assert "Content-Type: application/json" in headers_value
+
+
+def test_full_report_redacts_openapi_write_only_fields_with_custom_names(output_file):
+    case = make_case("TC-001-001")
+    secret = "custom-write-only-secret-value"
+    result = make_result(case)
+    result.actual_body = json.dumps({"accountCredentialMaterial": secret})
+    schema = ResponseSchema(
+        expected_status=200,
+        expected_content_type="application/json",
+        expected_response_time_ms=3000,
+        expected_body_schema=_strip_write_only(
+            {
+                "type": "object",
+                "required": ["accountCredentialMaterial"],
+                "properties": {
+                    "accountCredentialMaterial": {"type": "string", "writeOnly": True},
+                },
+            }
+        ),
+    )
+
+    verify(result, schema)
+    write_results(FIXTURE, [(result, "NG", "writeOnlyフィールド露出")], str(output_file), full_body=True)
+
+    wb = openpyxl.load_workbook(str(output_file))
+    ws = wb["test_spec"]
+    header_row = list(ws.iter_rows(min_row=4, max_row=4, values_only=True))[0]
+    body_col = list(header_row).index("実測ボディ") + 1
+    body_value = str(ws.cell(row=5, column=body_col).value)
+
+    assert secret not in body_value
+    assert "[REDACTED]" in body_value

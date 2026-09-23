@@ -121,3 +121,30 @@ def test_generate_from_schema_unknown_type_without_hints_generates_no_string_rul
     # string.py 由来のケース（enum/format/pattern等）は生成されない
     cases = _generate_from_schema({}, False, "query", "x", ALL_OPTS, "200")
     assert all(c["keyword"] == "optional" for c in cases)
+
+
+def test_generate_from_schema_type_array_null_first_still_routes_to_integer_rules():
+    # OAS 3.1 の type 配列は順不同（"null" を先頭に書いても文法上正当）。
+    # type[0] だけを見て振り分けると、この並びでは "integer" を見逃し、
+    # minimum/maximum の境界値ケースが1件も生成されなくなる回帰テスト。
+    cases = _generate_from_schema(
+        {"type": ["null", "integer"], "minimum": 1, "maximum": 100}, False, "query", "age", ALL_OPTS, "200"
+    )
+    assert any(c["keyword"] == "minimum" for c in cases)
+    assert any(c["keyword"] == "maximum" for c in cases)
+
+
+def test_generate_from_schema_type_array_null_first_still_routes_to_array_rules():
+    cases = _generate_from_schema(
+        {"type": ["null", "array"], "minItems": 1, "maxItems": 5, "items": {"type": "string"}},
+        False, "query", "tags", ALL_OPTS, "200",
+    )
+    assert any(c["keyword"] == "minItems" for c in cases)
+    assert any(c["keyword"] == "maxItems" for c in cases)
+
+
+def test_generate_from_schema_type_array_all_null_generates_no_type_specific_cases():
+    # "null" 以外の型が無い場合はどのルールにも振り分けない（何も推測しようがない）。
+    # common.py 由来の optional/nullable ケースは type 不問で生成されるため対象外。
+    cases = _generate_from_schema({"type": ["null"]}, False, "query", "x", ALL_OPTS, "200")
+    assert all(c["keyword"] in ("optional", "nullable") for c in cases)

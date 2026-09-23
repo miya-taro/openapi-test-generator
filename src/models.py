@@ -91,6 +91,7 @@ class AuthSpec(TypedDict):
     method: str
     schemeType: Literal["bearer", "apiKey", "basic", "other"]
     headerName: str
+    securitySchemes: list[dict[str, str]]
     successStatus: str
     responsesInfo: dict[str, ResponseInfo]
 
@@ -99,6 +100,7 @@ class GenerateOptions(TypedDict):
     includeNormal: bool
     includeAbnormal: bool
     enumFullCoverage: NotRequired[bool]
+    oneOfFullCoverage: NotRequired[bool]
     # TODO: --generate-minimal-request を追加予定。
     # 対象: requestBody が required:true かつ type:object かつ required 配列を持つ operation。
     # 生成ルール: required フィールドのみを代表値で埋めた最小 JSON を 1 ケース生成する（正常系_最小有効リクエスト）。

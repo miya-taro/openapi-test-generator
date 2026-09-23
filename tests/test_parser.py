@@ -512,3 +512,57 @@ def test_response_body_with_nullable_field_passes_jsonschema_validation(tmp_path
     validator = Draft202012Validator(schema)
     errors = list(validator.iter_errors({"age": None}))
     assert errors == []
+
+
+def test_nullable_enum_only_schema_is_still_visited_and_normalized(tmp_path):
+    # 回帰テスト: "type"/"properties"/"items"/"allOf"/"anyOf"/"oneOf" のいずれも持たず
+    # enum のみのスキーマは、以前は _is_schema_object に一切マッチせず _walk_schemas に
+    # 訪問されなかったため、nullable（OAS 3.0形式）が正規化されずに残っていた。
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {"schemas": {"Status": {"enum": ["active", "inactive"], "nullable": True}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["Status"]
+    assert "nullable" not in schema
+    assert schema["enum"] == ["active", "inactive", None]
+
+
+def test_nullable_const_only_schema_converts_to_enum_with_null(tmp_path):
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {"schemas": {"Fixed": {"const": "onlyValue", "nullable": True}}},
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["Fixed"]
+    assert "nullable" not in schema
+    assert "const" not in schema
+    assert schema["enum"] == ["onlyValue", None]
+
+
+def test_nullable_enum_only_schema_accepts_null_under_jsonschema(tmp_path):
+    # type を付与すると enum との交差でかえって何も通らなくなる（type: ["null"] は
+    # enum: ["a","b"] と矛盾するため）ため、null を type ではなく enum 側に足す設計に
+    # なっている。実際にjsonschemaでnullが通ることを確認する。
+    from jsonschema import Draft202012Validator
+
+    doc = {
+        "openapi": "3.0.3",
+        "paths": {},
+        "components": {
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {"status": {"enum": ["active", "inactive"], "nullable": True}},
+                }
+            }
+        },
+    }
+    api = parse_openapi(_write(tmp_path, doc))
+    schema = api["components"]["schemas"]["User"]
+    validator = Draft202012Validator(schema)
+    assert list(validator.iter_errors({"status": None})) == []
+    assert list(validator.iter_errors({"status": "active"})) == []
+    assert list(validator.iter_errors({"status": "bogus"})) != []

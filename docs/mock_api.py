@@ -16,7 +16,7 @@ from contextlib import contextmanager
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 
 DB = dict(host="127.0.0.1", port=5432, dbname="apitester_test", user="postgres", password="testpass123")
 

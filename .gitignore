@@ -10,10 +10,10 @@ __pycache__/
 
 # Build output (run `pnpm build` to regenerate)
 dist/
-
-# PyInstallerビルド出力（gui/openapi-test-tool.spec から再生成する）
-build/
-dist_pyinstaller/
+.build/*
+!.build/python-runtime/
+.build/python-runtime/*
+!.build/python-runtime/.gitkeep
 
 # Tauri(Rust)版GUIのビルド出力
 gui-tauri/src-tauri/target/
@@ -37,3 +37,4 @@ Thumbs.db
 coverage/
 htmlcov/
 docs/_ci_*
+.schemathesis/

@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -56,6 +56,28 @@ def test_split_ignores_empty_segments():
     sql = "SELECT 1;;"
     stmts = _split_statements(sql)
     assert stmts == ["SELECT 1"]
+
+
+def test_split_does_not_break_on_semicolon_inside_string_literal():
+    # 素朴に sql.split(";") していると、値に;を含むだけの正当な1文が2つの
+    # 構文的に壊れた断片に分割されてしまっていた（回帰テスト）。
+    sql = "INSERT INTO notes (msg) VALUES ('hello; world')"
+    stmts = _split_statements(sql)
+    assert stmts == ["INSERT INTO notes (msg) VALUES ('hello; world')"]
+
+
+def test_split_handles_escaped_quote_inside_string_literal():
+    # SQLの文字列リテラルはシングルクォートの二重化('')でエスケープする。
+    # ここで文字列判定が壊れて;を誤検出しないことを確認する。
+    sql = "INSERT INTO notes (msg) VALUES ('it''s; here'); SELECT 1"
+    stmts = _split_statements(sql)
+    assert stmts == ["INSERT INTO notes (msg) VALUES ('it''s; here')", "SELECT 1"]
+
+
+def test_split_multiple_statements_with_string_literals_containing_semicolons():
+    sql = "INSERT INTO t (a) VALUES ('x;y'); INSERT INTO t (a) VALUES ('p;q')"
+    stmts = _split_statements(sql)
+    assert stmts == ["INSERT INTO t (a) VALUES ('x;y')", "INSERT INTO t (a) VALUES ('p;q')"]
 
 
 # ---------- 正常系（setup） ----------

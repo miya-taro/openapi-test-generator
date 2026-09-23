@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gui-tauri",
+  "productName": "openapi-test-tool",
   "version": "0.1.0",
-  "identifier": "com.openapi-test-tool.app",
+  "identifier": "com.openapi-test-tool",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -31,6 +31,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../../src": "src",
+      "../../runner": "runner",
+      "../../workflow": "workflow",
+      "../../gui/tauri_bridge.py": "gui/tauri_bridge.py",
+      "../../gui/validators.py": "gui/validators.py",
+      "../../.build/python-runtime": "runtime/python"
+    }
   }
 }

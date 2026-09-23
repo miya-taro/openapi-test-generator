@@ -15,7 +15,10 @@ import psycopg2.extras
 # `(col)::text = ANY ((ARRAY['a'::character varying, ...])::text[])` のような形に正規化するため、
 # ARRAY[...] の中の文字列リテラルを拾う。
 _ARRAY_LITERALS_RE = re.compile(r"ARRAY\[(.*?)\]")
-_STRING_LITERAL_RE = re.compile(r"'((?:[^'\\]|\\.)*)'")
+# PostgreSQLのSQL標準文字列リテラルは、埋め込まれた ' を \' ではなく '' (二重化)で
+# エスケープする（standard_conforming_strings のデフォルト設定に関わらず、
+# information_schema.check_constraints.check_clause の描画は常にこの形式）。
+_STRING_LITERAL_RE = re.compile(r"'((?:[^']|'')*)'")
 _NOT_NULL_CLAUSE_RE = re.compile(r"IS NOT NULL", re.IGNORECASE)
 
 
@@ -219,7 +222,7 @@ def _extract_allowed_values(check_clause: str) -> list[str] | None:
     array_match = _ARRAY_LITERALS_RE.search(check_clause)
     if not array_match:
         return None
-    literals = _STRING_LITERAL_RE.findall(array_match.group(1))
+    literals = [m.replace("''", "'") for m in _STRING_LITERAL_RE.findall(array_match.group(1))]
     return literals or None
 
 

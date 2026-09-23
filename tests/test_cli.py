@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from src import cli
 
 FIXTURE = str(Path(__file__).resolve().parent / "e2e" / "fixtures" / "simple.openapi.json")

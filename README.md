@@ -1,7 +1,5 @@
 # openapi-test-gen / openapi-test-run
 
-[![Tests](https://github.com/miya-taro/openapi-test-generator/actions/workflows/test.yml/badge.svg)](https://github.com/miya-taro/openapi-test-generator/actions/workflows/test.yml)
-
 OpenAPI 3.x 定義ファイルから **インターフェース観点のテスト仕様を自動生成**し、実際の API サーバーに対して **自動試験を実行**するツールセット。
 
 ```
@@ -32,8 +30,10 @@ api test generator/
 │   └── renderer/         # JSON / Excel 出力
 ├── runner/               # openapi-test-run（試験実行ランナー）
 │   └── README.md         # ランナー詳細ドキュメント
-├── gui/                  # デスクトップアプリ（上記CLI群のGUIラッパー）
-├── requirements.txt      # ジェネレーター・ランナー共通の依存関係
+├── gui-tauri/            # デスクトップアプリ（上記CLI群のGUIラッパー。Tauri版）
+├── gui/                  # gui-tauriが呼び出すPython側の検証ロジック（validators.py等）
+├── requirements.txt           # 実行・テスト用の依存関係
+├── requirements-runtime.txt   # 配布ランタイムの最小実行依存
 └── docs/                 # サンプル OpenAPI・出力ファイル
 ```
 
@@ -41,33 +41,63 @@ api test generator/
 
 ## GUIアプリ（コマンドライン操作なしで使いたい場合）
 
-`gui/起動.bat` をダブルクリックするか、以下で起動する。
+`gui-tauri/`（Tauri版）を使う。かつて `gui/`（PySide6版）のexeも配布していたが廃止し、
+`gui-tauri/` に一本化した。
+
+### ソースから実行（開発用）
 
 ```sh
-python gui/app.py
+cd gui-tauri
+npm install
+npm run tauri dev
 ```
 
-- 「テスト生成・実行」タブ：`openapi.json` と Base URL を指定して「生成して実行」を押すだけで、
-  試験仕様の生成 → API実行 → 結果Excel出力までを1クリックで行う
-- 「DBシナリオ」タブ：`runner/db_scenario_runner.py` をGUIから実行する
+Node.js と Rust（`cargo`）のインストールが必要。実行対象のPython（`src/` / `runner/` /
+`gui/tauri_bridge.py` / `gui/validators.py`）はTauriシェルからサブプロセスとして
+呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。
+
+- 画面は「対象を登録 → 仕様を確認 → 試験を確認 → 実行 → 結果」の5工程で進める
+- 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
+- 契約試験とDBシナリオ試験は同じ統一ワークフローで実行され、実行ごとのフォルダに試験仕様Excel、結果Excel、JUnit XML、JSONをまとめて出力する
+- Layer 1/Layer 2とも、最初はケースと試験仕様Excelを準備するだけでAPI・DBへ接続しない。GUIで入力・期待結果・出典を確認し、ケース単位で「レビュー済み」→「承認」にできる
+- 承認済みケースは承認実行ボタンから実行する。未承認ケースの実行は別の「予備実行」ボタンで明示し、HTML結果にも未承認の探索実行として記録する。CLIでも準備後に承認状態を検査し、未承認は `--allow-draft` を付けない限り止める
+- ケース定義またはOpenAPI/シナリオYAMLが準備後に変わった場合、以前の承認状態を流用せず再準備を要求する
+- 承認した内容と実際に実行するExcelのずれを防ぐため、準備後に試験仕様Excelまたは実行Excelを直接編集した場合も実行を止める。内容を修正するときはOpenAPIまたはシナリオYAMLを直して再準備する
+- 既存試験IDを保ったケースマスター、試験仕様Excel、結果Excel、JUnit XML、HTMLレポート、失敗ケースID一覧を同じ実行フォルダに出力する。Layer 2のシナリオIDはExcel/JUnit/HTMLでも共通
 - 入力した値は次回起動時に自動で復元される
-- 実行中は進捗バーで完了件数がリアルタイムに分かる（PySide6製）
+- 実行中は進捗バーで完了件数がリアルタイムに分かる
 
-内部では既存のCLIツール（`src/cli.py` / `runner/runner.py` / `runner/db_scenario_runner.py`）を
-そのままサブプロセスとして呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。
+### 探索的API試験（任意）
 
-### exe化して配布する
+Schemathesisを追加すると、「テスト生成・実行」画面の折りたたみ欄からOpenAPIベースの探索試験をローカル実行できます。利用するPython環境に一度だけ追加します。
 
-Python未インストールの環境でも使えるよう、単体exeとしてビルドできる。
-
-```sh
-pip install pyinstaller
-python -m PyInstaller gui/openapi-test-tool.spec --noconfirm
+```powershell
+python -m pip install -r docs/requirements-schemathesis.txt
 ```
 
-（`gui/ビルド.bat` をダブルクリックしても同じ）。`dist/openapi-test-tool/` フォルダ一式ができるので、
-`openapi-test-tool.exe` を含むフォルダごと配布する（exeファイル単体ではなく、フォルダ単位で
-配布する必要がある）。
+既定では選択中のGET操作だけを対象にし、API操作ごとに最大10例、同時実行1、毎秒5リクエスト以下で実行します。認証設定を使う場合はtoken取得のためログインAPIへPOSTします。OpenAPIに認証定義があれば認証あり・なし・不正認証を試して拒否を確認します。Coverageが試す仕様外メソッドは既定で無効です。POST/PUT/PATCH/DELETEを探索対象に含める場合は、実行前の確認後に限り有効になります。試験先は開発環境にしてください。
+
+JUnit XMLとローカルHTMLレポートを実行ごとのフォルダへ保存します。VCR証跡は任意で、応答本文を含むことがあるため既定では作成しません。Schemathesisは通常のPython依存には含めませんが、配布版にはGUIの探索試験を使えるよう同梱します。GitHubや外部レポートサービスへの送信は行いません。
+
+### 配布用アプリを作る
+
+Python本体と実行依存（Schemathesisを含む）を同梱したポータブル版と、Windowsインストーラーを作成する。ビルドPCには必要なPython依存、Node.js依存、Rust/Cargo依存をあらかじめインストールしておく。配布ビルド時にネットワークから依存を取得しない。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1
+```
+
+ポータブル版は `dist/openapi-test-tool-portable/` に生成される。exe単体ではなくフォルダ全体を配布する。MSIとNSISインストーラーは `dist/openapi-test-tool-installers/` に生成される。配布先にPython、Node.js、Rustの開発環境は不要。Tauriアプリの画面表示にはWindowsのWebView2が必要で、Windows 10 version 1803以降とWindows 11には通常含まれている。WebView2が未導入の環境では、既定のインストーラーがランタイム取得にネット接続を使う場合がある。
+
+`npm run tauri build` は開発ビルド用であり、同梱Pythonを準備しない。配布物の作成には上記スクリプトを使う。
+
+### ローカル検証
+
+GitHubを使わず、次のコマンドでPython・GUI・RustのテストとLintをまとめて確認できる。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-local.ps1
+```
 
 ---
 
@@ -75,6 +105,8 @@ python -m PyInstaller gui/openapi-test-tool.spec --noconfirm
 
 `openapi.json`（対象APIの定義）以外は全部オプションで、使う機能に応じて必要なものだけ
 用意すればよい。サンプルと詳しい説明は [`examples/`](examples/README.md) を参照。
+対象APIの実装言語は問わない（HTTPとSQLしか使わないため）。PHP（特にフレームワーク無し）
+で`openapi.json`をまだ持っていない場合は、GUIでCopilot用の依頼文をコピーして下書きを作成・確認できる。手順は [docs/php_openapi_setup.md](docs/php_openapi_setup.md) を参照。
 
 | ファイル | 必須/任意 | 必要になる場面 |
 |---|---|---|
@@ -116,8 +148,6 @@ python src/cli.py <openapi.json> [オプション]
 | `--exclude-ops <ops>` | 除外する operationId をカンマ区切りで指定 | — |
 | `--no-normal` | 正常系ケースを生成しない | — |
 | `--no-abnormal` | 異常系ケースを生成しない | — |
-| `--enum-full-coverage` | enum の全値を正常ケースとして生成 | false |
-| `--one-of-full-coverage` | requestBody 直下の oneOf/anyOf について、代表バリアント以外にも正常系ケースを生成 | false |
 | `--dry-run` | ケース数のみ表示し、ファイルを出力しない | — |
 | `--fail-if-exists` | 出力先が存在する場合はエラー終了 | — |
 | `--log-level <level>` | ログレベル（debug/info/warn/error）| `info` |
@@ -237,4 +267,28 @@ python -m pytest tests/ -q
 
 ```sh
 python -m pytest runner/tests/ -q
+```
+
+**契約層の探索的ファジング（schemathesis）**
+
+`runner.py`（Layer1）は境界値・enum等を決定論的に列挙した回帰スイートだが、これとは別に
+CIの `e2e` ジョブで [schemathesis](https://schemathesis.readthedocs.io/) による
+hypothesisベースの探索的ファジングを `docs/openapi.json` に対して並走させている
+（[docs/run_schemathesis.py](docs/run_schemathesis.py)）。役割が異なる（決定論的な既知の
+回帰チェック vs. 人間が想定していない組み合わせの継続的な探索）ため、こちらの結果はCIを
+ブロックせず、JUnit XML・カセット（実施したリクエスト/レスポンスの記録）を証跡として
+アーティファクトに残すのみ。
+
+## Lint
+
+実バグに直結する項目（未使用/未定義変数、`raise ... from` 漏れ等）に絞った軽量なLintをCIで実行している。
+import順序等のスタイル系ルールは対象外。
+
+```sh
+pip install -r requirements-dev.txt
+ruff check .                    # Python（src/ runner/ gui/ docs/ tests/）
+
+cd gui-tauri
+npm run lint                    # JavaScript（src/main.js）
+cargo clippy --all-targets -- -D warnings --manifest-path src-tauri/Cargo.toml   # Rust
 ```

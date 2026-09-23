@@ -1,20 +1,13 @@
 """E2E tests: runner.py with pytest-httpserver."""
 import sys
-import shutil
 import json
 import subprocess
 from pathlib import Path
 import pytest
-import openpyxl
 
 RUNNER = Path(__file__).parent.parent / "runner.py"
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.xlsx"
 OPENAPI = Path(__file__).parent / "fixtures" / "sample_openapi.json"
-
-pytestmark = pytest.mark.skipif(
-    shutil.which("curl.exe") is None,
-    reason="curl.exe not found on PATH",
-)
 
 SAMPLE_OPENAPI = {
     "openapi": "3.0.0",

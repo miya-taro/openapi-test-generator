@@ -82,6 +82,33 @@ def test_list_operations_skips_operations_without_operation_id(tmp_path):
     assert validators.list_operations(str(path)) == []
 
 
+# --- _json_schema_for ---
+
+
+def test_json_schema_for_prefers_application_json_even_when_empty_object():
+    # application/json が {}（スキーマ未指定）でも、他のcontent-typeのスキーマを
+    # 誤って拾わないこと（回帰テスト）。application/json を優先しつつ、スキーマが
+    # 無いという事実そのものは正しく None として返す。
+    content = {
+        "application/xml": {"schema": {"type": "string"}},
+        "application/json": {},
+    }
+    assert validators._json_schema_for(content) is None
+
+
+def test_json_schema_for_returns_application_json_schema_when_present():
+    content = {
+        "application/xml": {"schema": {"type": "string"}},
+        "application/json": {"schema": {"type": "object", "properties": {"id": {"type": "integer"}}}},
+    }
+    assert validators._json_schema_for(content) == {"type": "object", "properties": {"id": {"type": "integer"}}}
+
+
+def test_json_schema_for_falls_back_to_first_content_type_when_no_json():
+    content = {"application/xml": {"schema": {"type": "string"}}}
+    assert validators._json_schema_for(content) == {"type": "string"}
+
+
 # --- login_operation_hints ---
 
 

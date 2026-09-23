@@ -47,6 +47,22 @@ def test_array_items_object_properties_are_flattened():
     assert "lines[].qty" in field_paths
 
 
+def test_nullable_array_type_as_list_still_flattens_item_object_properties():
+    # 回帰テスト: OAS 3.1 の type は配列形式もあり得る（例: nullable な配列を
+    # type: ["array", "null"] と書く）。type == "array" の文字列等値比較だけだと
+    # このケースを見逃し、items のオブジェクトプロパティが一切展開されなくなっていた。
+    api = _openapi_with_array_of_objects()
+    lines_schema = api["paths"]["/carts"]["post"]["requestBody"]["content"]["application/json"]["schema"][
+        "properties"
+    ]["lines"]
+    lines_schema["type"] = ["array", "null"]
+
+    _, body_specs = extract_specs(api)
+    field_paths = {s["fieldPath"] for s in body_specs}
+    assert "lines[].sku" in field_paths
+    assert "lines[].qty" in field_paths
+
+
 def test_array_item_field_required_flag_from_item_schema():
     _, body_specs = extract_specs(_openapi_with_array_of_objects())
     sku_spec = next(s for s in body_specs if s["fieldPath"] == "lines[].sku")
@@ -120,6 +136,89 @@ def test_path_level_parameter_kept_when_not_overridden():
     assert id_specs[0]["schema"]["type"] == "string"
 
 
+def _openapi_with_multipart_upload() -> dict:
+    return {
+        "openapi": "3.1.0",
+        "paths": {
+            "/avatars": {
+                "post": {
+                    "operationId": "uploadAvatar",
+                    "requestBody": {
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["file", "caption"],
+                                    "properties": {
+                                        "file": {"type": "string", "format": "binary"},
+                                        "caption": {"type": "string", "minLength": 1},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        },
+    }
+
+
+def test_multipart_binary_field_is_extracted_not_skipped():
+    _, body_specs = extract_specs(_openapi_with_multipart_upload())
+    file_spec = next(s for s in body_specs if s["fieldPath"] == "file")
+    assert file_spec["schema"]["format"] == "binary"
+    assert file_spec["contentType"] == "multipart/form-data"
+    assert file_spec["required"] is True
+
+
+def test_multipart_non_binary_field_also_marked_with_content_type():
+    _, body_specs = extract_specs(_openapi_with_multipart_upload())
+    caption_spec = next(s for s in body_specs if s["fieldPath"] == "caption")
+    assert caption_spec["contentType"] == "multipart/form-data"
+
+
+def test_multipart_root_body_spec_not_emitted():
+    # __body__（空body/additionalProperties検証用）はJSON観点の概念であり、
+    # multipart/form-data には意味を持たないため生成されない
+    _, body_specs = extract_specs(_openapi_with_multipart_upload())
+    assert not any(s["fieldPath"] == "__body__" for s in body_specs)
+
+
+def test_json_body_field_content_type_defaults_to_application_json():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/users": {
+                "post": {
+                    "operationId": "createUser",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        },
+    }
+    _, body_specs = extract_specs(api)
+    name_spec = next(s for s in body_specs if s["fieldPath"] == "name")
+    assert name_spec["contentType"] == "application/json"
+
+
+def test_json_content_preferred_over_multipart_when_both_present():
+    api = _openapi_with_multipart_upload()
+    api["paths"]["/avatars"]["post"]["requestBody"]["content"]["application/json"] = {
+        "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+    }
+    _, body_specs = extract_specs(api)
+    assert all(s["contentType"] == "application/json" for s in body_specs)
+    assert not any(s["fieldPath"] == "file" for s in body_specs)  # multipart側は使われない
+
+
 def test_auth_specs_extracted_for_bearer_scheme():
     api = {
         "openapi": "3.1.0",
@@ -189,6 +288,48 @@ def test_auth_specs_operation_level_security_overrides_global():
         },
     }
     # operation 側で security: [] を明示 → 認証不要としてスキップ
+    assert extract_auth_specs(api) == []
+
+
+def test_auth_specs_collects_all_or_alternatives_and_and_schemes():
+    api = {
+        "openapi": "3.1.0",
+        "components": {"securitySchemes": {
+            "BearerAuth": {"type": "http", "scheme": "bearer"},
+            "QueryKey": {"type": "apiKey", "in": "query", "name": "api_key"},
+            "CookieKey": {"type": "apiKey", "in": "cookie", "name": "session_key"},
+        }},
+        "paths": {"/me": {"get": {
+            "operationId": "getMe",
+            "security": [
+                {"BearerAuth": []},
+                {"QueryKey": [], "CookieKey": []},
+            ],
+            "responses": {"200": {"description": "OK"}},
+        }}},
+    }
+
+    specs = extract_auth_specs(api)
+
+    assert len(specs) == 1
+    assert [(item["schemeName"], item["in"], item["name"]) for item in specs[0]["securitySchemes"]] == [
+        ("BearerAuth", "header", "Authorization"),
+        ("QueryKey", "query", "api_key"),
+        ("CookieKey", "cookie", "session_key"),
+    ]
+
+
+def test_auth_specs_skips_optional_security_when_empty_alternative_exists():
+    api = {
+        "openapi": "3.1.0",
+        "components": {"securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}}},
+        "paths": {"/me": {"get": {
+            "operationId": "getMe",
+            "security": [{"BearerAuth": []}, {}],
+            "responses": {"200": {"description": "OK"}},
+        }}},
+    }
+
     assert extract_auth_specs(api) == []
 
 

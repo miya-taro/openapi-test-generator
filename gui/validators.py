@@ -125,7 +125,7 @@ def _build_object_example(schema: dict, depth: int = 0) -> dict:
 
 
 def _find_operation(openapi: dict, operation_id: str) -> dict | None:
-    for p, item in (openapi.get("paths") or {}).items():
+    for _p, item in (openapi.get("paths") or {}).items():
         if not isinstance(item, dict):
             continue
         for method, op in item.items():
@@ -139,7 +139,14 @@ def _find_operation(openapi: dict, operation_id: str) -> dict | None:
 def _json_schema_for(content) -> dict | None:
     if not isinstance(content, dict):
         return None
-    media = content.get("application/json") or next(iter(content.values()), None)
+    # "application/json" in content で存在確認する（.get(...) or ... だと、
+    # application/json のMedia Type Objectがスキーマ未指定で {} になっている場合に
+    # 「値が無い」と誤判定し、別のcontent-type（例: application/xml）のスキーマを
+    # 意図せず拾ってしまう）。
+    if "application/json" in content:
+        media = content["application/json"]
+    else:
+        media = next(iter(content.values()), None)
     if not isinstance(media, dict):
         return None
     schema = media.get("schema")

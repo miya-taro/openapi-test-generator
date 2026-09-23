@@ -1,10 +1,11 @@
 import sys
 from pathlib import Path
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from verifier import verify, PASS, FAIL, WARN
-from models import RunCase, RunResult, ResponseSchema
+from models import EXIT_ERROR, EXIT_OK, EXIT_TIMEOUT, RunCase, RunResult, ResponseSchema
 
 
 def make_case() -> RunCase:
@@ -21,7 +22,7 @@ def make_result(
     status: int = 200,
     elapsed_ms: float = 100.0,
     headers: dict | None = None,
-    curl_exit_code: int = 0,
+    exit_code: int = EXIT_OK,
     error: str | None = None,
     body: str = "",
 ) -> RunResult:
@@ -31,7 +32,7 @@ def make_result(
         actual_body=body,
         actual_headers=headers or {},
         elapsed_ms=elapsed_ms,
-        curl_exit_code=curl_exit_code,
+        exit_code=exit_code,
         error=error,
     )
 
@@ -66,18 +67,18 @@ def test_level1_fail_status_mismatch():
     assert "ステータス不一致" in detail
 
 
-def test_level1_fail_on_curl_timeout():
-    result = make_result(curl_exit_code=28, error="timeout")
+def test_level1_fail_on_timeout():
+    result = make_result(exit_code=EXIT_TIMEOUT, error="timeout")
     verdict, detail = verify(result, make_schema(200))
     assert verdict == FAIL
     assert "タイムアウト" in detail
 
 
-def test_level1_fail_on_curl_error():
-    result = make_result(curl_exit_code=7, error="connection refused")
+def test_level1_fail_on_request_error():
+    result = make_result(exit_code=EXIT_ERROR, error="connection refused")
     verdict, detail = verify(result, make_schema(200))
     assert verdict == FAIL
-    assert "curl エラー" in detail
+    assert "リクエストエラー" in detail
 
 
 # Level 2: response time
@@ -110,6 +111,23 @@ def test_level3_fail_content_type_mismatch():
     verdict, detail = verify(result, schema)
     assert verdict == FAIL
     assert "Content-Type" in detail
+
+
+def test_level3_fail_content_type_with_shared_prefix_is_not_a_false_pass():
+    # 回帰テスト: 以前は単純な前方一致だったため、期待値と文字列として前方一致する
+    # 別のメディアタイプ（application/json-patch+json 等）を誤ってOK判定していた。
+    result = make_result(status=200, headers={"Content-Type": "application/json-patch+json"})
+    schema = make_schema(200, expected_content_type="application/json")
+    verdict, detail = verify(result, schema)
+    assert verdict == FAIL
+    assert "Content-Type" in detail
+
+
+def test_level3_pass_content_type_case_insensitive():
+    result = make_result(status=200, headers={"Content-Type": "Application/JSON; charset=UTF-8"})
+    schema = make_schema(200, expected_content_type="application/json")
+    verdict, detail = verify(result, schema)
+    assert verdict == PASS
 
 
 def test_level3_skipped_when_no_expected_ct():
@@ -239,6 +257,165 @@ def test_level4_fail_takes_priority_over_warn():
     verdict, detail = verify(result, schema)
     assert verdict == FAIL
     assert "ボディ不適合" in detail
+
+
+def test_security_fails_when_php_error_details_are_exposed():
+    result = make_result(
+        body="Warning: Undefined variable $user in /var/www/app.php on line 23"
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert "PHPエラー情報の露出" in detail
+    assert "/var/www/app.php" not in detail
+
+
+def test_security_detects_php_uncaught_database_exception():
+    result = make_result(body="Uncaught PDOException: SQLSTATE[HY000] in /srv/api.php on line 8")
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert "PHPエラー情報の露出" in detail
+
+
+def test_security_detects_exposed_sqlstate_without_echoing_database_details():
+    result = make_result(
+        body='{"error":"SQLSTATE[42S02]: Base table or view not found: 1146 users"}'
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert "データベースエラー情報の露出" in detail
+    assert "Base table" not in detail
+    assert "42S02" not in detail
+
+
+@pytest.mark.parametrize("body", [
+    "You have an error in your SQL syntax near 'OR 1=1'",
+    'syntax error at or near "SELECT"',
+    "Unterminated quoted string at or near input",
+    "no such table: users_private",
+    "Unknown column 'secret_column' in field list",
+])
+def test_security_detects_common_database_error_fingerprints_without_echoing(body):
+    verdict, detail = verify(make_result(body=body), make_schema(200))
+
+    assert verdict == FAIL
+    assert "データベースエラー情報の露出" in detail
+    assert body not in detail
+
+
+def test_security_detects_private_key_block_without_echoing_key_material():
+    result = make_result(
+        body="-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----"
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert "秘密鍵ブロックの露出" in detail
+    assert "private-key-material" not in detail
+
+
+def test_security_does_not_flag_public_certificate_pem():
+    result = make_result(
+        body="-----BEGIN CERTIFICATE-----\npublic-certificate\n-----END CERTIFICATE-----"
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == PASS
+    assert detail == ""
+
+
+_SLACK_TEST_TOKEN = "xoxb-" + "123456789012-" + "abcdefghijklmnop"
+
+
+@pytest.mark.parametrize(
+    ("credential", "finding"),
+    [
+        ("ghp_123456789012345678901234567890123456", "GitHub形式のトークン"),
+        ("github_pat_123456789012345678901234567890", "GitHub形式のトークン"),
+        (_SLACK_TEST_TOKEN, "Slack形式のトークン"),
+        ("AKIAIOSFODNN7EXAMPLE", "AWSアクセスキーID"),
+        ("sk_live_12345678901234567890", "Stripe形式のAPIキー"),
+    ],
+)
+def test_security_detects_known_provider_credentials_without_echoing_value(credential, finding):
+    result = make_result(body=f'{{"diagnostic":"{credential}"}}')
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert finding in detail
+    assert credential not in detail
+
+
+def test_security_does_not_flag_short_credential_lookalikes_or_normal_jwt():
+    result = make_result(
+        body=(
+            '{"message":"ghp_short xoxb-not-a-token sk_live_demo",'
+            '"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"}'
+        )
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == PASS
+    assert detail == ""
+
+
+def test_sensitive_header_mismatch_does_not_echo_header_value():
+    secret_cookie = "sessionid=private-cookie-value"
+    result = make_result(headers={"Set-Cookie": secret_cookie})
+
+    verdict, detail = verify(
+        result,
+        make_schema(200, expected_headers={"Set-Cookie": "different-cookie"}),
+    )
+
+    assert verdict == FAIL
+    assert "Set-Cookie不一致" in detail
+    assert secret_cookie not in detail
+    assert "private-cookie-value" not in detail
+
+
+def test_security_fails_when_python_traceback_is_exposed_even_for_expected_error_status():
+    result = make_result(
+        status=500,
+        body='Traceback (most recent call last):\n  File "app.py", line 12, in handler\nRuntimeError',
+    )
+
+    verdict, detail = verify(result, make_schema(500))
+
+    assert verdict == FAIL
+    assert "スタックトレースの露出" in detail
+
+
+def test_status_failure_also_reports_stack_trace_without_response_contents():
+    result = make_result(
+        status=500,
+        body='Traceback (most recent call last):\n  File "app.py", line 12\nRuntimeError',
+    )
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == FAIL
+    assert "ステータス不一致" in detail
+    assert "スタックトレースの露出" in detail
+    assert 'File "app.py"' not in detail
+
+
+def test_security_does_not_flag_ordinary_warning_text():
+    result = make_result(body="This warning is part of the product documentation.")
+
+    verdict, detail = verify(result, make_schema(200))
+
+    assert verdict == PASS
+    assert detail == ""
 
 
 # Level 1 takes priority over Level 2/3

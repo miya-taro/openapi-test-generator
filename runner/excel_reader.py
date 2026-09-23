@@ -31,9 +31,14 @@ def read_excel(path: str | Path) -> list[RunCase]:
         if cell is not None and str(cell) in COLUMN_MAP:
             col_index[COLUMN_MAP[str(cell)]] = i
 
+    id_col = col_index.get("id")
+
     cases: list[RunCase] = []
     for row in rows[4:]:
-        if row[0] is None:
+        # 空行判定は「試験ID」列（ヘッダから見つけた実際の位置）で行う。row[0] 決め打ちだと、
+        # 生成直後は必ず先頭列だが、ユーザーが手動で列を追加/並び替えた場合に空行判定を
+        # 誤る（他の全フィールドと同じくヘッダ駆動の位置で見るのが一貫している）。
+        if id_col is None or row[id_col] is None:
             continue
         def get(key: str, _row=row) -> str:
             idx = col_index.get(key)

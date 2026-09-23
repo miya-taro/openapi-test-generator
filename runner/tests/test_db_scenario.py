@@ -5,7 +5,10 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from db_scenario import load_scenarios, parse_scenarios, resolve_placeholders, resolve_db_check, ScenarioError, DBCheck
+from db_scenario import (
+    load_scenarios, parse_scenarios, resolve_placeholders, resolve_db_check, resolve_invariant_expr,
+    ScenarioError, DBCheck,
+)
 
 
 def _write_yaml(tmp_path, data: dict) -> Path:
@@ -41,6 +44,73 @@ def test_parse_scenarios_from_text_equivalent_to_load_scenarios(tmp_path):
     assert len(from_text) == len(from_file) == 1
     assert from_text[0].name == from_file[0].name
     assert from_text[0].db_check.table == from_file[0].db_check.table
+
+
+def test_db_scenario_case_id_is_stable_and_uses_explicit_id_namespace():
+    first = parse_scenarios("""
+scenarios:
+  - name: get user
+    request: {operationId: getUser, path_params: {id: 7}}
+    response_check: {expect: {status: 200}}
+""")[0]
+    reordered = parse_scenarios("""
+scenarios:
+  - request: {path_params: {id: 7}, operationId: getUser}
+    response_check: {expect: {status: 200}}
+    name: get user
+""")[0]
+    explicit = parse_scenarios("""
+scenarios:
+  - id: get-user
+    name: get user
+    request: {operationId: getUser}
+    response_check: {expect: {status: 200}}
+""")[0]
+
+    assert first.case_id == reordered.case_id
+    assert first.case_id.startswith("DB-")
+    assert explicit.case_id == "DB-get-user"
+
+
+def test_auth_profile_is_part_of_scenario_and_stable_case_definition():
+    scenario = parse_scenarios("""
+scenarios:
+  - name: read-only user cannot update another user's record
+    auth_profile: read_only
+    request: {operationId: updateUser, path_params: {id: 7}}
+    response_check: {expect: {status: 403}}
+""")[0]
+
+    assert scenario.auth_profile == "read_only"
+    assert scenario.case_definition()["authProfile"] == "read_only"
+
+
+@pytest.mark.parametrize("profile", ["", "bad profile", "../reader"])
+def test_invalid_auth_profile_is_rejected(profile):
+    text = f"""
+scenarios:
+  - name: invalid auth profile
+    auth_profile: {profile!r}
+    request: {{operationId: getUser}}
+    response_check: {{expect: {{status: 403}}}}
+"""
+    with pytest.raises(ScenarioError, match="auth_profile"):
+        parse_scenarios(text)
+
+
+def test_duplicate_db_case_ids_are_rejected_at_parse_time():
+    with pytest.raises(ScenarioError, match="試験IDが重複"):
+        parse_scenarios("""
+scenarios:
+  - id: same
+    name: one
+    request: {operationId: getUser}
+    response_check: {expect: {status: 200}}
+  - id: same
+    name: two
+    request: {operationId: getUser}
+    response_check: {expect: {status: 200}}
+""")
 
 
 def test_parse_scenarios_invalid_yaml_raises_scenario_error():
@@ -119,6 +189,7 @@ def test_load_multiple_scenarios(tmp_path):
     path = _write_yaml(tmp_path, data)
     scenarios = load_scenarios(path)
     assert len(scenarios) == 2
+    assert scenarios[0].case_id != scenarios[1].case_id
 
 
 # ---------- load_scenarios: defaults/list 形式（engineの重複記述を省略する） ----------
@@ -448,3 +519,193 @@ def test_resolve_db_check_empty_expect_stays_empty_dict():
     check = DBCheck(engine="postgres", table="users", where={"id": "{{response.id}}"}, expect={})
     resolved = resolve_db_check(check, {"id": 1})
     assert resolved.expect == {}
+
+
+# ---------- invariants（不変条件） ----------
+
+
+def test_resolve_invariant_expr_substitutes_given_and_response():
+    resolved = resolve_invariant_expr(
+        "{{db.stock}} == {{given.product_a.stock}} - {{response.qty}}",
+        {"qty": 1},
+        {"product_a": {"stock": 10}},
+    )
+    assert resolved == "{{db.stock}} == 10 - 1"
+
+
+def test_resolve_invariant_expr_leaves_db_placeholder_untouched():
+    resolved = resolve_invariant_expr("{{db.stock}} >= 0", {}, {})
+    assert resolved == "{{db.stock}} >= 0"
+
+
+def test_resolve_invariant_expr_missing_given_key_raises():
+    with pytest.raises(ScenarioError):
+        resolve_invariant_expr("{{given.missing.id}} == 1", {}, {"product_a": {"id": 1}})
+
+
+def test_resolve_invariant_expr_unknown_namespace_raises():
+    with pytest.raises(ScenarioError, match="名前空間"):
+        resolve_invariant_expr("{{unknown.x}} == 1", {}, {})
+
+
+def test_resolve_db_check_resolves_invariants_list():
+    check = DBCheck(
+        engine="postgres", table="products", where={"id": "{{given.product_a.id}}"},
+        invariants=["{{db.stock}} == {{given.product_a.stock}} - 1"],
+    )
+    resolved = resolve_db_check(check, {}, {"product_a": {"id": 5, "stock": 10}})
+    assert resolved.invariants == ["{{db.stock}} == 10 - 1"]
+    assert resolved.where == {"id": 5}
+
+
+def test_resolve_db_check_no_invariants_stays_empty_list():
+    check = DBCheck(engine="postgres", table="users", expect={})
+    resolved = resolve_db_check(check, {})
+    assert resolved.invariants == []
+
+
+def test_parse_scenario_with_invariants():
+    data = {
+        "scenarios": [{
+            "name": "在庫が減る",
+            "request": {"operationId": "createOrder"},
+            "db_check": {
+                "engine": "postgres", "table": "products",
+                "invariants": ["{{db.stock}} >= 0", "{{db.stock}} == {{given.product_a.stock}} - 1"],
+            },
+        }]
+    }
+    scenarios = parse_scenarios(yaml.dump(data, allow_unicode=True))
+    assert scenarios[0].db_check.invariants == [
+        "{{db.stock}} >= 0", "{{db.stock}} == {{given.product_a.stock}} - 1",
+    ]
+
+
+def test_parse_scenario_without_invariants_defaults_to_empty_list():
+    scenarios = parse_scenarios(yaml.dump(POSTGRES_SCENARIO, allow_unicode=True))
+    assert scenarios[0].db_check.invariants == []
+
+
+def test_parse_scenario_invariants_must_be_list_of_strings():
+    data = {
+        "scenarios": [{
+            "name": "x",
+            "request": {"operationId": "createOrder"},
+            "db_check": {"engine": "postgres", "table": "t", "invariants": [123]},
+        }]
+    }
+    with pytest.raises(ScenarioError, match="invariants"):
+        parse_scenarios(yaml.dump(data, allow_unicode=True))
+
+
+# ---------- given（factory前提データ）プレースホルダ ----------
+
+
+def test_resolve_placeholder_given_namespace():
+    result = resolve_placeholders("{{given.product_a.id}}", {}, {"product_a": {"id": 5, "stock": 10}})
+    assert result == 5
+
+
+def test_resolve_placeholder_given_missing_key_raises():
+    with pytest.raises(ScenarioError):
+        resolve_placeholders("{{given.product_a.id}}", {}, {"other": {"id": 1}})
+
+
+def test_resolve_placeholder_given_without_given_arg_raises():
+    # given を渡さない（Noneのまま）場合でも、response.xxx の解決には影響しない後方互換性を保つ
+    with pytest.raises(ScenarioError):
+        resolve_placeholders("{{given.product_a.id}}", {})
+
+
+def test_resolve_placeholder_unknown_namespace_raises():
+    with pytest.raises(ScenarioError, match="名前空間"):
+        resolve_placeholders("{{unknown.id}}", {"id": 1})
+
+
+def test_resolve_placeholders_response_and_given_together_in_dict():
+    result = resolve_placeholders(
+        {"user_id": "{{response.id}}", "product_id": "{{given.product_a.id}}"},
+        {"id": 42},
+        {"product_a": {"id": 7}},
+    )
+    assert result == {"user_id": 42, "product_id": 7}
+
+
+def test_resolve_db_check_where_with_given_namespace():
+    check = DBCheck(engine="postgres", table="products", where={"id": "{{given.product_a.id}}"}, expect={})
+    resolved = resolve_db_check(check, {}, {"product_a": {"id": 5}})
+    assert resolved.where == {"id": 5}
+
+
+# ---------- given（factory前提データ）のYAML解析 ----------
+
+
+GIVEN_SCENARIO = {
+    "scenarios": [
+        {
+            "name": "在庫がある商品を注文すると在庫が減る",
+            "given": [
+                {"table": "products", "as": "product_a", "fields": {"name": "商品A", "stock": 10}},
+            ],
+            "request": {
+                "operationId": "createOrder",
+                "body": {"product_id": "{{given.product_a.id}}", "qty": 1},
+            },
+            "db_check": {
+                "engine": "postgres", "table": "products",
+                "where": {"id": "{{given.product_a.id}}"}, "expect": {"stock": 9},
+            },
+        }
+    ]
+}
+
+
+def test_parse_scenario_with_given_items():
+    scenarios = parse_scenarios(yaml.dump(GIVEN_SCENARIO, allow_unicode=True))
+    assert len(scenarios) == 1
+    given = scenarios[0].given
+    assert len(given) == 1
+    assert given[0].table == "products"
+    assert given[0].as_name == "product_a"
+    assert given[0].fields == {"name": "商品A", "stock": 10}
+
+
+def test_parse_scenario_without_given_defaults_to_empty_list():
+    scenarios = parse_scenarios(yaml.dump(POSTGRES_SCENARIO, allow_unicode=True))
+    assert scenarios[0].given == []
+
+
+def test_parse_scenario_given_missing_table_raises():
+    data = {
+        "scenarios": [{
+            "name": "x", "given": [{"as": "product_a", "fields": {}}],
+            "request": {"operationId": "createOrder"},
+            "db_check": {"engine": "postgres", "table": "t", "expect": {}},
+        }]
+    }
+    with pytest.raises(ScenarioError, match="given\\[0\\]"):
+        parse_scenarios(yaml.dump(data, allow_unicode=True))
+
+
+def test_parse_scenario_given_missing_as_raises():
+    data = {
+        "scenarios": [{
+            "name": "x", "given": [{"table": "products", "fields": {}}],
+            "request": {"operationId": "createOrder"},
+            "db_check": {"engine": "postgres", "table": "t", "expect": {}},
+        }]
+    }
+    with pytest.raises(ScenarioError, match="given\\[0\\]"):
+        parse_scenarios(yaml.dump(data, allow_unicode=True))
+
+
+def test_parse_scenario_given_fields_defaults_to_empty_dict():
+    data = {
+        "scenarios": [{
+            "name": "x", "given": [{"table": "products", "as": "product_a"}],
+            "request": {"operationId": "createOrder"},
+            "db_check": {"engine": "postgres", "table": "t", "expect": {}},
+        }]
+    }
+    scenarios = parse_scenarios(yaml.dump(data, allow_unicode=True))
+    assert scenarios[0].given[0].fields == {}

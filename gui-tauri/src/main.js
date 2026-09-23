@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { buildProjectData } from "./project-config.js";
+import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
+import { buildCopilotScenarioPrompt } from "./copilot-scenario-prompt.js";
+import { createWorkflowClient } from "./workflow-client.js";
+
+const workflowClient = createWorkflowClient({ invoke, listen });
 
 function $(id) {
   return document.getElementById(id);
@@ -9,6 +15,35 @@ function $(id) {
 // ---------- 設定の読み込み/保存（PySide6版と同じ設定ファイルを共有） ----------
 
 let settings = {};
+
+export async function loadRuntimeDiagnosis() {
+  const status = $("runtime-status");
+  try {
+    const diagnosis = await invoke("diagnose_runtime");
+    const scriptsReady = diagnosis.workflowAvailable && diagnosis.generatorAvailable && diagnosis.runnerAvailable;
+    if (diagnosis.pythonAvailable && scriptsReady) {
+      const pythonSource = diagnosis.pythonBundled ? "同梱" : "PATH";
+      status.textContent = `実行環境: ${diagnosis.pythonVersion || "Python"}（${pythonSource}）を確認しました`;
+      status.classList.add("ok");
+      return;
+    }
+    status.textContent = "実行環境を確認できません。Pythonとアプリの同梱ファイルを確認してください。";
+    status.classList.add("error");
+  } catch {
+    status.textContent = "実行環境を確認できません。Pythonとアプリの同梱ファイルを確認してください。";
+    status.classList.add("error");
+  }
+}
+
+export async function loadAppVersion() {
+  const version = $("app-version");
+  try {
+    const value = await invoke("app_version");
+    version.textContent = typeof value === "string" && value ? `v${value}` : "バージョン不明";
+  } catch {
+    version.textContent = "バージョン不明";
+  }
+}
 
 async function loadSettingsIntoForm() {
   settings = await invoke("load_settings");
@@ -20,6 +55,10 @@ async function loadSettingsIntoForm() {
   $("dry-run").checked = !!settings.gen_dry_run;
   $("full-body").checked = !!settings.gen_full_body;
   $("fail-fast").checked = !!settings.gen_fail_fast;
+  $("no-normal").checked = !!settings.gen_no_normal;
+  $("no-abnormal").checked = !!settings.gen_no_abnormal;
+  $("parallel").value = settings.gen_parallel || "";
+  $("cookie-jar").checked = !!settings.gen_cookie_jar;
   $("hc-path").value = settings.hc_path || "";
 
   $("pg-enabled").checked = !!settings.cfg_pg_enabled;
@@ -34,21 +73,24 @@ async function loadSettingsIntoForm() {
   $("influx-port").value = settings.cfg_influx_port || "";
   $("influx-database").value = settings.cfg_influx_database || "";
   $("influx-username").value = settings.cfg_influx_username || "";
+  syncDbConfigFieldsEnabled();
 
   $("auth-enabled").checked = !!settings.auth_enabled;
   $("auth-token-path").value = settings.auth_token_path || "";
   $("auth-header-name").value = settings.auth_header_name || "";
   $("auth-header-format").value = settings.auth_header_format || "";
   // ボディは認証情報を含みうるため、設定ファイルに平文保存しない（起動時は毎回未入力）
+  syncAuthFieldsEnabled();
 
   $("dbprep-sql-tables").value = settings.dbprep_sql_tables || "";
   $("dbprep-sql-output-dir").value = settings.dbprep_sql_output_dir || "";
   $("dbprep-mapping-output").value = settings.dbprep_mapping_output || "";
+  $("dbprep-php-db-evidence-path").value = settings.dbprep_php_db_evidence_path || "";
   $("dbprep-scenario-mapping-path").value = settings.dbprep_scenario_mapping_path || "";
   $("dbprep-scenario-output").value = settings.dbprep_scenario_output || "";
   $("dbscenario-path").value = settings.dbscenario_path || "";
-  $("dbscenario-report-output").value = settings.dbscenario_report_output || "";
   $("dbscenario-dry-run").checked = !!settings.dbscenario_dry_run;
+  $("dbscenario-cookie-jar").checked = !!settings.dbscenario_cookie_jar;
 
   updateActiveOpenapiText();
   updateActiveBaseUrlText();
@@ -73,6 +115,10 @@ async function persistSettings() {
   settings.gen_dry_run = $("dry-run").checked;
   settings.gen_full_body = $("full-body").checked;
   settings.gen_fail_fast = $("fail-fast").checked;
+  settings.gen_no_normal = $("no-normal").checked;
+  settings.gen_no_abnormal = $("no-abnormal").checked;
+  settings.gen_parallel = $("parallel").value.trim();
+  settings.gen_cookie_jar = $("cookie-jar").checked;
   settings.hc_path = $("hc-path").value.trim();
   settings.gen_excluded_operations = getUncheckedOperationIds().join(",");
 
@@ -99,11 +145,12 @@ async function persistSettings() {
   settings.dbprep_sql_tables = $("dbprep-sql-tables").value.trim();
   settings.dbprep_sql_output_dir = $("dbprep-sql-output-dir").value.trim();
   settings.dbprep_mapping_output = $("dbprep-mapping-output").value.trim();
+  settings.dbprep_php_db_evidence_path = $("dbprep-php-db-evidence-path").value.trim();
   settings.dbprep_scenario_mapping_path = $("dbprep-scenario-mapping-path").value.trim();
   settings.dbprep_scenario_output = $("dbprep-scenario-output").value.trim();
   settings.dbscenario_path = $("dbscenario-path").value.trim();
-  settings.dbscenario_report_output = $("dbscenario-report-output").value.trim();
   settings.dbscenario_dry_run = $("dbscenario-dry-run").checked;
+  settings.dbscenario_cookie_jar = $("dbscenario-cookie-jar").checked;
 
   await invoke("save_settings", { data: settings });
 }
@@ -128,15 +175,34 @@ async function browseSaveFile(inputId, filters, defaultPath) {
   if (picked) $(inputId).value = picked;
 }
 
+function setProjectStatus(text, state) {
+  const status = $("project-status");
+  status.textContent = text;
+  status.classList.remove("error", "ok");
+  if (state) status.classList.add(state);
+}
+
 // ---------- サイドバーナビゲーション ----------
 
-function showPage(pageId) {
-  document.querySelectorAll("#top-nav .tab[data-page]").forEach((el) => el.classList.toggle("active", el.dataset.page === pageId));
+function showPage(pageId, activeTab = null) {
+  document.querySelectorAll("#top-nav .tab[data-page]").forEach((el) => {
+    const active = activeTab ? el === activeTab : el.dataset.page === pageId;
+    el.classList.toggle("active", active);
+    if (el.dataset.step) {
+      if (active) el.setAttribute("aria-current", "step");
+      else el.removeAttribute("aria-current");
+    }
+  });
   document.querySelectorAll(".page").forEach((el) => el.classList.toggle("active", el.id === `page-${pageId}`));
 }
 
 for (const tab of document.querySelectorAll("#top-nav .tab[data-page]")) {
-  tab.addEventListener("click", () => showPage(tab.dataset.page));
+  tab.addEventListener("click", () => {
+    showPage(tab.dataset.page, tab);
+    if (tab.dataset.target) {
+      document.getElementById(tab.dataset.target)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }
+  });
 }
 
 // ---------- openapi.json（「設定」画面） ----------
@@ -200,27 +266,84 @@ $("openapi-path").addEventListener("change", () => {
   refreshOperationsList({ keepExcluded: false });
 });
 
+let pendingCopilotDraft = null;
+
+function setCopilotStatus(message, state) {
+  const status = $("copilot-status");
+  status.textContent = message;
+  status.classList.remove("error", "ok");
+  if (state) status.classList.add(state);
+}
+
+$("copilot-prompt-copy").addEventListener("click", async () => {
+  try {
+    await window.navigator.clipboard.writeText(COPILOT_OPENAPI_PROMPT);
+    setCopilotStatus("Copilot用の依頼文をコピーしました。VS CodeのCopilot Chatへ貼り付けてください。", "ok");
+  } catch {
+    setCopilotStatus("コピーできませんでした。クリップボードの利用権限を確認してください。", "error");
+  }
+});
+
+$("copilot-draft-import").addEventListener("click", async () => {
+  pendingCopilotDraft = null;
+  $("copilot-draft-reviewed").checked = false;
+  $("copilot-draft-apply").disabled = true;
+  let path;
+  try {
+    path = await open({ multiple: false, filters: [{ name: "OpenAPI JSON", extensions: ["json"] }] });
+    if (!path) return;
+    const result = await invoke("bridge_call", { command: "validate_openapi", args: { path } });
+    const count = /^OK（operation数: (\d+)）$/.exec(result)?.[1];
+    if (!count || Number(count) === 0) {
+      setCopilotStatus(result.startsWith("NG:") ? result : "試験できるAPI操作がありません。下書きのpathsを確認してください。", "error");
+      return;
+    }
+    const operations = await invoke("bridge_call", { command: "list_operations", args: { path } });
+    if (!Array.isArray(operations) || operations.length !== Number(count)
+      || new Set(operations.map((operation) => operation.operationId)).size !== operations.length) {
+      setCopilotStatus("operationIdの欠落または重複があります。下書きの全操作に一意のoperationIdを付けてください。", "error");
+      return;
+    }
+    pendingCopilotDraft = path;
+    setCopilotStatus(`${count}件のAPI操作を読み込みました。openapi.review.mdと下書きを確認してください。`, "ok");
+  } catch {
+    setCopilotStatus("下書きを読み込めませんでした。JSONファイルの内容を確認してください。", "error");
+  }
+});
+
+$("copilot-draft-reviewed").addEventListener("change", () => {
+  $("copilot-draft-apply").disabled = !pendingCopilotDraft || !$("copilot-draft-reviewed").checked;
+});
+
+$("copilot-draft-apply").addEventListener("click", async () => {
+  if (!pendingCopilotDraft || !$("copilot-draft-reviewed").checked) return;
+  $("openapi-path").value = pendingCopilotDraft;
+  updateActiveOpenapiText();
+  await refreshOperationsList({ keepExcluded: false });
+  setCopilotStatus("確認済み下書きを試験対象に設定しました。Base URLと対象APIを確認してください。", "ok");
+});
+
 // ---------- DB接続設定（画面入力のみ。ファイル参照は行わず、実行時に裏で一時ファイル化する） ----------
 
-function parsePort(text, label) {
+export function parsePort(text, label) {
   if (!text || !/^\d+$/.test(text)) {
     throw new Error(`${label} のポート番号は数値で入力してください: ${text || "(空欄)"}`);
   }
   return parseInt(text, 10);
 }
 
-function dbConfigEnabled() {
+export function dbConfigEnabled() {
   return $("pg-enabled").checked || $("influx-enabled").checked;
 }
 
-function requireField(value, label) {
+export function requireField(value, label) {
   if (!value) {
     throw new Error(`${label} を入力してください`);
   }
   return value;
 }
 
-function collectDbConfig() {
+export function collectDbConfig() {
   const data = {};
   if ($("pg-enabled").checked) {
     data.postgres = {
@@ -258,6 +381,19 @@ for (const id of ["pg-enabled", "pg-host", "influx-enabled", "influx-host"]) {
   $(id).addEventListener("input", updateActiveDbConfigText);
   $(id).addEventListener("change", updateActiveDbConfigText);
 }
+
+const PG_DEPENDENT_FIELD_IDS = ["pg-host", "pg-port", "pg-dbname", "pg-schema", "pg-user", "pg-password"];
+const INFLUX_DEPENDENT_FIELD_IDS = ["influx-host", "influx-port", "influx-database", "influx-username", "influx-password"];
+
+function syncDbConfigFieldsEnabled() {
+  const pgEnabled = $("pg-enabled").checked;
+  for (const id of PG_DEPENDENT_FIELD_IDS) $(id).disabled = !pgEnabled;
+  const influxEnabled = $("influx-enabled").checked;
+  for (const id of INFLUX_DEPENDENT_FIELD_IDS) $(id).disabled = !influxEnabled;
+}
+
+$("pg-enabled").addEventListener("change", syncDbConfigFieldsEnabled);
+$("influx-enabled").addEventListener("change", syncDbConfigFieldsEnabled);
 
 $("db-config-save").addEventListener("click", async () => {
   let data;
@@ -319,12 +455,30 @@ $("browse-setup-sql").addEventListener("click", () =>
 $("browse-teardown-sql").addEventListener("click", () =>
   browseFile("teardown-sql-path", [{ name: "SQL", extensions: ["sql"] }]),
 );
-
 // ---------- 認証設定（対象APIの中からログイン操作を選ぶだけでURL/メソッドを自動で使う） ----------
 
 function authConfigEnabled() {
   return $("auth-enabled").checked;
 }
+
+const AUTH_DEPENDENT_FIELD_IDS = [
+  "auth-login-op",
+  "auth-body",
+  "auth-profiles",
+  "auth-token-path",
+  "auth-header-name",
+  "auth-header-format",
+  "auth-config-save",
+];
+
+function syncAuthFieldsEnabled() {
+  const enabled = authConfigEnabled();
+  for (const id of AUTH_DEPENDENT_FIELD_IDS) {
+    $(id).disabled = !enabled;
+  }
+}
+
+$("auth-enabled").addEventListener("change", syncAuthFieldsEnabled);
 
 function populateAuthLoginOpSelect() {
   const select = $("auth-login-op");
@@ -398,6 +552,29 @@ async function applyLoginOperationHints() {
 
 $("auth-login-op").addEventListener("change", applyLoginOperationHints);
 
+export function parseAuthProfiles(text) {
+  if (!text.trim()) return null;
+
+  let profiles;
+  try {
+    profiles = JSON.parse(text);
+  } catch {
+    throw new Error("役割別ログイン情報がJSONとして解析できません。入力内容を確認してください");
+  }
+  if (!profiles || Array.isArray(profiles) || typeof profiles !== "object") {
+    throw new Error("役割別ログイン情報はプロファイル名とログインボディのJSONオブジェクトで指定してください");
+  }
+  for (const [name, body] of Object.entries(profiles)) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name)) {
+      throw new Error("プロファイル名は英数字で始まる英数字・ドット・ハイフン・アンダースコアにしてください");
+    }
+    if (!body || Array.isArray(body) || typeof body !== "object") {
+      throw new Error(`プロファイル「${name}」のログインボディはJSONオブジェクトで指定してください`);
+    }
+  }
+  return profiles;
+}
+
 function collectAuthConfig() {
   const operationId = $("auth-login-op").value;
   const op = lastOperations.find((o) => o.operationId === operationId);
@@ -411,12 +588,14 @@ function collectAuthConfig() {
     try {
       body = JSON.parse(bodyText);
     } catch (e) {
-      throw new Error(`ログインリクエストのボディがJSONとして解析できません: ${e.message}`);
+      throw new Error(`ログインリクエストのボディがJSONとして解析できません: ${e.message}`, { cause: e });
     }
   }
 
   const data = { login_url: op.path, method: op.method };
   if (body !== undefined) data.body = body;
+  const authProfiles = parseAuthProfiles($("auth-profiles").value);
+  if (authProfiles) data.auth_profiles = authProfiles;
   const tokenPath = $("auth-token-path").value.trim();
   if (tokenPath) data.token_path = tokenPath;
   const headerName = $("auth-header-name").value.trim();
@@ -455,7 +634,7 @@ $("auth-config-save").addEventListener("click", async () => {
 
 let lastOperations = [];
 
-async function refreshOperationsList({ keepExcluded }) {
+async function refreshOperationsList({ keepExcluded, selectedOperations = null }) {
   const path = $("openapi-path").value.trim();
   const container = $("operations-list");
   if (!path) {
@@ -469,7 +648,10 @@ async function refreshOperationsList({ keepExcluded }) {
   try {
     ops = await invoke("bridge_call", { command: "list_operations", args: { path } });
   } catch (e) {
-    container.innerHTML = `<div class="op-empty">読み込みに失敗しました: ${e}</div>`;
+    const message = document.createElement("div");
+    message.className = "op-empty";
+    message.textContent = `読み込みに失敗しました: ${e}`;
+    container.replaceChildren(message);
     lastOperations = [];
     populateAuthLoginOpSelect();
     return;
@@ -482,32 +664,99 @@ async function refreshOperationsList({ keepExcluded }) {
     return;
   }
 
-  const excluded = keepExcluded
-    ? new Set(
+  const excluded = selectedOperations !== null
+    ? new Set(lastOperations.map((op) => op.operationId).filter((id) => !selectedOperations.includes(id)))
+    : keepExcluded
+      ? new Set(
         (settings.gen_excluded_operations || "")
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
       )
-    : new Set();
+      : new Set();
 
-  container.innerHTML = "";
+  container.replaceChildren();
   for (const op of lastOperations) {
     const row = document.createElement("label");
     row.className = "op-item";
     const checked = !excluded.has(op.operationId);
-    row.innerHTML = `
-      <span class="op-row1">
-        <input type="checkbox" data-op-id="${op.operationId}" ${checked ? "checked" : ""}/>
-        <span class="op-method">${op.method}</span>
-      </span>
-      <span class="op-path">${op.path}</span>
-      <span class="op-id">${op.operationId}</span>`;
+    const firstLine = document.createElement("span");
+    firstLine.className = "op-row1";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.opId = op.operationId;
+    checkbox.checked = checked;
+    const method = document.createElement("span");
+    method.className = "op-method";
+    method.textContent = op.method;
+    firstLine.append(checkbox, method);
+    const path = document.createElement("span");
+    path.className = "op-path";
+    path.textContent = op.path;
+    const operationId = document.createElement("span");
+    operationId.className = "op-id";
+    operationId.textContent = op.operationId;
+    row.append(firstLine, path, operationId);
     container.appendChild(row);
   }
 
   await maybeAutofillBaseUrl(path);
 }
+
+function projectDataFromForm() {
+  const openapiPath = $("openapi-path").value.trim();
+  const baseUrl = $("base-url").value.trim();
+  if (!openapiPath) throw new Error("openapi.json を選択してください");
+  if (!baseUrl) throw new Error("Base URL を入力してください");
+  return buildProjectData({
+    openapiPath,
+    baseUrl,
+    outputDir: $("output-dir").value.trim() || dirName(openapiPath),
+    operations: lastOperations.map((operation) => operation.operationId),
+    uncheckedOperations: getUncheckedOperationIds(),
+    setupSqlPath: $("setup-sql-path").value.trim(),
+    teardownSqlPath: $("teardown-sql-path").value.trim(),
+    dbScenariosPath: $("dbscenario-path").value.trim(),
+  });
+}
+
+$("project-save").addEventListener("click", async () => {
+  let data;
+  try {
+    data = projectDataFromForm();
+  } catch (e) {
+    setProjectStatus(e.message, "error");
+    return;
+  }
+  const path = await save({ filters: [{ name: "API試験プロジェクト", extensions: ["json"] }], defaultPath: "project.json" });
+  if (!path) return;
+  try {
+    await invoke("write_config_file", { path, data });
+    setProjectStatus(`保存しました: ${path}`, "ok");
+  } catch {
+    setProjectStatus("保存に失敗しました。保存先の書き込み権限を確認してください。", "error");
+  }
+});
+
+$("project-open").addEventListener("click", async () => {
+  const path = await open({ multiple: false, filters: [{ name: "API試験プロジェクト", extensions: ["json"] }] });
+  if (!path) return;
+  try {
+    const project = await invoke("bridge_call", { command: "load_project", args: { path } });
+    $("openapi-path").value = project.openapiPath;
+    $("base-url").value = project.baseUrl;
+    $("output-dir").value = project.outputDir;
+    $("setup-sql-path").value = project.setupSqlPath || "";
+    $("teardown-sql-path").value = project.teardownSqlPath || "";
+    $("dbscenario-path").value = project.dbScenariosPath || "";
+    updateActiveOpenapiText();
+    updateActiveBaseUrlText();
+    await refreshOperationsList({ keepExcluded: false, selectedOperations: project.selectedOperations || [] });
+    setProjectStatus(`開きました: ${path}`, "ok");
+  } catch {
+    setProjectStatus("プロジェクトを開けませんでした。project.jsonの内容を確認してください。", "error");
+  }
+});
 
 async function maybeAutofillBaseUrl(path) {
   if ($("base-url").value.trim()) return;
@@ -519,7 +768,7 @@ async function maybeAutofillBaseUrl(path) {
   }
 }
 
-function getUncheckedOperationIds() {
+export function getUncheckedOperationIds() {
   return Array.from(document.querySelectorAll("#operations-list input[type=checkbox]"))
     .filter((el) => !el.checked)
     .map((el) => el.dataset.opId);
@@ -534,12 +783,19 @@ $("ops-select-none").addEventListener("click", () => {
 
 // ---------- パス組み立て ----------
 
-function joinPath(dir, name) {
+export function joinPath(dir, name) {
   if (!dir) return name;
   return /[\\/]$/.test(dir) ? `${dir}${name}` : `${dir}\\${name}`;
 }
 
-function dirName(path) {
+export function buildMappingArgs(openapiPath, configPath, outputPath, schema, phpEvidencePath = "") {
+  const args = [openapiPath, "--config", configPath, "-o", outputPath];
+  if (schema?.trim()) args.push("--schema", schema.trim());
+  if (phpEvidencePath?.trim()) args.push("--php-db-evidence", phpEvidencePath.trim());
+  return args;
+}
+
+export function dirName(path) {
   const idx = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
   return idx >= 0 ? path.slice(0, idx) : "";
 }
@@ -551,7 +807,7 @@ function dirName(path) {
 
 const simpleRuns = new Map();
 
-function runSimpleScript(script, args, { logEl, statusEl, doneMessage } = {}) {
+export function runSimpleScript(script, args, { logEl, statusEl, doneMessage } = {}) {
   return new Promise((resolve) => {
     const runId = `simple-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     if (logEl) {
@@ -602,9 +858,35 @@ $("dbprep-browse-mapping-output").addEventListener("click", () =>
 $("dbprep-browse-scenario-mapping").addEventListener("click", () =>
   browseFile("dbprep-scenario-mapping-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
 );
+$("dbprep-browse-php-db-evidence").addEventListener("click", () =>
+  browseFile("dbprep-php-db-evidence-path", [{ name: "JSON", extensions: ["json"] }]),
+);
 $("dbprep-browse-scenario-output").addEventListener("click", () =>
   browseSaveFile("dbprep-scenario-output", [{ name: "YAML", extensions: ["yaml", "yml"] }], "scenarios.yaml"),
 );
+
+$("dbprep-copilot-scenario-prompt-copy").addEventListener("click", async () => {
+  const status = $("dbprep-copilot-scenario-status");
+  try {
+    const openapiPath = $("openapi-path").value.trim();
+    const plannedScenarioPath = $("dbprep-scenario-output").value.trim()
+      || (openapiPath ? joinPath(dirName(openapiPath), "scenarios.yaml") : $("dbscenario-path").value);
+    const prompt = buildCopilotScenarioPrompt({
+      openapiPath,
+      mappingPath: $("dbprep-scenario-mapping-path").value || $("dbprep-mapping-output").value,
+      scenarioPath: plannedScenarioPath,
+      phpEvidencePath: $("dbprep-php-db-evidence-path").value,
+    });
+    await window.navigator.clipboard.writeText(prompt);
+    status.textContent = "依頼文をコピーしました。Copilot Chatへ貼り付け、選択ファイルを添付または #file で参照してください。";
+    status.classList.remove("error");
+    status.classList.add("ok");
+  } catch {
+    status.textContent = "コピーできませんでした。クリップボードの利用権限を確認してください。";
+    status.classList.remove("ok");
+    status.classList.add("error");
+  }
+});
 
 $("dbprep-gen-sql-button").addEventListener("click", async () => {
   hideDbPrepError();
@@ -699,9 +981,9 @@ $("dbprep-gen-mapping-button").addEventListener("click", async () => {
 
   await persistSettings();
 
-  const args = [openapiPath, "--config", configPath, "-o", outputPath];
   const schema = $("pg-schema").value.trim();
-  if (schema) args.push("--schema", schema);
+  const phpEvidencePath = $("dbprep-php-db-evidence-path").value.trim();
+  const args = buildMappingArgs(openapiPath, configPath, outputPath, schema, phpEvidencePath);
 
   $("dbprep-gen-mapping-button").disabled = true;
   const code = await runSimpleScript("runner/generate_mapping.py", args, {
@@ -756,10 +1038,18 @@ $("dbprep-gen-scenario-button").addEventListener("click", async () => {
 
 // ---------- DBシナリオ（生成したシナリオYAMLの実行） ----------
 
-let dbScenarioRunId = null;
 let dbScenarioResultPath = null;
+let dbScenarioFailedCaseIds = [];
+let pendingDbScenarioCaseIds = [];
+let currentDbScenarioCaseMaster = null;
+let currentDbScenarioCaseMasterPath = null;
+let dbScenarioPreparedRunId = null;
+let dbScenarioPreparedProjectData = null;
+let dbScenarioPreparationCompleted = false;
+let dbScenarioPreparingCases = false;
 let dbScenarioTempDbConfigPath = null;
 let dbScenarioTempAuthConfigPath = null;
+let dbScenarioTempProjectPath = null;
 
 function showDbScenarioError(message) {
   const el = $("dbscenario-error");
@@ -784,15 +1074,219 @@ function appendDbScenarioLog(line) {
   log.scrollTop = log.scrollHeight;
 }
 
+const ARTIFACT_LABELS = {
+  cases_json: "テストケースJSON",
+  case_master_json: "試験ケースマスター（下書き）",
+  spec_excel: "試験仕様Excel",
+  result_excel: "試験結果Excel",
+  junit_xml: "JUnit XML",
+  db_report_excel: "DB試験結果Excel",
+  db_junit_xml: "DB JUnit XML",
+  html_report: "HTML結果レポート",
+  failed_case_ids_json: "失敗ケースID一覧",
+};
+
+export function artifactLabel(kind) {
+  return ARTIFACT_LABELS[kind] || kind;
+}
+
+export function appendArtifact(containerId, event) {
+  const container = $(containerId);
+  const item = document.createElement("div");
+  item.className = "artifact-item";
+  item.dataset.artifactKind = event.kind;
+  const name = document.createElement("span");
+  name.className = "artifact-item-name";
+  name.textContent = artifactLabel(event.kind);
+  const path = document.createElement("span");
+  path.className = "artifact-item-path";
+  path.textContent = event.path;
+  path.title = event.path;
+  const openButton = document.createElement("button");
+  openButton.className = "secondary";
+  openButton.textContent = "開く";
+  openButton.addEventListener("click", async () => {
+    const { openPath } = await import("@tauri-apps/plugin-opener");
+    await openPath(event.path).catch(() => {});
+  });
+  item.append(name, path, openButton);
+  container.appendChild(item);
+}
+
+const REVIEW_LABELS = { draft: "下書き・未確認", reviewed: "レビュー済み", approved: "承認済み" };
+const REVIEW_NEXT = {
+  draft: ["reviewed", "レビュー済みにする"],
+  reviewed: ["approved", "承認する"],
+  approved: ["reviewed", "承認を戻す"],
+};
+
+function syncPreparedExecutionButtons() {
+  const contractCases = currentCaseMaster?.cases?.filter((item) => item.kind === "contract") || [];
+  const ready = preparationCompleted && preparedCaseRunId && contractCases.length > 0;
+  const allApproved = ready && contractCases.every((item) => item.reviewStatus === "approved");
+  $("run-button").hidden = Boolean(ready);
+  $("execute-approved-button").hidden = !allApproved;
+  $("execute-draft-button").hidden = !ready;
+  $("execute-approved-button").disabled = workflowClient.isRunning();
+  $("execute-draft-button").disabled = workflowClient.isRunning();
+}
+
+function syncDbPreparedExecutionButtons() {
+  const cases = currentDbScenarioCaseMaster?.cases || [];
+  const ready = dbScenarioPreparationCompleted && dbScenarioPreparedRunId && cases.length > 0;
+  const allApproved = ready && cases.every((item) => item.reviewStatus === "approved");
+  $("dbscenario-run-button").hidden = Boolean(ready);
+  $("dbscenario-execute-approved-button").hidden = !allApproved;
+  $("dbscenario-execute-draft-button").hidden = !ready;
+  $("dbscenario-execute-approved-button").disabled = workflowClient.isRunning();
+  $("dbscenario-execute-draft-button").disabled = workflowClient.isRunning();
+}
+
+function renderCaseMasterView(master, masterPath, ids, rerender) {
+  const panel = $(ids.panel);
+  const list = $(ids.list);
+  const cases = Array.isArray(master?.cases) ? master.cases : [];
+  panel.hidden = cases.length === 0;
+  list.replaceChildren();
+  const counts = { draft: 0, reviewed: 0, approved: 0 };
+  for (const testCase of cases) counts[testCase.reviewStatus] = (counts[testCase.reviewStatus] || 0) + 1;
+  $(ids.summary).textContent = `${cases.length}件: 未確認 ${counts.draft} / レビュー済み ${counts.reviewed} / 承認済み ${counts.approved}`;
+
+  for (const testCase of cases) {
+    const card = document.createElement("article");
+    card.className = "case-review-card";
+    card.dataset.caseId = testCase.caseId;
+    const heading = document.createElement("div");
+    heading.className = "case-review-card-heading";
+    const title = document.createElement("strong");
+    title.textContent = `${testCase.caseId} - ${testCase.title || "（名称なし）"}`;
+    const status = document.createElement("span");
+    status.className = "case-review-status";
+    status.textContent = REVIEW_LABELS[testCase.reviewStatus] || REVIEW_LABELS.draft;
+    heading.append(title, status);
+    const source = document.createElement("p");
+    source.className = "case-review-source";
+    source.textContent = `${testCase.kind === "db-scenario" ? "Layer 2（DB）" : "Layer 1"} / ${testCase.source?.operationId || ""} / ${testCase.source?.path || ""}`;
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "入力・期待結果を確認";
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify({ definition: testCase.definition, expected: testCase.expected }, null, 2);
+    details.append(summary, pre);
+    const action = document.createElement("button");
+    action.className = "secondary";
+    const [nextStatus, actionLabel] = REVIEW_NEXT[testCase.reviewStatus] || REVIEW_NEXT.draft;
+    action.textContent = actionLabel;
+    action.disabled = workflowClient.isRunning();
+    action.addEventListener("click", async () => {
+      if (!masterPath || workflowClient.isRunning()) return;
+      action.disabled = true;
+      try {
+        const updated = await invoke("bridge_call", {
+          command: "save_case_master_reviews",
+          args: { path: masterPath, updates: { [testCase.caseId]: nextStatus } },
+        });
+        rerender(updated, masterPath);
+        $(ids.message).textContent = `${testCase.caseId} を「${REVIEW_LABELS[nextStatus]}」にしました。`;
+      } catch {
+        action.disabled = false;
+        $(ids.message).textContent = "レビュー状態を保存できませんでした。試験ケースマスターのファイル権限を確認してください。";
+      }
+    });
+    card.append(heading, source, details, action);
+    list.appendChild(card);
+  }
+  return master;
+}
+
+export function renderCaseMaster(master, masterPath) {
+  currentCaseMaster = renderCaseMasterView(master, masterPath, {
+    panel: "case-review-panel", list: "case-review-list", summary: "case-review-summary", message: "case-review-message",
+  }, renderCaseMaster);
+  currentCaseMasterPath = masterPath;
+  syncPreparedExecutionButtons();
+  return currentCaseMaster;
+}
+
+export function renderDbScenarioCaseMaster(master, masterPath) {
+  currentDbScenarioCaseMaster = renderCaseMasterView(master, masterPath, {
+    panel: "dbscenario-case-review-panel", list: "dbscenario-case-review-list",
+    summary: "dbscenario-case-review-summary", message: "dbscenario-case-review-message",
+  }, renderDbScenarioCaseMaster);
+  currentDbScenarioCaseMasterPath = masterPath;
+  syncDbPreparedExecutionButtons();
+  return currentDbScenarioCaseMaster;
+}
+
+function handleDbScenarioWorkflowEvent(event) {
+  if (event.type === "artifact" && event.path) {
+    if (event.kind === "db_report_excel") dbScenarioResultPath = event.path;
+    appendArtifact("dbscenario-artifacts", event);
+    appendDbScenarioLog(`[INFO] 成果物を出力しました: ${event.path}`);
+    if (event.kind === "case_master_json") {
+      currentDbScenarioCaseMasterPath = event.path;
+      if (dbScenarioPreparingCases) {
+        dbScenarioPreparedRunId = event.path.split(/[\\/]/).at(-2) || null;
+      }
+      invoke("bridge_call", { command: "load_case_master", args: { path: event.path } })
+        .then((master) => {
+          renderDbScenarioCaseMaster(master, event.path);
+          if (dbScenarioPreparationCompleted) syncDbPreparedExecutionButtons();
+        })
+        .catch(() => {
+          $("dbscenario-case-review-message").textContent = "試験ケースマスターを読み込めませんでした。ファイルを確認してください。";
+        });
+    }
+    if (event.kind === "failed_case_ids_json") {
+      invoke("bridge_call", { command: "load_failed_case_ids", args: { path: event.path } })
+        .then((ids) => {
+          dbScenarioFailedCaseIds = ids;
+          $("dbscenario-rerun-failed-button").hidden = ids.length === 0;
+          $("dbscenario-rerun-failed-button").disabled = ids.length === 0 || workflowClient.isRunning();
+        })
+        .catch(() => appendDbScenarioLog("[WARN] 失敗ケース一覧を読み込めませんでした"));
+    }
+    return;
+  }
+  if (event.type === "log" || event.type === "progress" || event.type === "stage_started") {
+    if (event.message) appendDbScenarioLog(event.message);
+    return;
+  }
+  if (event.type === "stage_finished" && event.status === "error" && event.message) {
+    appendDbScenarioLog(`[ERROR] ${event.message}`);
+  }
+}
+
 function finishDbScenarioRunUi(code) {
-  const meaning = { 0: "OK：全シナリオ成功", 1: "NG：1件以上失敗", 3: "ERROR：実行エラー" }[code] || `終了コード ${code}`;
-  const state = { 0: "ok", 1: "ng" }[code] || "ng";
+  const meaning = { 0: "OK：全シナリオ成功", 1: "NG：1件以上失敗", 2: "WARNING：1件以上警告", 3: "ERROR：実行エラー", 130: "キャンセルしました" }[code] || `終了コード ${code}`;
+  const state = { 0: "ok", 1: "ng", 2: "warn", 130: "warn" }[code] || "ng";
   setDbScenarioStatus(meaning, state);
   $("dbscenario-run-button").disabled = false;
   $("dbscenario-cancel-button").disabled = true;
-  if (code === 0 && dbScenarioResultPath) {
+  if (dbScenarioFailedCaseIds.length) $("dbscenario-rerun-failed-button").disabled = false;
+  if ((code === 0 || code === 2) && dbScenarioResultPath) {
     $("dbscenario-open-result-button").disabled = false;
   }
+}
+
+function finishDbScenarioPrepareUi(code) {
+  const meaning = code === 0
+    ? { text: "DBシナリオ準備完了：内容を確認し、承認または予備実行を選んでください", state: "ok" }
+    : { text: `ケース準備に失敗しました（終了コード ${code}）`, state: "error" };
+  setDbScenarioStatus(meaning.text, meaning.state);
+  $("dbscenario-run-button").disabled = false;
+  $("dbscenario-cancel-button").disabled = true;
+  if (code === 0) {
+    dbScenarioPreparationCompleted = true;
+    if (currentDbScenarioCaseMaster) {
+      renderDbScenarioCaseMaster(currentDbScenarioCaseMaster, currentDbScenarioCaseMasterPath);
+    }
+  } else {
+    dbScenarioPreparationCompleted = false;
+    dbScenarioPreparedRunId = null;
+    dbScenarioPreparedProjectData = null;
+  }
+  syncDbPreparedExecutionButtons();
 }
 
 // DB接続設定/認証設定の一時ファイル（パスワード等を含む）は、proc-done の到達有無に
@@ -807,18 +1301,97 @@ function cleanupDbScenarioTempConfigFiles() {
     invoke("delete_file", { path: dbScenarioTempAuthConfigPath }).catch(() => {});
     dbScenarioTempAuthConfigPath = null;
   }
+  if (dbScenarioTempProjectPath) {
+    invoke("delete_file", { path: dbScenarioTempProjectPath }).catch(() => {});
+    dbScenarioTempProjectPath = null;
+  }
 }
 
 $("dbscenario-goto-settings").addEventListener("click", () => showPage("settings"));
 $("dbscenario-browse").addEventListener("click", () =>
   browseFile("dbscenario-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
 );
-$("dbscenario-browse-report").addEventListener("click", () =>
-  browseSaveFile("dbscenario-report-output", [{ name: "Excel", extensions: ["xlsx"] }], "DBシナリオ結果.xlsx"),
-);
+
+async function writeDbScenarioRuntimeConfigs() {
+  if (!dbConfigEnabled()) throw new Error("DB接続設定（「設定」画面）が必要です");
+  const dbConfigData = collectDbConfig();
+  const configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+  dbScenarioTempDbConfigPath = configPath;
+
+  let authConfigPath = "";
+  if (authConfigEnabled()) {
+    const authConfigData = collectAuthConfig();
+    authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
+    dbScenarioTempAuthConfigPath = authConfigPath;
+  }
+  return { configPath, authConfigPath };
+}
+
+async function executePreparedDbScenarios(allowDraft) {
+  const cases = currentDbScenarioCaseMaster?.cases || [];
+  if (!dbScenarioPreparationCompleted || !dbScenarioPreparedRunId || !dbScenarioPreparedProjectData || !cases.length) {
+    showDbScenarioError("DBシナリオケースが準備されていません。先にケースを作成してください");
+    return;
+  }
+  const unapproved = cases.filter((item) => item.reviewStatus !== "approved");
+  if (!allowDraft && unapproved.length) {
+    showDbScenarioError("承認されていないシナリオがあります。内容を確認して承認するか、予備実行を選んでください");
+    return;
+  }
+
+  try {
+    const { configPath, authConfigPath } = await writeDbScenarioRuntimeConfigs();
+    dbScenarioTempProjectPath = await invoke("write_config_file", {
+      path: null, data: dbScenarioPreparedProjectData,
+    });
+    const caseRunId = dbScenarioPreparedRunId;
+    dbScenarioResultPath = null;
+    dbScenarioFailedCaseIds = [];
+    $("dbscenario-rerun-failed-button").hidden = true;
+    $("dbscenario-log").textContent = "";
+    $("dbscenario-artifacts").replaceChildren();
+    $("dbscenario-run-button").disabled = true;
+    $("dbscenario-cancel-button").disabled = false;
+    $("dbscenario-open-result-button").disabled = true;
+    setDbScenarioStatus("実行中...", "running");
+    const completion = workflowClient.executeDb({
+      projectPath: dbScenarioTempProjectPath,
+      preparedRunId: caseRunId,
+      runtimeConfigPath: configPath,
+      authConfigPath: authConfigPath || undefined,
+      persistCookies: $("dbscenario-cookie-jar").checked,
+      dryRun: $("dbscenario-dry-run").checked,
+      allowDraft,
+    }, { onEvent: handleDbScenarioWorkflowEvent });
+    renderDbScenarioCaseMaster(currentDbScenarioCaseMaster, currentDbScenarioCaseMasterPath);
+    const { code } = await completion;
+    dbScenarioPreparationCompleted = false;
+    dbScenarioPreparedRunId = null;
+    dbScenarioPreparedProjectData = null;
+    finishDbScenarioRunUi(code);
+    syncDbPreparedExecutionButtons();
+  } catch (e) {
+    appendDbScenarioLog(`[ERROR] ${e.message || "処理を開始できませんでした"}`);
+    dbScenarioPreparationCompleted = false;
+    dbScenarioPreparedRunId = null;
+    dbScenarioPreparedProjectData = null;
+    finishDbScenarioRunUi(3);
+    syncDbPreparedExecutionButtons();
+  } finally {
+    cleanupDbScenarioTempConfigFiles();
+  }
+}
+
+$("dbscenario-execute-approved-button").addEventListener("click", () => executePreparedDbScenarios(false));
+$("dbscenario-execute-draft-button").addEventListener("click", () => executePreparedDbScenarios(true));
 
 $("dbscenario-run-button").addEventListener("click", async () => {
   hideDbScenarioError();
+
+  if (workflowClient.isRunning()) {
+    showDbScenarioError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
+    return;
+  }
 
   const openapiPath = $("openapi-path").value.trim();
   const baseUrl = $("base-url").value.trim();
@@ -836,77 +1409,94 @@ $("dbscenario-run-button").addEventListener("click", async () => {
     showDbScenarioError("DB検証シナリオファイル（scenarios.yaml）を選択してください（「DB準備」タブで生成できます）");
     return;
   }
-  if (!dbConfigEnabled()) {
-    showDbScenarioError("DB接続設定（「設定」画面）が必要です");
-    return;
-  }
 
-  let dbConfigData;
-  try {
-    dbConfigData = collectDbConfig();
-  } catch (e) {
-    showDbScenarioError(e.message);
-    return;
-  }
-  let configPath;
-  try {
-    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
-  } catch (e) {
-    showDbScenarioError(`DB接続設定の準備に失敗しました: ${e}`);
-    return;
-  }
-  dbScenarioTempDbConfigPath = configPath;
-
-  let authConfigPath = "";
-  if (authConfigEnabled()) {
-    let authConfigData;
-    try {
-      authConfigData = collectAuthConfig();
-    } catch (e) {
-      showDbScenarioError(e.message);
-      invoke("delete_file", { path: configPath }).catch(() => {});
-      dbScenarioTempDbConfigPath = null;
-      return;
-    }
-    try {
-      authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
-    } catch (e) {
-      showDbScenarioError(`認証設定の準備に失敗しました: ${e}`);
-      invoke("delete_file", { path: configPath }).catch(() => {});
-      dbScenarioTempDbConfigPath = null;
-      return;
-    }
-  }
-  dbScenarioTempAuthConfigPath = authConfigPath || null;
-
-  await persistSettings();
-
-  const reportOutput = $("dbscenario-report-output").value.trim();
-  // ヘルスチェックは「設定」画面のAPI疎通確認で独立して行える運用のため、常にスキップする。
-  const args = [scenarioPath, openapiPath, "--base-url", baseUrl, "--config", configPath, "--skip-health-check"];
-  if (authConfigPath) args.push("--auth-config", authConfigPath);
-  if (reportOutput) args.push("--report-output", reportOutput);
-  if ($("dbscenario-dry-run").checked) args.push("--dry-run");
-
-  dbScenarioRunId = `dbscenario-${Date.now()}`;
-  dbScenarioResultPath = reportOutput || null;
-  $("dbscenario-log").textContent = "";
-  $("dbscenario-run-button").disabled = true;
-  $("dbscenario-cancel-button").disabled = false;
-  $("dbscenario-open-result-button").disabled = true;
-  setDbScenarioStatus("実行中...", "running");
-
-  const runId = dbScenarioRunId;
-  invoke("run_script", { runId, script: "runner/db_scenario_runner.py", args }).catch((e) => {
-    if (runId !== dbScenarioRunId) return;
-    appendDbScenarioLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
-    finishDbScenarioRunUi(3);
-    cleanupDbScenarioTempConfigFiles();
+  const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
+  const projectData = buildProjectData({
+    openapiPath,
+    baseUrl,
+    outputDir,
+    operations: lastOperations.map((operation) => operation.operationId),
+    uncheckedOperations: getUncheckedOperationIds(),
+    dbScenariosPath: scenarioPath,
   });
+
+  try {
+    await persistSettings();
+    const caseIds = pendingDbScenarioCaseIds;
+    pendingDbScenarioCaseIds = [];
+    if (!caseIds.length) {
+      dbScenarioTempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+      dbScenarioResultPath = null;
+      currentDbScenarioCaseMaster = null;
+      currentDbScenarioCaseMasterPath = null;
+      dbScenarioFailedCaseIds = [];
+      dbScenarioPreparedProjectData = projectData;
+      dbScenarioPreparedRunId = null;
+      dbScenarioPreparationCompleted = false;
+      dbScenarioPreparingCases = true;
+      syncDbPreparedExecutionButtons();
+      $("dbscenario-rerun-failed-button").hidden = true;
+      $("dbscenario-log").textContent = "";
+      $("dbscenario-artifacts").replaceChildren();
+      $("dbscenario-run-button").disabled = true;
+      $("dbscenario-cancel-button").disabled = false;
+      $("dbscenario-open-result-button").disabled = true;
+      setDbScenarioStatus("ケース準備中...", "running");
+      try {
+        const { code } = await workflowClient.prepareDb({
+          projectPath: dbScenarioTempProjectPath,
+        }, { onEvent: handleDbScenarioWorkflowEvent });
+        finishDbScenarioPrepareUi(code);
+      } catch (e) {
+        appendDbScenarioLog(`[ERROR] ${e.message || "ケース準備を開始できませんでした"}`);
+        finishDbScenarioPrepareUi(3);
+      } finally {
+        dbScenarioPreparingCases = false;
+        cleanupDbScenarioTempConfigFiles();
+      }
+      return;
+    }
+
+    const { configPath, authConfigPath } = await writeDbScenarioRuntimeConfigs();
+    dbScenarioTempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+    dbScenarioResultPath = null;
+    dbScenarioFailedCaseIds = [];
+    dbScenarioPreparedRunId = null;
+    dbScenarioPreparedProjectData = null;
+    dbScenarioPreparationCompleted = false;
+    $("dbscenario-rerun-failed-button").hidden = true;
+    $("dbscenario-log").textContent = "";
+    $("dbscenario-artifacts").replaceChildren();
+    $("dbscenario-run-button").disabled = true;
+    $("dbscenario-cancel-button").disabled = false;
+    $("dbscenario-open-result-button").disabled = true;
+    setDbScenarioStatus("実行中...", "running");
+    const { code } = await workflowClient.run({
+      workflow: "db-scenarios",
+      projectPath: dbScenarioTempProjectPath,
+      runtimeConfigPath: configPath,
+      authConfigPath: authConfigPath || undefined,
+      persistCookies: $("dbscenario-cookie-jar").checked,
+      dryRun: $("dbscenario-dry-run").checked,
+      caseIds,
+    }, { onEvent: handleDbScenarioWorkflowEvent });
+    finishDbScenarioRunUi(code);
+  } catch (e) {
+    appendDbScenarioLog(`[ERROR] ${e.message || "処理を開始できませんでした"}`);
+    finishDbScenarioRunUi(3);
+  } finally {
+    cleanupDbScenarioTempConfigFiles();
+  }
+});
+
+$("dbscenario-rerun-failed-button").addEventListener("click", () => {
+  if (!dbScenarioFailedCaseIds.length) return;
+  pendingDbScenarioCaseIds = [...dbScenarioFailedCaseIds];
+  $("dbscenario-run-button").click();
 });
 
 $("dbscenario-cancel-button").addEventListener("click", async () => {
-  if (dbScenarioRunId) await invoke("cancel_script", { runId: dbScenarioRunId });
+  await workflowClient.cancel();
 });
 
 $("dbscenario-open-result-button").addEventListener("click", async () => {
@@ -918,11 +1508,18 @@ $("dbscenario-open-result-button").addEventListener("click", async () => {
 
 // ---------- 実行（生成→実行の2段階） ----------
 
-let currentRunId = null;
-let pendingSecondStage = null;
 let currentResultPath = null;
+let currentCaseMasterPath = null;
+let currentCaseMaster = null;
+let currentFailedCaseIds = [];
+let pendingCaseIds = [];
+let preparedCaseRunId = null;
+let preparedProjectData = null;
+let preparationCompleted = false;
+let preparingCases = false;
 let tempDbConfigPath = null;
 let tempAuthConfigPath = null;
+let tempProjectPath = null;
 let progressTotal = 0;
 let progressDone = 0;
 
@@ -930,15 +1527,12 @@ let progressDone = 0;
 // どちらで終わっても必ず片付ける。呼び出し漏れがあると平文の認証情報が
 // 一時フォルダに残り続けるため、終了パス（成功/失敗/キャンセル）ごとに個別実装せず
 // 必ずこの関数経由で片付ける。
-function cleanupGenTempConfigFiles() {
-  if (tempDbConfigPath) {
-    invoke("delete_file", { path: tempDbConfigPath }).catch(() => {});
-    tempDbConfigPath = null;
-  }
-  if (tempAuthConfigPath) {
-    invoke("delete_file", { path: tempAuthConfigPath }).catch(() => {});
-    tempAuthConfigPath = null;
-  }
+async function cleanupGenTempConfigFiles() {
+  const paths = [tempDbConfigPath, tempAuthConfigPath, tempProjectPath].filter(Boolean);
+  tempDbConfigPath = null;
+  tempAuthConfigPath = null;
+  tempProjectPath = null;
+  await Promise.all(paths.map((path) => invoke("delete_file", { path }).catch(() => {})));
 }
 
 function appendLog(line) {
@@ -948,7 +1542,7 @@ function appendLog(line) {
   feedProgress(line);
 }
 
-function feedProgress(line) {
+export function feedProgress(line) {
   const totalMatch = line.match(/(?:試験ケース数|シナリオ数)[：:]\s*(\d+)\s*件/);
   if (totalMatch) {
     progressTotal = parseInt(totalMatch[1], 10);
@@ -993,32 +1587,259 @@ function setDbConfigStatus(text, state) {
 
 function startRunUi() {
   $("run-log").textContent = "";
+  $("run-artifacts").replaceChildren();
   progressTotal = 0;
   progressDone = 0;
   updateProgressBar();
   $("run-button").disabled = true;
+  $("run-schemathesis-button").disabled = true;
+  $("execute-approved-button").disabled = true;
+  $("execute-draft-button").disabled = true;
   $("cancel-button").disabled = false;
   $("open-result-button").disabled = true;
+  $("rerun-failed-button").hidden = true;
+  currentFailedCaseIds = [];
   setStatus("実行中...", "running");
 }
 
-function finishRunUi(code) {
-  const meaning =
-    { 0: "OK：全ケース成功", 1: "NG：1件以上失敗", 2: "WARNING：1件以上警告（応答時間超過）", 3: "ERROR：実行エラー", 4: "ERROR：設定エラー" }[
-      code
-    ] || `終了コード ${code}`;
-  const state = { 0: "ok", 1: "ng", 2: "warn" }[code] || "ng";
-  setStatus(meaning, state);
+function finishPrepareUi(code) {
+  const meaning = code === 0
+    ? { text: "ケース準備完了：内容を確認し、承認または予備実行を選んでください", state: "ok" }
+    : code === 130
+      ? { text: "ケース準備をキャンセルしました", state: "warn" }
+      : { text: `ケース準備に失敗しました（終了コード ${code}）。ログを確認してください`, state: "error" };
+  setStatus(meaning.text, meaning.state);
   $("run-button").disabled = false;
+  $("run-schemathesis-button").disabled = false;
   $("cancel-button").disabled = true;
+  $("open-result-button").disabled = true;
   if (code === 0) {
+    preparationCompleted = true;
+    if (currentCaseMaster) renderCaseMaster(currentCaseMaster, currentCaseMasterPath);
+    syncPreparedExecutionButtons();
+  } else {
+    preparationCompleted = false;
+    preparedCaseRunId = null;
+    preparedProjectData = null;
+    syncPreparedExecutionButtons();
+  }
+}
+
+const RUN_STAGE_MEANING = {
+  0: "OK：全ケース成功",
+  1: "NG：1件以上失敗",
+  2: "WARNING：1件以上警告（応答時間超過）",
+  3: "ERROR：実行エラー",
+  4: "ERROR：設定エラー",
+  130: "キャンセルしました",
+};
+const RUN_STATE_BY_CODE = { 0: "ok", 1: "ng", 2: "warn", 130: "warn" };
+
+export function runStatusMeaning(code) {
+  return { text: RUN_STAGE_MEANING[code] || `終了コード ${code}`, state: RUN_STATE_BY_CODE[code] || "ng" };
+}
+
+function finishRunUi(code) {
+  const { text, state } = runStatusMeaning(code);
+  setStatus(text, state);
+  $("run-button").disabled = false;
+  $("run-schemathesis-button").disabled = false;
+  $("cancel-button").disabled = true;
+  if (currentCaseMaster) renderCaseMaster(currentCaseMaster, currentCaseMasterPath);
+  if ((code === 0 || code === 2) && currentResultPath) {
     $("run-progress-bar").style.width = "100%";
     $("open-result-button").disabled = false;
   }
 }
 
+function handleContractWorkflowEvent(event) {
+  if (event.type === "artifact" && event.path) {
+    if (event.kind === "result_excel") currentResultPath = event.path;
+    appendArtifact("run-artifacts", event);
+    appendLog(`[INFO] 成果物を出力しました: ${event.path}`);
+    if (event.kind === "case_master_json") {
+      currentCaseMasterPath = event.path;
+      if (preparingCases) {
+        preparedCaseRunId = event.path.split(/[\\/]/).at(-2) || null;
+      }
+      invoke("bridge_call", { command: "load_case_master", args: { path: event.path } })
+        .then((master) => {
+          renderCaseMaster(master, event.path);
+          if (preparationCompleted) syncPreparedExecutionButtons();
+        })
+        .catch(() => {
+          $("case-review-message").textContent = "試験ケースマスターを読み込めませんでした。ファイルを確認してください。";
+        });
+    }
+    if (event.kind === "failed_case_ids_json") {
+      invoke("bridge_call", { command: "load_failed_case_ids", args: { path: event.path } })
+        .then((ids) => {
+          currentFailedCaseIds = ids;
+          $("rerun-failed-button").hidden = ids.length === 0;
+          $("rerun-failed-button").disabled = ids.length === 0 || workflowClient.isRunning();
+        })
+        .catch(() => appendLog("[WARN] 失敗ケース一覧を読み込めませんでした"));
+    }
+    return;
+  }
+  if (event.type === "log" || event.type === "progress" || event.type === "stage_started") {
+    if (event.message) appendLog(event.message);
+    return;
+  }
+  if (event.type === "stage_finished" && event.status === "error" && event.message) {
+    appendLog(`[ERROR] ${event.message}`);
+  }
+}
+
+async function runSchemathesisExploration() {
+  hideGenError();
+  if (workflowClient.isRunning()) {
+    showGenError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
+    return;
+  }
+
+  let projectData;
+  try {
+    projectData = projectDataFromForm();
+  } catch (error) {
+    showGenError(error.message);
+    return;
+  }
+  if (!lastOperations.length || !projectData.selectedOperations.length) {
+    showGenError("対象APIを少なくとも1つ選択してください（サイドバーの「対象API」）");
+    return;
+  }
+
+  const maxExamplesText = $("schemathesis-max-examples").value.trim();
+  const maxExamples = Number(maxExamplesText);
+  if (!/^\d+$/.test(maxExamplesText) || !Number.isSafeInteger(maxExamples) || maxExamples < 1 || maxExamples > 100) {
+    showGenError("API操作ごとの生成数は1から100の整数で入力してください");
+    return;
+  }
+
+  const includeMutating = $("schemathesis-include-mutating").checked;
+  if (includeMutating && !window.confirm(
+    "POST/PUT/PATCH/DELETEを含む試験を実行します。開発DBのデータを変更したり、試験後も残す可能性があります。\n\n破棄できる開発環境を対象にしていることを確認しましたか？",
+  )) return;
+
+  try {
+    await invoke("ensure_output_dir", { path: projectData.outputDir });
+    await persistSettings();
+    let authConfigPath = "";
+    if (authConfigEnabled()) {
+      authConfigPath = await invoke("write_config_file", { path: null, data: collectAuthConfig() });
+      tempAuthConfigPath = authConfigPath;
+    }
+    tempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+    currentResultPath = null;
+    startRunUi();
+    const { code } = await workflowClient.runSchemathesis({
+      projectPath: tempProjectPath,
+      authConfigPath: authConfigPath || undefined,
+      includeMutating,
+      maxExamples,
+      saveCassette: $("schemathesis-save-cassette").checked,
+    }, { onEvent: handleContractWorkflowEvent });
+    finishRunUi(code);
+  } catch (error) {
+    appendLog(`[ERROR] ${error.message || "探索的試験を開始できませんでした"}`);
+    finishRunUi(3);
+  } finally {
+    await cleanupGenTempConfigFiles();
+  }
+}
+
+$("run-schemathesis-button").addEventListener("click", runSchemathesisExploration);
+
+async function writeContractRuntimeConfigs() {
+  let configPath = "";
+  if (dbConfigEnabled()) {
+    const dbConfigData = collectDbConfig();
+    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+    tempDbConfigPath = configPath;
+  }
+
+  let authConfigPath = "";
+  if (authConfigEnabled()) {
+    const authConfigData = collectAuthConfig();
+    authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
+    tempAuthConfigPath = authConfigPath;
+  }
+  return { configPath, authConfigPath };
+}
+
+async function executePreparedContract(allowDraft) {
+  const contractCases = currentCaseMaster?.cases?.filter((item) => item.kind === "contract") || [];
+  if (!preparationCompleted || !preparedCaseRunId || !preparedProjectData || !contractCases.length) {
+    showGenError("試験ケースが準備されていません。先にケースを作成してください");
+    return;
+  }
+  const unapproved = contractCases.filter((item) => item.reviewStatus !== "approved");
+  if (!allowDraft && unapproved.length) {
+    showGenError("承認されていないケースがあります。内容を確認して承認するか、予備実行を選んでください");
+    return;
+  }
+  const parallelText = $("parallel").value.trim();
+  const parallel = parallelText ? Number(parallelText) : 1;
+  if (!Number.isSafeInteger(parallel) || parallel < 1) {
+    showGenError("同時実行数は1以上の整数で入力してください");
+    return;
+  }
+  if ($("cookie-jar").checked && parallel > 1) {
+    showGenError("cookie-jar と 同時実行数(2以上) は同時に指定できません");
+    return;
+  }
+
+  try {
+    const { configPath, authConfigPath } = await writeContractRuntimeConfigs();
+    tempProjectPath = await invoke("write_config_file", { path: null, data: preparedProjectData });
+    const caseRunId = preparedCaseRunId;
+    startRunUi();
+    const { code } = await workflowClient.execute({
+      projectPath: tempProjectPath,
+      preparedRunId: caseRunId,
+      runtimeConfigPath: configPath || undefined,
+      authConfigPath: authConfigPath || undefined,
+      parallel,
+      failFast: $("fail-fast").checked,
+      persistCookies: $("cookie-jar").checked,
+      dryRun: $("dry-run").checked,
+      fullBody: $("full-body").checked,
+      allowDraft,
+    }, { onEvent: handleContractWorkflowEvent });
+    preparationCompleted = false;
+    preparedCaseRunId = null;
+    preparedProjectData = null;
+    finishRunUi(code);
+    syncPreparedExecutionButtons();
+  } catch (e) {
+    appendLog(`[ERROR] ${e.message || "処理を開始できませんでした"}`);
+    preparationCompleted = false;
+    preparedCaseRunId = null;
+    preparedProjectData = null;
+    finishRunUi(3);
+    syncPreparedExecutionButtons();
+  } finally {
+    await cleanupGenTempConfigFiles();
+  }
+}
+
+$("execute-approved-button").addEventListener("click", () => executePreparedContract(false));
+$("execute-draft-button").addEventListener("click", () => executePreparedContract(true));
+
+$("rerun-failed-button").addEventListener("click", () => {
+  if (!currentFailedCaseIds.length) return;
+  pendingCaseIds = [...currentFailedCaseIds];
+  $("run-button").click();
+});
+
 $("run-button").addEventListener("click", async () => {
   hideGenError();
+
+  if (workflowClient.isRunning()) {
+    showGenError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
+    return;
+  }
 
   const openapiPath = $("openapi-path").value.trim();
   const baseUrl = $("base-url").value.trim();
@@ -1044,6 +1865,24 @@ $("run-button").addEventListener("click", async () => {
     return;
   }
 
+  let parallel = 1;
+  const parallelText = $("parallel").value.trim();
+  if (parallelText) {
+    if (!/^\d+$/.test(parallelText) || parseInt(parallelText, 10) < 1) {
+      showGenError("同時実行数は1以上の整数で入力してください");
+      return;
+    }
+    parallel = parseInt(parallelText, 10);
+  }
+  if ($("cookie-jar").checked && parallel > 1) {
+    showGenError("cookie-jar と 同時実行数(2以上) は同時に指定できません");
+    return;
+  }
+  if ($("no-normal").checked && $("no-abnormal").checked) {
+    showGenError("「正常系ケースを生成しない」と「異常系ケースを生成しない」を両方はチェックできません（0件になります）");
+    return;
+  }
+
   const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
   try {
     await invoke("ensure_output_dir", { path: outputDir });
@@ -1052,81 +1891,84 @@ $("run-button").addEventListener("click", async () => {
     return;
   }
 
-  let configPath = "";
-  if (dbConfigEnabled()) {
-    let dbConfigData;
-    try {
-      dbConfigData = collectDbConfig();
-    } catch (e) {
-      showGenError(e.message);
-      return;
-    }
-    try {
-      configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
-    } catch (e) {
-      showGenError(`DB接続設定の準備に失敗しました: ${e}`);
-      return;
-    }
-  }
-  tempDbConfigPath = configPath || null;
-
-  let authConfigPath = "";
-  if (authConfigEnabled()) {
-    let authConfigData;
-    try {
-      authConfigData = collectAuthConfig();
-    } catch (e) {
-      showGenError(e.message);
-      if (configPath) invoke("delete_file", { path: configPath }).catch(() => {});
-      return;
-    }
-    try {
-      authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
-    } catch (e) {
-      showGenError(`認証設定の準備に失敗しました: ${e}`);
-      if (configPath) invoke("delete_file", { path: configPath }).catch(() => {});
-      return;
-    }
-  }
-  tempAuthConfigPath = authConfigPath || null;
-
-  await persistSettings();
-
-  const specPath = joinPath(outputDir, "試験仕様.xlsx");
-  const casesPath = joinPath(outputDir, "test_cases.json");
-  const resultPath = joinPath(outputDir, "試験仕様_result.xlsx");
-
-  const genArgs = [openapiPath, "-o", casesPath, "--excel-output", specPath];
-  if (unchecked.length > 0) genArgs.push("--exclude-ops", unchecked.join(","));
-
-  // ヘルスチェック（疎通確認）は「ヘルスチェック」画面で独立して行える運用にしたため、
-  // 試験実行時は常にスキップする。
-  const runArgs = [specPath, openapiPath, "--base-url", baseUrl, "--output", resultPath, "--skip-health-check"];
-  if (authConfigPath) runArgs.push("--auth-config", authConfigPath);
-  if (configPath) runArgs.push("--config", configPath);
-  if (setupPath) runArgs.push("--setup", setupPath);
-  if (teardownPath) runArgs.push("--teardown", teardownPath);
-  if ($("full-body").checked) runArgs.push("--full-body");
-  if ($("fail-fast").checked) runArgs.push("--fail-fast");
-  if ($("dry-run").checked) runArgs.push("--dry-run");
-
-  currentRunId = `gen-${Date.now()}`;
-  currentResultPath = resultPath;
-  const runId = currentRunId;
-  startRunUi();
-  pendingSecondStage = { script: "runner/runner.py", args: runArgs };
-
-  invoke("run_script", { runId, script: "src/cli.py", args: genArgs }).catch((e) => {
-    if (runId !== currentRunId) return;
-    appendLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
-    pendingSecondStage = null;
-    finishRunUi(3);
-    cleanupGenTempConfigFiles();
+  const projectData = buildProjectData({
+    openapiPath,
+    baseUrl,
+    outputDir,
+    operations: lastOperations.map((operation) => operation.operationId),
+    uncheckedOperations: unchecked,
+    setupSqlPath: setupPath,
+    teardownSqlPath: teardownPath,
+    dbScenariosPath: $("dbscenario-path").value.trim(),
   });
+  const caseIds = pendingCaseIds;
+  pendingCaseIds = [];
+  try {
+    await persistSettings();
+
+    if (caseIds.length === 0) {
+      tempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+      currentResultPath = null;
+      currentCaseMaster = null;
+      currentCaseMasterPath = null;
+      currentFailedCaseIds = [];
+      preparedProjectData = projectData;
+      preparedCaseRunId = null;
+      preparationCompleted = false;
+      preparingCases = true;
+      syncPreparedExecutionButtons();
+      startRunUi();
+      try {
+        const { code } = await workflowClient.prepare({
+          projectPath: tempProjectPath,
+          noNormal: $("no-normal").checked,
+          noAbnormal: $("no-abnormal").checked,
+        }, { onEvent: handleContractWorkflowEvent });
+        finishPrepareUi(code);
+      } catch (e) {
+        appendLog(`[ERROR] ${e.message || "ケース準備を開始できませんでした"}`);
+        finishPrepareUi(3);
+      } finally {
+        preparingCases = false;
+        await cleanupGenTempConfigFiles();
+      }
+      return;
+    }
+
+    const { configPath, authConfigPath } = await writeContractRuntimeConfigs();
+    tempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+    currentResultPath = null;
+    currentCaseMaster = null;
+    currentCaseMasterPath = null;
+    preparedCaseRunId = null;
+    preparedProjectData = null;
+    preparationCompleted = false;
+    startRunUi();
+    const { code } = await workflowClient.run({
+      workflow: "contract",
+      projectPath: tempProjectPath,
+      runtimeConfigPath: configPath || undefined,
+      authConfigPath: authConfigPath || undefined,
+      parallel,
+      failFast: $("fail-fast").checked,
+      persistCookies: $("cookie-jar").checked,
+      dryRun: $("dry-run").checked,
+      fullBody: $("full-body").checked,
+      noNormal: $("no-normal").checked,
+      noAbnormal: $("no-abnormal").checked,
+      caseIds,
+    }, { onEvent: handleContractWorkflowEvent });
+    finishRunUi(code);
+  } catch (e) {
+    appendLog(`[ERROR] ${e.message || "処理を開始できませんでした"}`);
+    finishRunUi(3);
+  } finally {
+    await cleanupGenTempConfigFiles();
+  }
 });
 
 $("cancel-button").addEventListener("click", async () => {
-  if (currentRunId) await invoke("cancel_script", { runId: currentRunId });
+  await workflowClient.cancel();
 });
 
 $("open-result-button").addEventListener("click", async () => {
@@ -1139,14 +1981,6 @@ $("open-result-button").addEventListener("click", async () => {
 
 listen("proc-line", (event) => {
   const { runId, line } = event.payload;
-  if (runId === currentRunId) {
-    appendLog(line);
-    return;
-  }
-  if (runId === dbScenarioRunId) {
-    appendDbScenarioLog(line);
-    return;
-  }
   const simple = simpleRuns.get(runId);
   if (simple && simple.logEl) {
     simple.logEl.textContent += (simple.logEl.textContent ? "\n" : "") + line;
@@ -1173,38 +2007,10 @@ listen("proc-done", async (event) => {
     return;
   }
 
-  if (runId === dbScenarioRunId) {
-    finishDbScenarioRunUi(code);
-    cleanupDbScenarioTempConfigFiles();
-    return;
-  }
-
-  if (runId !== currentRunId) return;
-
-  if (pendingSecondStage) {
-    const stage = pendingSecondStage;
-    pendingSecondStage = null;
-    if (code !== 0) {
-      appendLog(`[ERROR] テスト仕様の生成に失敗しました（終了コード ${code}）`);
-      finishRunUi(code);
-      cleanupGenTempConfigFiles();
-      return;
-    }
-    appendLog("");
-    const runId = currentRunId;
-    invoke("run_script", { runId, script: stage.script, args: stage.args }).catch((e) => {
-      if (runId !== currentRunId) return;
-      appendLog(`[ERROR] スクリプトの起動に失敗しました: ${e}`);
-      finishRunUi(3);
-      cleanupGenTempConfigFiles();
-    });
-    return;
-  }
-
-  finishRunUi(code);
-  cleanupGenTempConfigFiles();
 });
 
 // ---------- 初期化 ----------
 
 loadSettingsIntoForm();
+loadRuntimeDiagnosis();
+loadAppVersion();

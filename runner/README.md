@@ -5,7 +5,6 @@ OpenAPI テスト仕様 Excel を読み込み、実際の API サーバーに対
 ## 前提
 
 - Python 3.10+
-- `curl.exe`（Windows 標準 curl）が PATH に存在すること
 - 試験項目 Excel は `openapi-test-gen` で生成したもの（`test_spec` シート）
 
 ## セットアップ
@@ -33,12 +32,15 @@ python runner.py <excel_path> <openapi_path> --base-url <url> [オプション]
 | `--output` | | 結果 Excel の出力先（省略時: `{元ファイル名}_result.xlsx`）|
 | `--health-path` | | ヘルスチェック用パス（省略時: `/health`）|
 | `--fail-fast` | | Level 1 NG が出た時点で実行を停止する |
+| `--parallel N` | | 同時実行数（省略時: 1=順次実行）。各ケースは互いに独立しているため並列化できる。`--fail-fast` との併用時、既に実行中のケースは完了まで走るため停止タイミングは概算になる |
 | `--dry-run` | | HTTP リクエストを送信せずに終了する |
 | `--full-body` | | 実測ボディを 21 文字で切り捨てずに全文出力する |
 | `--setup` | | 試験実行前に実行する SQL ファイルのパス |
 | `--teardown` | | 試験実行後に実行する SQL ファイルのパス（失敗しても続行）|
 | `--config` | | DB 接続情報の設定ファイル（`--setup` / `--teardown` 指定時は必須）|
 | `--auth-config` | | ログインして認証トークンを取得するための設定ファイル（下記「ログインして認証する API」参照）|
+| `--cookie-jar` | | セッションCookieを実行全体で自動的に維持する。ログインでセットされたセッションCookie等が以降の全リクエストに自動で送信される。`--parallel` と同時指定不可 |
+| `--junit-xml` | | 結果 Excel に加えて、同じ実行結果を JUnit XML 形式でも出力する（CIダッシュボード連携用）|
 
 ### 環境変数
 
@@ -107,6 +109,48 @@ python runner.py 試験項目.xlsx openapi.json --base-url http://localhost:8080
 ```
 
 DBシナリオランナー（`db_scenario_runner.py`）でも同じ `--auth-config` オプションが使える。
+
+#### DBシナリオで役割別アカウントを使う
+
+権限や所有者の違いを同じ実行内で試す場合は、共通のログイン先に対する名前付きプロファイルを指定できます。`auth_profiles` はプロファイル名からログインボディへの対応で、認証情報を含むためプロジェクト設定や試験ケースには保存せず、GUIでは実行時に入力します。
+
+```json
+{
+  "login_url": "/login",
+  "method": "POST",
+  "auth_profiles": {
+    "read_only": {"username": "test-reader", "password": "..."},
+    "support": {"username": "test-support", "password": "..."}
+  }
+}
+```
+
+DBシナリオでは `auth_profile` で使用するログイン情報を選びます。項目がないシナリオは通常の `body`（GUIの基本ログインボディ）を使います。名前付きプロファイルはログイン先・token設定を共通利用し、セッションCookieはプロファイルごとに分離されます。
+
+```yaml
+- name: 閲覧者が他ユーザー所有の注文を変更できない
+  auth_profile: read_only
+  given:
+    - table: users
+      as: other_user
+      fields: {email: "other@example.test"}
+    - table: orders
+      as: other_order
+      fields: {user_id: "{{given.other_user.id}}", status: "pending"}
+  request:
+    operationId: updateOrder
+    path_params: {id: "{{given.other_order.id}}"}
+    body: {status: "cancelled"}
+  response_check:
+    expect: {status: 403}
+  db_check:
+    engine: postgres
+    table: orders
+    where: {id: "{{given.other_order.id}}"}
+    expect: {exists: true, columns: {status: "pending"}}
+```
+
+`auth_profile` の名前は GUI の「役割別ログイン情報」と一致させます。期待する拒否ステータスはAPI実装・OpenAPIに基づき、403または404をレビューして選んでください。ログインには試験用アカウントを使い、`given` には他人所有の試験データだけを作成してください。各 `given` はシナリオ後に逆順で削除されます。
 
 ### 出力先を指定する
 
@@ -212,7 +256,9 @@ Level 1 が NG の場合、Level 2〜4 は評価しない。
 `runner.py`（Excel の試験項目を実行するツール）とは別レイヤの、業務シナリオ観点のツール。
 「APIを呼び出した結果、DB（PostgreSQL / InfluxDB）が期待通り変化したか」をYAMLで宣言的に記述して検証する。
 
-試験データの初期化・後始末は `db_scenario_runner.py` 自身の範囲外。
+テーブル全体のTRUNCATE等、試験実行全体を通した初期化・後始末は `db_scenario_runner.py` 自身の
+範囲外（下記 `--setup`/`--teardown` を使う）。一方、個々のシナリオが必要とする前提データ
+（`given`）は本ツール自身が用意・後始末する（下記参照）。
 
 - **GUIを使う場合**: 「DB準備」タブ④でsetup.sql/teardown.sqlを生成し、その場の
   「実行（DBに反映）」ボタンで直接DBへ反映するのが基本の流れ。自動生成された内容を
@@ -278,7 +324,75 @@ scenarios:
 - `table`/`where`/`columns`（PostgreSQL）、`measurement`/`tags`/`fields`（InfluxDB）を指定するだけで
   SQL/InfluxQLを書かずに検証できる。JOINや集計など複雑な検証が必要な場合のみ、PostgreSQL側で
   `raw_sql` を直接指定するエスケープハッチがある
+
+### given（前提データをDBへ直接投入する。factory）
+
+`{{response.xxx}}` によるシナリオ間チェーンは、前段のシナリオが**APIを叩いて**前提データを
+作ることが前提になる。しかし、そもそも作成用のAPIエンドポイントが存在しないリソース
+（SSO連携・他サービスからのイベント連携・管理画面経由でしか作られないリソース等）は
+この方法では前提データを用意できない。`given` は、そうしたリソースをDBへ直接INSERTして
+前提データを用意する仕組み（PostgreSQLのみ対応）。
+
+```yaml
+scenarios:
+  list:
+    - name: 在庫がある商品を注文すると在庫が減る
+      given:
+        - table: products
+          as: product_a               # 後で {{given.product_a.xxx}} として参照する名前
+          fields: { name: "商品A", stock: 10, status: "active" }
+      request:
+        operationId: createOrder
+        body: { product_id: "{{given.product_a.id}}", qty: 1 }
+      db_check:
+        table: products
+        where: { id: "{{given.product_a.id}}" }
+        expect:
+          columns: { stock: 9 }
+```
+
+- `fields` で指定しなかった列（NOT NULL かつ DB側デフォルトが無い列）は、実際のテーブル定義
+  （型・enum・CHECK制約）から自動的に妥当な値を補って埋める（`db準備`のsetup.sql雛形生成と
+  同じ仕組みを使っている）。自動採番列（SERIAL/IDENTITY）は指定しても無視され、DBに採番させる
+- INSERTされた行全体（自動採番されたID等を含む）が `{{given.<as名>.<カラム名>}}` で参照できる。
+  `request.path_params`/`request.body`、`db_check`の`where`/`columns`等、`{{response.xxx}}`が
+  使える場所ならどこでも同様に使える
+- 投入した行は、そのシナリオの判定が確定した時点で（成功・失敗を問わず）必ず削除される。
+  複数指定した場合は作成順の逆順で削除する（`given[1]`が`given[0]`の行をFKで参照している場合の
+  ような依存関係を考慮するため）
+- 自動生成できない型（バイナリ列など）や、機械的な既定値では都合が悪い列は `fields` で
+  明示的に指定する
 - `expect.exists: false` で「行/ポイントが存在しないこと」も検証できる（削除シナリオ用）
+
+### invariants（不変条件の検証。PostgreSQLのみ）
+
+`expect.columns`は「実測値がこの絶対値と一致するか」を検証するが、それだけでは
+「在庫は注文数量ぶんだけ正しく減っているか」「在庫は負にならないか」のような、
+**値同士の関係**を検証するテストは書きにくい（絶対値を毎回手計算してYAMLに書く必要があり、
+たまたま数字が合っていただけの偽陽性も起こりうる）。`invariants`は、`db_check`の対象行の
+実測値・前提データ・直前のAPIレスポンスを使った比較式を、関係式のまま検証できる。
+
+```yaml
+db_check:
+  table: products
+  where: { id: "{{given.product_a.id}}" }
+  invariants:
+    - "{{db.stock}} == {{given.product_a.stock}} - 1"   # 注文数量(1)ぶんだけ減っている
+    - "{{db.stock}} >= 0"                                # 在庫は負にならない
+```
+
+- `{{db.<カラム名>}}`でSELECTした実測値、`{{given.xxx}}`/`{{response.xxx}}`で前提データ・
+  直前のAPIレスポンスの値を式の中に埋め込める
+- 対応する演算子は四則演算（`+` `-` `*` `/`）と比較（`==` `!=` `<` `<=` `>` `>=`）のみ。
+  それ以外の構文（関数呼び出し・変数参照等）はエラーになる（任意コード実行を防ぐため、
+  `eval()`ではなくASTをホワイトリスト方式で評価している）
+- `expect`と`invariants`は併用できる（両方満たして初めてそのdb_checkはOKになる）
+- PostgreSQLのNUMERIC/DECIMAL列は`float`に変換してから式に埋め込む（`Decimal`と`int`/`float`の
+  混在演算はエラーになるため）。`expect.columns`の厳密な10進比較とは目的が異なる点に注意
+
+`given`/`invariants`で書くべき業務ルール自体（スキーマには現れない、そのAPI固有の制約）を
+人間が思いつく手助けとして、[docs/copilot_scenario_prompt.md](../docs/copilot_scenario_prompt.md)
+にGitHub Copilot Chat向けのシナリオ候補生成プロンプトを用意している。
 
 ### response_check（APIレスポンス自体の検証）
 
@@ -321,8 +435,15 @@ python db_scenario_runner.py scenarios.yaml openapi.json \
 `config.json` は `--setup`/`--teardown` と同じファイルを使う。`postgres` シナリオのみなら
 `influxdb` セクションは不要、逆も同様（実際に使うエンジンのセクションのみ検証される）。
 
+`--report-output XLSX`（Excelレポート）・`--junit-xml XML`（CIダッシュボード連携用）・
+`--cookie-jar`（`runner.py`と同じセッションCookie維持機能）も指定できる。
+
 `--auth-config` はオプションで、フォーマットは `runner.py` と共通（「ログインして認証する API」参照）。
 指定するとログインして取得したトークンが、シナリオ実行時の全APIリクエストに自動で付与される。
+
+`--cookie-jar` を付けると、`runner.py` と同様にセッションCookieをシナリオ実行全体で
+自動的に維持する。DBシナリオは元々シナリオ間で`{{response.xxx}}`を引き継ぐため常に順次実行であり、
+`runner.py`の`--parallel`のような制約はない。
 
 `--dry-run` を付けると、シナリオYAML/openapi.json/config.jsonの読み込みと件数確認だけを行い、
 実際のAPIリクエスト送信・DB接続は一切行わずに終了する（`runner.py`の`--dry-run`と同じ考え方）。
@@ -366,9 +487,30 @@ python generate_db_scenarios.py openapi.json mapping.yaml -o scenarios.generated
 
 - `id` のようなサーバー側で自動採番されるフィールドは `where` から除外される（送信値と一致しない可能性が高いため）
 - ネストしたオブジェクト・配列（別テーブルへのリレーションの可能性がある）も `where` から除外される
-- `update`/`delete` 系の `path_params` は `{{response.id}}` のプレースホルダになる。実際に使うには、
-  対象データを作成する `create` 系シナリオを先に置き、そのレスポンスから値を引き継ぐ想定で
-  シナリオの順序を調整する必要がある
+
+**シナリオの並び順・`{{response.id}}`の引き継ぎは自動で組み立てられる。**
+パス（例: `/orders`, `/orders/{id}`, `/orders/{id}/items`）から「リソースファミリー」を推定し、
+ファミリー内は 作成 → 更新 → ネスト作成（例: 注文明細の追加）→ … → 削除（削除は子リソースから先） の
+順に並べ、各ファミリーの2件目以降の `path_params` は自動で `{{response.id}}`（直前シナリオのレスポンスから
+引き継ぐプレースホルダ）にする。
+
+ファミリー間の順序も、リクエストボディのフィールド名（例: `categoryId` → "category" ファミリーへの
+依存）から推測した依存関係に基づいて、依存先が先に来るよう並べる。ただしこれは名前ベースの
+ヒューリスティックな推測にすぎないため（例えばフィールド名が一般的でない命名の場合は検出できない）、
+生成後は必ず並び順と `{{response.id}}` の参照先が意図通りか確認すること。特に：
+
+- 1つのファミリーに複数のリソースが混在している場合（例: 別々の子テーブルを持つリソースが
+  同じパスプレフィックスを共有している場合）は、意図しない順序になることがある
+- 依存関係が循環していると判定された場合は解決できず、該当ファミリーは末尾にアルファベット順で
+  配置される（標準エラー出力に警告が出る）
+
+**作成直後の読み取り確認（response_check）も自動で挿入される。**
+`db_check` は「APIを呼んだ**後**にDBがどう変化したか」しか見られず、「作成したリソースがAPI経由で
+正しく読み取れるか」（読み取りパス側のバグ）は検証できない。対応する単一リソース取得API
+（例: `GET /widgets/{id}`、path paramをちょうど1つだけ持ち、requestBodyを持たない形のGET）が
+存在する場合、作成シナリオの直後に、送信したフィールドがそのまま読み取れるかを`response_check`で
+確認するシナリオを自動で挿入する（`db_check`は付かない）。対応するGET APIが無い場合や、
+送信フィールド名とレスポンスのフィールド名が一致しない場合は手直しが必要。
 
 ### setup.sql / mapping.yaml の叩き台を実DBから自動生成する
 
@@ -399,6 +541,16 @@ python generate_setup_sql.py --config config.json --setup-output setup.sql.gener
 推定する。名前ベースのヒューリスティックであり精度は100%ではないため、各行に確信度
 （高/中/低）を必ずコメントで出力する。「低」は特に人間の判断で修正が必要。
 
+素のPHPの場合は、CopilotにSQL根拠（PHP相対パスと行番号）を含む
+`openapi.db-evidence.json`を作らせ、任意で照合に使える。例:
+
+```sh
+python generate_mapping.py openapi.json --config config.json \
+  --php-db-evidence openapi.db-evidence.json -o mapping.yaml.generated
+```
+
+Copilot候補のテーブル・カラムがOpenAPIのoperationIdと接続先PostgreSQLの実スキーマに一致するか確認し、根拠をYAMLコメントに残す。一致しても確信度は「中」で、人がPHPの実行経路と対応表を確認する必要がある。複数候補やスキーマ不一致は自動選択しない。形式は [`docs/php-db-evidence.schema.json`](../docs/php-db-evidence.schema.json)、GUI手順は [`docs/php_openapi_setup.md`](../docs/php_openapi_setup.md) を参照。
+
 ```sh
 python generate_mapping.py openapi.json --config config.json -o mapping.yaml.generated
 ```
@@ -421,8 +573,8 @@ runner/
 ├── runner.py           # CLI エントリーポイント
 ├── models.py           # RunCase / RunResult / ResponseSchema
 ├── excel_reader.py     # 試験項目 Excel → RunCase[]
-├── request_builder.py  # RunCase → curl 引数・URL
-├── http_client.py      # subprocess + curl.exe 実行
+├── request_builder.py  # RunCase → リクエストボディ・URL
+├── http_client.py      # requests によるHTTP実行
 ├── response_schema.py  # RunCase → ResponseSchema 変換
 ├── verifier.py         # Level 1〜4 検証
 ├── response_validator.py  # Level 4: レスポンスボディの JSON Schema 検証
@@ -431,9 +583,12 @@ runner/
 ├── hook_runner.py       # --setup/--teardown SQL 実行
 ├── db_scenario_runner.py  # DBシナリオ CLI エントリーポイント
 ├── db_scenario.py       # DBシナリオ YAML 読み込み・プレースホルダ解決
+├── db_factory.py        # given（前提データ）のDB直接INSERT/削除
+├── junit_writer.py      # 実行結果のJUnit XML出力
 ├── db_backends/
 │   ├── postgres_backend.py  # engine: postgres の検証
-│   └── influx_backend.py    # engine: influxdb の検証
+│   ├── influx_backend.py    # engine: influxdb の検証
+│   └── invariant_eval.py    # invariants（不変条件）式の安全な評価
 └── tests/
     ├── fixtures/
     │   └── sample.xlsx

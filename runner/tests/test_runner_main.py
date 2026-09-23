@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
+import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -51,14 +51,13 @@ def _patch_happy_path(monkeypatch, cases=None, status=200, calls=None):
     cases = cases if cases is not None else [_case()]
 
     monkeypatch.setattr(runner_module, "read_excel", lambda path: cases)
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
     monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
 
-    def fake_execute(case, base_url, openapi):
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
         calls.append(("execute", case.id))
         return RunResult(
             case=case, actual_status=status, actual_body="{}",
-            actual_headers={}, elapsed_ms=10.0, curl_exit_code=0,
+            actual_headers={}, elapsed_ms=10.0, exit_code=0,
         )
 
     monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
@@ -198,6 +197,240 @@ def test_without_fail_fast_all_cases_executed_despite_failures(monkeypatch, tmp_
     assert len(executed) == 3
 
 
+def test_case_ids_runs_only_selected_contract_cases(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    cases = [_case("TC-op-001"), _case("TC-op-002")]
+    calls = _patch_happy_path(monkeypatch, cases=cases)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--case-ids", "TC-op-002"],
+    )
+
+    assert code == 0
+    assert [call[1] for call in calls if call[0] == "execute"] == ["TC-op-002"]
+
+
+def test_case_ids_reject_unknown_contract_case(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    _patch_happy_path(monkeypatch, cases=[_case("TC-op-001")])
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--case-ids", "TC-missing"],
+    )
+
+    assert code == 4
+
+
+# --- --parallel ---
+
+
+def test_parallel_zero_returns_4(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "0"],
+    )
+    assert code == 4
+
+
+def test_parallel_negative_returns_4(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "-1"],
+    )
+    assert code == 4
+
+
+def test_parallel_executes_all_cases_and_writes_all_results(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    cases = [_case(f"TC-op-{i:03d}") for i in range(1, 11)]
+    calls = _patch_happy_path(monkeypatch, cases=cases, status=200)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "4"],
+    )
+    assert code == 0
+    executed = [c for c in calls if c[0] == "execute"]
+    assert len(executed) == 10
+    assert {c[1] for c in executed} == {case.id for case in cases}  # 全ケースが重複・欠落なく実行される
+    write_call = next(c for c in calls if c[0] == "write_results")
+    assert write_call[1] == 10  # 結果件数もケース数と一致する
+
+
+def test_parallel_detects_failures_and_returns_1(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    cases = [_case(f"TC-op-{i:03d}") for i in range(1, 6)]
+    _patch_happy_path(monkeypatch, cases=cases, status=500)  # 全件NG
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "3"],
+    )
+    assert code == 1
+
+
+def test_parallel_with_fail_fast_does_not_crash_and_reports_failure(monkeypatch, tmp_path):
+    # 並列実行下での --fail-fast は「最初のNGを検出した時点」より後ろにずれる概算のため、
+    # 停止した正確な実行件数までは断定しない。配線が壊れていないことのみ検証する。
+    excel_path, openapi_path = _write_files(tmp_path)
+    cases = [_case(f"TC-op-{i:03d}") for i in range(1, 11)]
+    calls = _patch_happy_path(monkeypatch, cases=cases, status=500)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "2", "--fail-fast"],
+    )
+    assert code == 1
+    executed = [c for c in calls if c[0] == "execute"]
+    assert 1 <= len(executed) <= 10
+    write_call = next(c for c in calls if c[0] == "write_results")
+    assert write_call[1] == len(executed)  # 書き出す結果件数は実際に実行した件数と一致する
+
+
+# --- --cookie-jar ---
+
+
+def test_cookie_jar_with_parallel_returns_4(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x",
+         "--cookie-jar", "--parallel", "2"],
+    )
+    assert code == 4
+
+
+def test_cookie_jar_flag_shares_session_with_cookie_persistence(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    seen = []
+
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
+        seen.append((session, persist_cookies))
+        return RunResult(
+            case=case, actual_status=200, actual_body="{}",
+            actual_headers={}, elapsed_ms=1.0, exit_code=0,
+        )
+
+    monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
+    monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
+    monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
+    monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--cookie-jar"],
+    )
+    assert code == 0
+    assert len(seen) == 1
+    session, persist_cookies = seen[0]
+    assert isinstance(session, requests.Session)
+    assert persist_cookies is True
+
+
+def test_without_cookie_jar_flag_session_shared_but_not_persisted(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    seen = []
+
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
+        seen.append((session, persist_cookies))
+        return RunResult(
+            case=case, actual_status=200, actual_body="{}",
+            actual_headers={}, elapsed_ms=1.0, exit_code=0,
+        )
+
+    monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
+    monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
+    monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
+    monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
+
+    code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
+    assert code == 0
+    session, persist_cookies = seen[0]
+    assert isinstance(session, requests.Session)  # コネクションプーリングのため常に共有される
+    assert persist_cookies is False
+
+
+def test_parallel_flag_widens_connection_pool_to_match(monkeypatch, tmp_path):
+    # urllib3の既定pool_maxsizeは10なので、--parallelがそれを超える場合は
+    # プールが枯渇して並列度が頭打ちにならないよう、プールサイズを引き上げる必要がある。
+    excel_path, openapi_path = _write_files(tmp_path)
+    cases = [_case(f"TC-op-{i:03d}") for i in range(1, 21)]
+    seen = []
+
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
+        seen.append(session)
+        return RunResult(
+            case=case, actual_status=200, actual_body="{}",
+            actual_headers={}, elapsed_ms=1.0, exit_code=0,
+        )
+
+    monkeypatch.setattr(runner_module, "read_excel", lambda path: cases)
+    monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
+    monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
+    monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--parallel", "20"],
+    )
+    assert code == 0
+    session = seen[0]
+    adapter = session.get_adapter("http://x")
+    assert adapter._pool_maxsize >= 20
+
+
+def test_default_parallel_keeps_standard_pool_size(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    seen = []
+
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
+        seen.append(session)
+        return RunResult(
+            case=case, actual_status=200, actual_body="{}",
+            actual_headers={}, elapsed_ms=1.0, exit_code=0,
+        )
+
+    monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
+    monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
+    monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
+    monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
+
+    code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
+    assert code == 0
+    session = seen[0]
+    adapter = session.get_adapter("http://x")
+    assert adapter._pool_maxsize == 10
+
+
+# --- --junit-xml ---
+
+
+def test_junit_xml_flag_writes_file(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    _patch_happy_path(monkeypatch)
+    junit_path = tmp_path / "result.xml"
+
+    code = run_main(
+        monkeypatch,
+        [str(excel_path), str(openapi_path), "--base-url", "http://x", "--junit-xml", str(junit_path)],
+    )
+    assert code == 0
+    assert junit_path.exists()
+
+
+def test_without_junit_xml_flag_no_file_written(monkeypatch, tmp_path):
+    excel_path, openapi_path = _write_files(tmp_path)
+    _patch_happy_path(monkeypatch)
+
+    code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
+    assert code == 0
+    assert not (tmp_path / "result.xml").exists()
+
+
 # --- --full-body ---
 
 
@@ -232,7 +465,6 @@ def test_all_pass_returns_0(monkeypatch, tmp_path):
 def test_health_check_failure_returns_3(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
     monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: False)
     code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
     assert code == 3
@@ -305,28 +537,12 @@ def test_dry_run_returns_0_without_executing(monkeypatch, tmp_path, capsys):
     assert not any(c[0] == "execute" for c in calls)
 
 
-# --- curl.exe 不在 ---
-
-
-def test_curl_not_available_returns_3(monkeypatch, tmp_path):
-    excel_path, openapi_path = _write_files(tmp_path)
-    monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
-
-    def raise_runtime_error():
-        raise RuntimeError("curl.exe が見つかりません")
-
-    monkeypatch.setattr(runner_module, "check_curl_available", raise_runtime_error)
-    code = run_main(monkeypatch, [str(excel_path), str(openapi_path), "--base-url", "http://x"])
-    assert code == 3
-
-
 # --- config.json 読み込みエラー ---
 
 
 def test_config_load_error_returns_3(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
 
     def raise_value_error(path):
         raise ValueError("db セクションがありません")
@@ -347,12 +563,11 @@ def test_config_load_error_returns_3(monkeypatch, tmp_path):
 def test_write_results_error_returns_3(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
     monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
     monkeypatch.setattr(
         runner_module, "execute_with_openapi",
-        lambda case, base_url, openapi: RunResult(
-            case=case, actual_status=200, actual_body="{}", actual_headers={}, elapsed_ms=1.0, curl_exit_code=0
+        lambda case, base_url, openapi, session=None, persist_cookies=False: RunResult(
+            case=case, actual_status=200, actual_body="{}", actual_headers={}, elapsed_ms=1.0, exit_code=0
         ),
     )
 
@@ -372,12 +587,11 @@ def test_warn_only_returns_2(monkeypatch, tmp_path):
     # ステータスは一致させ、応答時間だけ超過させて WARN のみを発生させる
     case = _case(status="200")
     monkeypatch.setattr(runner_module, "read_excel", lambda path: [case])
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
     monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
     monkeypatch.setattr(
         runner_module, "execute_with_openapi",
-        lambda c, base_url, openapi: RunResult(
-            case=c, actual_status=200, actual_body="{}", actual_headers={}, elapsed_ms=99999.0, curl_exit_code=0
+        lambda c, base_url, openapi, session=None, persist_cookies=False: RunResult(
+            case=c, actual_status=200, actual_body="{}", actual_headers={}, elapsed_ms=99999.0, exit_code=0
         ),
     )
     monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
@@ -398,7 +612,7 @@ def test_auth_config_login_failure_returns_3(monkeypatch, tmp_path):
     excel_path, openapi_path = _write_files(tmp_path)
     _patch_happy_path(monkeypatch)
 
-    def raise_auth_error(base_url, auth_cfg):
+    def raise_auth_error(base_url, auth_cfg, session=None):
         raise runner_module.AuthLoginError("ログイン失敗")
 
     monkeypatch.setattr(runner_module, "load_auth_config", lambda path: {"login_url": "/login", "method": "POST"})
@@ -418,23 +632,22 @@ def test_auth_config_success_sets_env_before_execution(monkeypatch, tmp_path):
     calls = []
     seen_env = {}
 
-    def fake_execute(case, base_url, openapi):
+    def fake_execute(case, base_url, openapi, session=None, persist_cookies=False):
         import os
         seen_env["name"] = os.environ.get("TEST_AUTH_HEADER_NAME")
         seen_env["value"] = os.environ.get("TEST_AUTH_HEADER_VALUE")
         calls.append(("execute", case.id))
         return RunResult(
             case=case, actual_status=200, actual_body="{}",
-            actual_headers={}, elapsed_ms=10.0, curl_exit_code=0,
+            actual_headers={}, elapsed_ms=10.0, exit_code=0,
         )
 
     monkeypatch.setattr(runner_module, "read_excel", lambda path: [_case()])
-    monkeypatch.setattr(runner_module, "check_curl_available", lambda: None)
     monkeypatch.setattr(runner_module, "health_check", lambda base_url, health_path: True)
     monkeypatch.setattr(runner_module, "execute_with_openapi", fake_execute)
     monkeypatch.setattr(runner_module, "write_results", lambda *a, **k: None)
     monkeypatch.setattr(runner_module, "load_auth_config", lambda path: {"login_url": "/login", "method": "POST"})
-    monkeypatch.setattr(runner_module, "perform_login", lambda base_url, auth_cfg: "tok123")
+    monkeypatch.setattr(runner_module, "perform_login", lambda base_url, auth_cfg, session=None: "tok123")
 
     code = run_main(
         monkeypatch,

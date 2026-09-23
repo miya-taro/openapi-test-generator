@@ -1,9 +1,17 @@
+import json
 import sys
 from pathlib import Path
 
+import pytest
+import jsonschema
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import generate_mapping as mapping_module
 from db_introspect import ColumnInfo, TableInfo
 from generate_mapping import (
+    PHPDBEvidenceError,
+    _apply_php_db_evidence,
     _resource_key,
     _best_match_score,
     _build_guess,
@@ -13,6 +21,7 @@ from generate_mapping import (
     _normalize,
     _render_yaml,
     _score_tables,
+    main as generate_mapping_main,
 )
 
 
@@ -261,3 +270,221 @@ def test_render_yaml_includes_confidence_and_runner_up():
     assert "table: orders" in body
     assert "確信度: 高" in body
     assert "次点候補: order_lines" in body
+
+
+def test_render_yaml_quotes_operation_ids_that_could_break_yaml_structure():
+    body = _render_yaml([{
+        "operationId": "createMember\n  engine: influxdb",
+        "table": "members", "confidence": "中", "note": "source", "runner_up": None,
+    }])
+
+    assert '"createMember\\n  engine: influxdb":' in body
+    assert "\n  engine: influxdb:\n" not in body
+    parsed = yaml.safe_load(body)
+    assert list(parsed["operations"]) == ["createMember\n  engine: influxdb"]
+
+
+def test_php_db_evidence_overrides_name_guess_only_after_schema_match():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": ["fullName"]}]
+    guesses = [{
+        "operationId": "createMember", "table": "accounts", "confidence": "低",
+        "note": "名前推定", "runner_up": None,
+    }]
+    schema = {
+        "accounts": table("accounts", ["id", "display_name"]),
+        "members": table("members", ["id", "full_name"]),
+    }
+    evidence = {
+        "format": "api-tester.php-db-evidence",
+        "schemaVersion": 1,
+        "operations": {
+            "createMember": {
+                "tables": [{
+                    "table": "members", "action": "insert", "columns": ["full_name"],
+                    "evidence": [{"file": "api/members.php", "line": 42}],
+                }],
+            },
+        },
+    }
+
+    result = _apply_php_db_evidence(guesses, evidence, operations, schema)
+
+    assert result[0]["table"] == "members"
+    assert result[0]["confidence"] == "中"  # Copilot候補は一致しても自動承認しない
+    assert "api/members.php:42" in result[0]["note"]
+    assert "DBスキーマと一致" in result[0]["note"]
+
+
+def test_php_db_evidence_with_unknown_column_becomes_unresolved():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": ["fullName"]}]
+    guesses = [{
+        "operationId": "createMember", "table": "accounts", "confidence": "高",
+        "note": "名前推定", "runner_up": None,
+    }]
+    schema = {"members": table("members", ["id", "full_name"])}
+    evidence = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [{
+            "table": "members", "action": "insert", "columns": ["full_nam"],
+            "evidence": [{"file": "api/members.php", "line": 42}],
+        }]}},
+    }
+
+    result = _apply_php_db_evidence(guesses, evidence, operations, schema)
+
+    assert result[0]["table"] is None
+    assert result[0]["confidence"] == "低"
+    assert "DBスキーマにありません" in result[0]["note"]
+
+
+def test_php_db_evidence_for_unknown_table_keeps_php_source_reference():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": []}]
+    guesses = [{
+        "operationId": "createMember", "table": None, "confidence": "低",
+        "note": "名前推定なし", "runner_up": None,
+    }]
+    evidence = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [{
+            "table": "missing_table", "action": "insert", "columns": ["name"],
+            "evidence": [{"file": "api/members.php", "line": 42}],
+        }]}},
+    }
+
+    result = _apply_php_db_evidence(guesses, evidence, operations, {})
+
+    assert "api/members.php:42" in result[0]["note"]
+    assert "DBスキーマにありません" in result[0]["note"]
+
+
+def test_php_db_evidence_does_not_choose_between_multiple_tables():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": ["fullName"]}]
+    guesses = [{
+        "operationId": "createMember", "table": "members", "confidence": "高",
+        "note": "名前推定", "runner_up": None,
+    }]
+    schema = {
+        "members": table("members", ["full_name"]),
+        "member_profiles": table("member_profiles", ["full_name"]),
+    }
+    evidence = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [
+            {"table": "members", "action": "insert", "columns": ["full_name"],
+             "evidence": [{"file": "api/members.php", "line": 42}]},
+            {"table": "member_profiles", "action": "insert", "columns": ["full_name"],
+             "evidence": [{"file": "api/members.php", "line": 51}]},
+        ]}},
+    }
+
+    result = _apply_php_db_evidence(guesses, evidence, operations, schema)
+
+    assert result[0]["table"] is None
+    assert result[0]["confidence"] == "低"
+    assert "複数テーブル" in result[0]["note"]
+    assert "api/members.php:42" in result[0]["runner_up"]
+
+
+def test_php_db_evidence_rejects_unknown_operation_and_unsafe_source_path():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": []}]
+    unknown_operation = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"missingOperation": {"tables": []}},
+    }
+    with pytest.raises(PHPDBEvidenceError, match="OpenAPI"):
+        _apply_php_db_evidence([], unknown_operation, operations, {})
+
+    unsafe_path = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [{
+            "table": "members", "action": "insert", "columns": ["id"],
+            "evidence": [{"file": "../outside.php", "line": 1}],
+        }]}},
+    }
+    with pytest.raises(PHPDBEvidenceError, match="相対パス"):
+        _apply_php_db_evidence([], unsafe_path, operations, {"members": table("members", ["id"])})
+
+
+def test_php_db_evidence_rejects_malformed_action_and_unsafe_db_identifier():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": []}]
+    for table_name, action in [("members\n  engine: influxdb", "insert"), ("members", [])]:
+        evidence = {
+            "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+            "operations": {"createMember": {"tables": [{
+                "table": table_name, "action": action, "columns": ["id"],
+                "evidence": [{"file": "api/members.php", "line": 1}],
+            }]}},
+        }
+        with pytest.raises(PHPDBEvidenceError):
+            _apply_php_db_evidence([], evidence, operations, {"members": table("members", ["id"])})
+
+
+def test_php_db_evidence_rejects_extra_keys_and_boolean_schema_version():
+    operations = [{"operationId": "createMember", "method": "post", "path": "/members", "fields": []}]
+    evidence = {
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1, "unexpected": "ignored?",
+        "operations": {},
+    }
+    with pytest.raises(PHPDBEvidenceError, match="未対応"):
+        _apply_php_db_evidence([], evidence, operations, {})
+
+    evidence.pop("unexpected")
+    evidence["schemaVersion"] = True
+    with pytest.raises(PHPDBEvidenceError, match="schemaVersion"):
+        _apply_php_db_evidence([], evidence, operations, {})
+
+
+def test_php_db_evidence_schema_accepts_the_documented_candidate_shape():
+    repo_root = Path(__file__).resolve().parents[2]
+    schema = json.loads((repo_root / "docs/php-db-evidence.schema.json").read_text(encoding="utf-8"))
+    candidate = {
+        "format": "api-tester.php-db-evidence",
+        "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [{
+            "table": "members", "action": "insert", "columns": ["full_name"],
+            "evidence": [{"file": "api/members.php", "line": 42}],
+        }]}},
+    }
+
+    jsonschema.validate(candidate, schema)
+
+
+def test_main_accepts_php_db_evidence_and_writes_reviewable_mapping(tmp_path, monkeypatch):
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text(json.dumps({
+        "openapi": "3.0.3",
+        "info": {"title": "Test", "version": "1"},
+        "paths": {"/members": {"post": {
+            "operationId": "createMember",
+            "requestBody": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {"displayName": {"type": "string"}},
+            }}}},
+        }}},
+    }), encoding="utf-8")
+    evidence_path = tmp_path / "openapi.db-evidence.json"
+    evidence_path.write_text(json.dumps({
+        "format": "api-tester.php-db-evidence", "schemaVersion": 1,
+        "operations": {"createMember": {"tables": [{
+            "table": "members", "action": "insert", "columns": ["full_name"],
+            "evidence": [{"file": "api/members.php", "line": 42}],
+        }]}},
+    }), encoding="utf-8")
+    output = tmp_path / "mapping.generated.yaml"
+    monkeypatch.setattr(mapping_module, "load_config", lambda _path: {})
+    monkeypatch.setattr(mapping_module, "get_postgres_config", lambda _config: {})
+    monkeypatch.setattr(mapping_module, "introspect_schema", lambda *_args, **_kwargs: {
+        "members": table("members", ["id", "full_name"]),
+    })
+
+    monkeypatch.setattr(sys, "argv", [
+        "generate_mapping.py",
+        str(openapi_path), "--config", str(tmp_path / "db.json"),
+        "--php-db-evidence", str(evidence_path), "-o", str(output),
+    ])
+    code = generate_mapping_main()
+
+    assert code == 0
+    rendered = output.read_text(encoding="utf-8")
+    assert "table: members" in rendered
+    assert "確信度: 中" in rendered
+    assert "api/members.php:42" in rendered

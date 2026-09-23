@@ -23,7 +23,7 @@ def run_hook(sql_path: str, db_config: dict, is_teardown: bool = False) -> None:
             print(f"[WARN] {msg}", file=sys.stderr)
             return
         print(f"[ERROR] {msg}", file=sys.stderr)
-        raise SystemExit(3)
+        raise SystemExit(3) from e
 
     try:
         with conn:
@@ -40,7 +40,7 @@ def run_hook(sql_path: str, db_config: dict, is_teardown: bool = False) -> None:
                             conn.rollback()
                             return
                         print(f"[ERROR] {msg}", file=sys.stderr)
-                        raise SystemExit(3)
+                        raise SystemExit(3) from e
     finally:
         conn.close()
 
@@ -58,12 +58,50 @@ def _load_sql(sql_path: str, hook_type: str, is_teardown: bool) -> str:
 
 
 def _split_statements(sql: str) -> list[str]:
-    """`;` で区切り、空・コメントのみの行を除去して返す。"""
-    stmts = []
-    for raw in sql.split(";"):
-        # コメント行のみのブロックはスキップ
-        lines = [ln for ln in raw.splitlines() if not ln.strip().startswith("--")]
-        stmt = "\n".join(lines).strip()
-        if stmt:
-            stmts.append(stmt)
+    """`;` で区切り、空・コメントのみの行を除去して返す。
+
+    文字列リテラル（'...'）内の`;`は区切りとして扱わない
+    （例: INSERT INTO notes (msg) VALUES ('hello; world') を1文として保つ）。
+    素朴に sql.split(";") していると、値に`;`を含むだけの正当な1文が2つの
+    構文的に壊れた断片に分割され、SQL構文エラーになっていた。
+    SQLの文字列リテラルはシングルクォートの二重化(`''`)でエスケープするため、
+    それも1個のリテラル`'`として扱う（区切りとして誤反応しない）。
+    """
+    lines = [ln for ln in sql.splitlines() if not ln.strip().startswith("--")]
+    text = "\n".join(lines)
+
+    stmts: list[str] = []
+    current: list[str] = []
+    in_string = False
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    current.append("''")
+                    i += 2
+                    continue
+                in_string = False
+            current.append(ch)
+            i += 1
+            continue
+        if ch == "'":
+            in_string = True
+            current.append(ch)
+            i += 1
+            continue
+        if ch == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                stmts.append(stmt)
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+
+    stmt = "".join(current).strip()
+    if stmt:
+        stmts.append(stmt)
     return stmts

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import openpyxl
 from models import RunResult
+from sensitive_data import redact_header_value, redact_sensitive_text
 
 RESULT_HEADERS = [
     "実行日時",        # P
@@ -50,11 +51,13 @@ def write_results(
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    for result, verdict, detail in results:
+    for result, _verdict, detail in results:
         row_idx = id_to_row.get(result.case.id)
         if row_idx is None:
             continue
-        body_preview = result.actual_body if full_body else _truncate(result.actual_body, BODY_MAX_LEN)
+        source_body = result.report_body if result.report_body is not None else result.actual_body
+        safe_body = redact_sensitive_text(source_body)
+        body_preview = safe_body if full_body else _truncate(safe_body, BODY_MAX_LEN)
         ws.cell(row=row_idx, column=start_col + 0, value=now)
         ws.cell(row=row_idx, column=start_col + 1, value=result.actual_status or "")
         ws.cell(row=row_idx, column=start_col + 2, value=_format_headers(result.actual_headers))
@@ -80,4 +83,4 @@ def _truncate(s: str, max_len: int) -> str:
 
 
 def _format_headers(headers: dict[str, str]) -> str:
-    return "\n".join(f"{k}: {v}" for k, v in headers.items())
+    return "\n".join(f"{k}: {redact_header_value(k, v)}" for k, v in headers.items())

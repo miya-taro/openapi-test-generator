@@ -1,0 +1,3 @@
+# 開発時のみ必要な依存関係（Lint等）。ツール本体の実行には不要なため requirements.txt には含めない。
+ruff>=0.16.0
+packaging>=24.0

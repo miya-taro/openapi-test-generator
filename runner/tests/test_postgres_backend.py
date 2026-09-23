@@ -41,6 +41,19 @@ def test_check_builds_select_with_where_and_calls_connect():
     mock_conn.close.assert_called_once()
 
 
+def test_check_evaluates_invariants_end_to_end():
+    mock_conn, mock_cur = make_mock_conn([{"stock": 9}])
+    check = DBCheck(
+        engine="postgres", table="products", where={"id": 5}, expect={},
+        invariants=["{{db.stock}} == 10 - 1"],
+    )
+
+    with patch("psycopg2.connect", return_value=mock_conn):
+        ok, detail = postgres_backend.check(check, DB_CONFIG)
+
+    assert ok is True, detail
+
+
 def test_check_without_where_selects_all():
     mock_conn, mock_cur = make_mock_conn([{"id": 1}])
     check = DBCheck(engine="postgres", table="users", where=None, expect={})
@@ -93,6 +106,37 @@ def test_compare_row_exists_and_columns_match():
     assert detail == ""
 
 
+def test_compare_decimal_column_matches_equal_looking_float():
+    # 回帰テスト: psycopg2はNUMERIC/DECIMAL列をDecimalで返す。Decimal("19.99") == 19.99 は
+    # 素朴な比較だとFalseになる（19.99は二進浮動小数点として正確に表現できないため）。
+    # 「10進数表記として同じ値」なら一致とみなす必要がある。
+    from decimal import Decimal
+
+    ok, detail = postgres_backend._compare(
+        [{"price": Decimal("19.99")}], {"exists": True, "columns": {"price": 19.99}}
+    )
+    assert ok is True, detail
+
+
+def test_compare_decimal_column_still_detects_real_mismatch():
+    from decimal import Decimal
+
+    ok, detail = postgres_backend._compare(
+        [{"price": Decimal("19.99")}], {"exists": True, "columns": {"price": 20.00}}
+    )
+    assert ok is False
+    assert "price" in detail
+
+
+def test_compare_decimal_column_matches_integer_value():
+    from decimal import Decimal
+
+    ok, detail = postgres_backend._compare(
+        [{"price": Decimal("100")}], {"exists": True, "columns": {"price": 100}}
+    )
+    assert ok is True, detail
+
+
 def test_compare_row_missing_when_expected_fails():
     ok, detail = postgres_backend._compare([], {"exists": True})
     assert ok is False
@@ -126,3 +170,61 @@ def test_compare_default_expect_requires_existence():
     # expect が空の場合、デフォルトで exists=True 扱い
     ok, detail = postgres_backend._compare([], {})
     assert ok is False
+
+
+# ---------- invariants（不変条件） ----------
+
+
+def test_compare_invariant_pass_does_not_affect_ok():
+    ok, detail = postgres_backend._compare(
+        [{"stock": 9}], {"exists": True}, ["{{db.stock}} == 10 - 1"]
+    )
+    assert ok is True
+    assert detail == ""
+
+
+def test_compare_invariant_fail_reports_detail():
+    ok, detail = postgres_backend._compare(
+        [{"stock": 9}], {"exists": True}, ["{{db.stock}} == 10 - 2"]
+    )
+    assert ok is False
+    assert "不変条件を満たしません" in detail
+
+
+def test_compare_invariant_never_negative():
+    ok, detail = postgres_backend._compare([{"stock": 0}], {"exists": True}, ["{{db.stock}} >= 0"])
+    assert ok is True
+
+    ok, detail = postgres_backend._compare([{"stock": -1}], {"exists": True}, ["{{db.stock}} >= 0"])
+    assert ok is False
+
+
+def test_compare_invariant_missing_column_reports_error_not_crash():
+    ok, detail = postgres_backend._compare([{"other": 1}], {"exists": True}, ["{{db.stock}} >= 0"])
+    assert ok is False
+    assert "stock" in detail
+
+
+def test_compare_invariant_combined_with_columns_both_must_pass():
+    ok, detail = postgres_backend._compare(
+        [{"name": "花子", "stock": 9}],
+        {"exists": True, "columns": {"name": "太郎"}},  # わざと不一致
+        ["{{db.stock}} >= 0"],
+    )
+    assert ok is False
+    assert "name" in detail
+
+
+def test_compare_invariant_decimal_column_does_not_raise_typeerror():
+    from decimal import Decimal
+
+    ok, detail = postgres_backend._compare(
+        [{"price": Decimal("19.99")}], {"exists": True}, ["{{db.price}} - 1.99 == 18.0"]
+    )
+    assert ok is True, detail
+
+
+def test_compare_no_invariants_arg_defaults_to_empty():
+    # invariants を省略した既存の呼び出し方（後方互換）も引き続き動作する
+    ok, detail = postgres_backend._compare([{"id": 1}], {"exists": True})
+    assert ok is True

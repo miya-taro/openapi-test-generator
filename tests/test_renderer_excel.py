@@ -1,3 +1,5 @@
+import json
+
 import openpyxl
 
 from src.renderer.excel_output import (
@@ -74,6 +76,25 @@ def test_curl_command_header_param():
 def test_curl_command_header_omit_no_header_flag():
     cmd = _build_curl_command(_tc(**{"in": "header"}, paramName="X-Api-Key", inputValue="（認証ヘッダなし）"))
     assert "-H" not in cmd
+
+
+def test_curl_command_for_openapi_security_bundle_matches_headers_query_and_cookie():
+    payload = json.dumps({
+        "headers": {"X-Api-Key": "invalid-key"},
+        "query": {"api_key": "invalid-query-key"},
+        "cookies": {"session_key": "invalid-cookie"},
+    })
+
+    cmd = _build_curl_command(_tc(
+        **{"in": "header"},
+        paramName="__openapi_security__",
+        keyword="auth",
+        inputValue=payload,
+    ))
+
+    assert "?api_key=invalid-query-key" in cmd
+    assert '-H "X-Api-Key: invalid-key"' in cmd
+    assert '-H "Cookie: session_key=invalid-cookie"' in cmd
 
 
 def test_curl_command_body_param_produces_json_payload():

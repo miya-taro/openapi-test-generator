@@ -7,6 +7,7 @@ from .rules.string import generate_string_cases
 from .rules.array import generate_array_cases
 from .rules.object import generate_object_cases
 from .rules.auth import generate_auth_cases
+from .rules.file import generate_file_cases
 
 
 def _derive_response_body(info: dict | None) -> str:
@@ -159,9 +160,22 @@ def _generate_from_schema(
     cases.extend(generate_one_of_variant_cases(schema, ctx))
 
     type_ = schema.get("type")
-    type_ = type_[0] if isinstance(type_, list) else type_
+    if isinstance(type_, list):
+        # OAS 3.1 の type 配列は順不同（例: ["null", "string"]）。先頭要素だけを見て
+        # 振り分け先を決めると、"null" が先に来る書き方（nullable な型で一般的）の場合、
+        # 実際の型（string/integer/array/object）に対応するルールが一切呼ばれず、
+        # 型別の境界値・異常系ケースが丸ごと生成されない（このファイル末尾の
+        # フォールバック分岐は format/enum/maxLength/minLength/pattern しか救えないため、
+        # 特に array/object/integer では何も救われない）。"null" を除いた最初の型を使う。
+        non_null = [t for t in type_ if t != "null"]
+        type_ = non_null[0] if non_null else None
 
-    if type_ in ("integer", "number"):
+    if schema.get("format") == "binary":
+        # multipart/form-data のファイルアップロードフィールド。type は "string" だが
+        # minLength/maxLength/pattern/format 等の文字列系ルールは意味を持たないため、
+        # 型別ルール（generate_string_cases 等）には渡さず専用ルールで扱う。
+        cases.extend(generate_file_cases(ctx))
+    elif type_ in ("integer", "number"):
         cases.extend(generate_integer_cases(schema, ctx))
     elif type_ == "string":
         cases.extend(generate_string_cases(schema, ctx))

@@ -61,6 +61,275 @@ SAMPLE_OPENAPI = {
 }
 
 
+# ---------- _resource_family ----------
+
+
+def test_resource_family_groups_nested_paths_under_same_key():
+    assert gen_module._resource_family("/orders") == "orders"
+    assert gen_module._resource_family("/orders/{id}") == "orders"
+    assert gen_module._resource_family("/orders/{id}/items") == "orders"
+
+
+def test_resource_family_different_top_level_paths_differ():
+    assert gen_module._resource_family("/categories") != gen_module._resource_family("/products")
+
+
+# ---------- _singularize ----------
+
+
+def test_singularize_handles_ies_plural():
+    # 素朴な末尾"s"除去だと "categorie" になってしまい "category" に一致しなくなる
+    # （回帰テスト: categoryId からの依存推測が効かなくなっていたバグ）
+    assert gen_module._singularize("categories") == "category"
+
+
+def test_singularize_handles_regular_plural():
+    assert gen_module._singularize("orders") == "order"
+    assert gen_module._singularize("products") == "product"
+
+
+def test_singularize_handles_es_plural_after_double_s_or_sibilant():
+    # 素朴な末尾"s"除去1文字だけだと "addresse"/"boxe"/"classe" になってしまい、
+    # addressId 等のフィールド名からの依存推測に一致しなくなる回帰テスト。
+    assert gen_module._singularize("addresses") == "address"
+    assert gen_module._singularize("boxes") == "box"
+    assert gen_module._singularize("classes") == "class"
+    assert gen_module._singularize("wishes") == "wish"
+    assert gen_module._singularize("churches") == "church"
+
+
+def test_singularize_does_not_over_strip_e_ending_words():
+    # "case" のように e で終わる語の複数形（cases）は +s のみ（+es 除去2文字にすると
+    # "cas" という誤った語になってしまう）。ss/x/ch/sh で終わる語との判別が曖昧なため、
+    # 誤検出が無いと確認できるケースのみ対応している（cases はそれ以外の代表例）。
+    assert gen_module._singularize("cases") == "case"
+
+
+# ---------- _infer_referenced_family ----------
+
+
+def test_infer_referenced_family_detects_camel_case_id_field():
+    mapping = {"category": "categories", "user": "users"}
+    assert gen_module._infer_referenced_family("categoryId", mapping, self_family="products") == "categories"
+
+
+def test_infer_referenced_family_ignores_plain_id_field():
+    mapping = {"category": "categories"}
+    assert gen_module._infer_referenced_family("id", mapping, self_family="categories") is None
+
+
+def test_infer_referenced_family_ignores_self_reference():
+    mapping = {"category": "categories"}
+    assert gen_module._infer_referenced_family("categoryId", mapping, self_family="categories") is None
+
+
+def test_infer_referenced_family_no_match_returns_none():
+    mapping = {"category": "categories"}
+    assert gen_module._infer_referenced_family("unrelatedId", mapping, self_family="products") is None
+
+
+# ---------- 複数リソースファミリー間の依存関係を考慮した並び順 ----------
+
+_MULTI_RESOURCE_OPENAPI = {
+    "openapi": "3.1.0",
+    "paths": {
+        "/categories": {
+            "post": {
+                "operationId": "createCategory",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "Created"}},
+            }
+        },
+        "/products": {
+            "post": {
+                "operationId": "createProduct",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}, "categoryId": {"type": "integer"}},
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "Created"}},
+            }
+        },
+        "/orders": {
+            "post": {
+                "operationId": "createOrder",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "items": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"productId": {"type": "integer"}},
+                                        },
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "Created"}},
+            }
+        },
+    },
+}
+
+
+def test_families_ordered_so_dependencies_come_first():
+    # orders は items[].productId 経由で products に依存し、products は categoryId 経由で
+    # categories に依存する。名前順（categories, orders, products）ではなく、依存関係順
+    # （categories → products → orders）で並ぶ必要がある。
+    mapping = {
+        "createCategory": {"engine": "postgres", "table": "categories"},
+        "createProduct": {"engine": "postgres", "table": "products"},
+        "createOrder": {"engine": "postgres", "table": "orders"},
+    }
+    scenarios = gen_module._generate_scenarios(_MULTI_RESOURCE_OPENAPI, mapping)
+    op_ids = [s["request"]["operationId"] for s in scenarios]
+    assert op_ids.index("createCategory") < op_ids.index("createProduct")
+    assert op_ids.index("createProduct") < op_ids.index("createOrder")
+
+
+# ---------- 作成直後の読み取り確認（response_check）の自動挿入 ----------
+
+_OPENAPI_WITH_GET_BY_ID = {
+    "openapi": "3.1.0",
+    "paths": {
+        "/widgets": {
+            "post": {
+                "operationId": "createWidget",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "price": {"type": "number"},
+                                    "tags": {"type": "array", "items": {"type": "string"}},
+                                },
+                            }
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "Created"}},
+            }
+        },
+        "/widgets/{widgetId}": {
+            "get": {
+                "operationId": "getWidget",
+                "parameters": [
+                    {"name": "widgetId", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "OK"}},
+            },
+            "put": {
+                "operationId": "updateWidget",
+                "parameters": [
+                    {"name": "widgetId", "in": "path", "required": True, "schema": {"type": "integer"}}
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "OK"}},
+            },
+        },
+    },
+}
+
+
+def test_find_get_by_id_operation_finds_well_formed_get():
+    result = gen_module._find_get_by_id_operation(_OPENAPI_WITH_GET_BY_ID, "widgets")
+    assert result is not None
+    operation_id, get_op = result
+    assert operation_id == "getWidget"
+
+
+def test_find_get_by_id_operation_returns_none_without_path_param():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/widgets/{id}": {"get": {"operationId": "getWidget", "responses": {"200": {"description": "OK"}}}}},
+    }
+    assert gen_module._find_get_by_id_operation(api, "widgets") is None
+
+
+def test_find_get_by_id_operation_returns_none_when_get_has_request_body():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/widgets/{id}": {
+                "get": {
+                    "operationId": "getWidget",
+                    "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "requestBody": {"content": {"application/json": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    assert gen_module._find_get_by_id_operation(api, "widgets") is None
+
+
+def test_generate_scenarios_inserts_read_verification_right_after_create():
+    mapping = {
+        "createWidget": {"engine": "postgres", "table": "widgets"},
+        "updateWidget": {"engine": "postgres", "table": "widgets"},
+    }
+    scenarios = gen_module._generate_scenarios(_OPENAPI_WITH_GET_BY_ID, mapping)
+    op_ids = [s["request"]["operationId"] for s in scenarios]
+
+    assert op_ids == ["createWidget", "getWidget", "updateWidget"]
+
+    read_check = scenarios[1]
+    assert read_check["request"]["path_params"] == {"widgetId": "{{response.id}}"}
+    assert "db_check" not in read_check
+    assert read_check["response_check"]["expect"]["status"] == 200
+    # id は自動採番のため除外、name/price はcreateWidgetで送った値と一致する必要がある
+    body = read_check["response_check"]["expect"]["body"]
+    assert body["name"] == scenarios[0]["request"]["body"]["name"]
+    assert "id" not in body
+    assert "tags" not in body  # 配列はスカラー一致条件にならないため除外
+
+
+def test_generate_scenarios_skips_read_verification_when_no_get_by_id_exists():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/widgets": {
+                "post": {
+                    "operationId": "createWidget",
+                    "requestBody": {
+                        "content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}}}}}
+                    },
+                    "responses": {"201": {"description": "Created"}},
+                }
+            }
+        },
+    }
+    mapping = {"createWidget": {"engine": "postgres", "table": "widgets"}}
+    scenarios = gen_module._generate_scenarios(api, mapping)
+    assert [s["request"]["operationId"] for s in scenarios] == ["createWidget"]
+
+
 def test_generates_one_scenario_per_mapped_operation():
     mapping = {"operations": {"createPet": {"engine": "postgres", "table": "pets"}}}
     scenarios = gen_module._generate_scenarios(SAMPLE_OPENAPI, mapping["operations"])
@@ -134,18 +403,43 @@ def test_where_excludes_id_and_nested_fields():
     assert where["status"] == "available"
 
 
-def test_delete_scenario_expects_not_exists_and_uses_response_id_placeholder():
-    mapping = {"operations": {"deletePet": {"engine": "postgres", "table": "pets"}}}
-    scenarios = gen_module._generate_scenarios(SAMPLE_OPENAPI, mapping["operations"])
-    s = scenarios[0]
+def test_delete_scenario_expects_not_exists():
+    s = gen_module._build_scenario(
+        "deletePet", "delete", "/pets/{petId}",
+        SAMPLE_OPENAPI["paths"]["/pets/{petId}"]["delete"],
+        {"engine": "postgres", "table": "pets"}, is_first_in_family=True,
+    )
     assert s["db_check"]["expect"]["exists"] is False
-    assert s["request"]["path_params"]["petId"] == "{{response.id}}"
 
 
-def test_update_scenario_path_param_uses_response_id_placeholder():
+def test_isolated_update_scenario_with_no_preceding_scenario_uses_baseline_path_param():
+    # deletePet/updatePet 単体（同ファミリー内に他の操作が無い）場合、
+    # 引き継ぎ元となる直前のシナリオが存在しないため、ベースライン値で埋める
+    # （存在しない{{response.id}}を参照する壊れたプレースホルダにはしない）。
     mapping = {"operations": {"updatePet": {"engine": "postgres", "table": "pets"}}}
     scenarios = gen_module._generate_scenarios(SAMPLE_OPENAPI, mapping["operations"])
-    assert scenarios[0]["request"]["path_params"]["petId"] == "{{response.id}}"
+    assert scenarios[0]["request"]["path_params"]["petId"] != "{{response.id}}"
+    assert isinstance(scenarios[0]["request"]["path_params"]["petId"], int)
+
+
+def test_family_chaining_create_then_update_then_delete_in_lifecycle_order():
+    # create/update/delete が全て対応表にある場合、同じ "pets" ファミリーとして
+    # 作成→更新→削除の順に並び、2件目以降は {{response.id}} で引き継ぐ。
+    mapping = {
+        "operations": {
+            "createPet": {"engine": "postgres", "table": "pets"},
+            "updatePet": {"engine": "postgres", "table": "pets"},
+            "deletePet": {"engine": "postgres", "table": "pets"},
+        }
+    }
+    scenarios = gen_module._generate_scenarios(SAMPLE_OPENAPI, mapping["operations"])
+    op_ids = [s["request"]["operationId"] for s in scenarios]
+    assert op_ids == ["createPet", "updatePet", "deletePet"]
+
+    create, update, delete = scenarios
+    assert "path_params" not in create["request"]  # createPetはpath paramを持たない
+    assert update["request"]["path_params"]["petId"] == "{{response.id}}"
+    assert delete["request"]["path_params"]["petId"] == "{{response.id}}"
 
 
 def test_missing_table_mapping_uses_placeholder():
@@ -236,6 +530,34 @@ def test_main_end_to_end(tmp_path):
     assert output_path.exists()
     loaded = load_scenarios(output_path)
     assert len(loaded) == 1
+
+
+def test_main_end_to_end_with_read_verification_scenario(tmp_path):
+    # 回帰テスト: main() の「engineの重複表記を間引く」処理が db_check の存在を前提に
+    # しており、response_check のみのシナリオ（作成直後の読み取り確認）で
+    # KeyError('db_check') になっていた。
+    openapi_path = tmp_path / "openapi.json"
+    openapi_path.write_text(json.dumps(_OPENAPI_WITH_GET_BY_ID), encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.yaml"
+    mapping_path.write_text(
+        yaml.dump({"operations": {"createWidget": {"engine": "postgres", "table": "widgets"}}}),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "out.yaml"
+
+    import sys as _sys
+    old_argv = _sys.argv
+    try:
+        _sys.argv = ["generate_db_scenarios.py", str(openapi_path), str(mapping_path), "-o", str(output_path)]
+        code = gen_module.main()
+    finally:
+        _sys.argv = old_argv
+
+    assert code == 0
+    loaded = load_scenarios(output_path)
+    assert len(loaded) == 2  # createWidget + 自動挿入されたgetWidgetの読み取り確認
 
 
 # ---------- _dominant_engine ----------

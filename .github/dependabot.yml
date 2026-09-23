@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # ツール本体・開発用の Python 依存関係
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # docs/mock_api.py（CI の e2e ジョブ用）の Python 依存関係
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+
+  # gui-tauri（Tauri GUI フロントエンド）
+  - package-ecosystem: "npm"
+    directory: "/gui-tauri"
+    schedule:
+      interval: "weekly"
+
+  # gui-tauri（Tauri GUI バックエンド）
+  - package-ecosystem: "cargo"
+    directory: "/gui-tauri/src-tauri"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions ワークフロー自体（actions/checkout 等）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

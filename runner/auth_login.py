@@ -5,13 +5,19 @@ APIに対応できないため、ログインAPIを1回呼び出してトーク�
 以降の全リクエストに付与するヘッダとして使えるようにする。
 """
 from __future__ import annotations
-import json
-import subprocess
+import re
 from pathlib import Path
 
+import requests
 import yaml
 
-CURL_TIMEOUT = 10
+if __package__:
+    from .models import DEFAULT_REQUEST_TIMEOUT
+else:
+    from models import DEFAULT_REQUEST_TIMEOUT
+
+REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
+_AUTH_PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
 
 
 class AuthLoginError(Exception):
@@ -48,46 +54,65 @@ def load_auth_config(path: str) -> dict:
     if missing:
         raise AuthLoginError(f"認証設定に必須キーが不足しています: {sorted(missing)}")
 
+    profiles = data.get("auth_profiles", {})
+    if not isinstance(profiles, dict):
+        raise AuthLoginError("認証プロファイルは名前とログインボディのオブジェクトで指定してください")
+    for name, body in profiles.items():
+        if not isinstance(name, str) or not _AUTH_PROFILE_NAME.fullmatch(name):
+            raise AuthLoginError("認証プロファイル名は英数字で始まる英数字・ドット・ハイフン・アンダースコアにしてください")
+        if not isinstance(body, dict):
+            raise AuthLoginError(f"認証プロファイル「{name}」のログインボディはJSONオブジェクトで指定してください")
+
     return data
 
 
-def perform_login(base_url: str, auth_config: dict) -> str:
-    """ログインAPIを呼び出し、抽出したトークン文字列を返す。失敗時は AuthLoginError を送出する。"""
+def auth_config_for_profile(auth_config: dict, profile_name: str | None) -> dict:
+    """Return a login config with the selected named profile's body.
+
+    Existing auth-config fields remain the shared login definition. ``auth_profiles``
+    maps scenario-safe names to credential bodies and is never copied into the
+    effective config passed to the login request.
+    """
+    config = {key: value for key, value in auth_config.items() if key != "auth_profiles"}
+    if profile_name is None:
+        return config
+
+    profiles = auth_config.get("auth_profiles") or {}
+    if profile_name not in profiles:
+        raise AuthLoginError(f"認証プロファイル「{profile_name}」が設定に見つかりません")
+    config["body"] = profiles[profile_name]
+    return config
+
+
+def perform_login(base_url: str, auth_config: dict, session: requests.Session | None = None) -> str:
+    """ログインAPIを呼び出し、抽出したトークン文字列を返す。失敗時は AuthLoginError を送出する。
+
+    session を指定すると、ログインレスポンスの Set-Cookie もその Session に保存される
+    （--cookie-jar 使用時、以降の全リクエストで runner.py 側から同じ Session が使われるため、
+    ログイン時点で発行されたセッションCookieも自動的に引き継がれる）。
+    """
     url = base_url.rstrip("/") + auth_config["login_url"]
     method = str(auth_config.get("method", "POST")).upper()
     body = auth_config.get("body") or {}
 
-    cmd = [
-        "curl.exe", "-s", "-S", "-X", method,
-        "-w", "\n%{http_code}",
-        "--max-time", str(CURL_TIMEOUT),
-    ]
-    if body:
-        cmd += ["-H", "Content-Type: application/json; charset=utf-8", "-d", json.dumps(body, ensure_ascii=False)]
-    cmd += ["--", url]
-
+    sender = session if session is not None else requests
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-    except FileNotFoundError:
-        raise AuthLoginError("curl.exe が見つかりません")
+        response = sender.request(method, url, json=body if body else None, timeout=REQUEST_TIMEOUT)
+    except requests.exceptions.RequestException as e:
+        raise AuthLoginError(f"ログインリクエストの実行に失敗しました: {e}（{url} に接続できませんでした）") from e
 
-    if result.returncode != 0:
-        detail = result.stderr.strip() or f"curl exited with code {result.returncode}（{url} に接続できませんでした）"
-        raise AuthLoginError(f"ログインリクエストの実行に失敗しました: {detail}")
-
-    body_text, _, status_text = result.stdout.rpartition("\n")
-    try:
-        status = int(status_text.strip())
-    except ValueError:
-        raise AuthLoginError(f"curl の出力を解析できませんでした: {result.stdout!r}")
+    status = response.status_code
+    body_text = response.text
 
     if not (200 <= status < 300):
-        raise AuthLoginError(f"ログインに失敗しました（ステータス {status}）: {body_text}")
+        # Authentication endpoints can echo submitted credentials or tokens in an
+        # error response. Keep response bodies out of GUI logs and test reports.
+        raise AuthLoginError(f"ログインに失敗しました（ステータス {status}）")
 
     try:
-        response_json = json.loads(body_text) if body_text.strip() else {}
-    except json.JSONDecodeError:
-        raise AuthLoginError(f"ログインレスポンスがJSONとして解析できません: {body_text!r}")
+        response_json = response.json() if body_text.strip() else {}
+    except ValueError as e:
+        raise AuthLoginError("ログインレスポンスがJSONとして解析できません") from e
 
     token_path = auth_config.get("token_path", "access_token")
     token = _extract_token(response_json, token_path)
