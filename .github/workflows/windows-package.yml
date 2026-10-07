@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-runtime.txt
+            docs/requirements-schemathesis.txt
 
       - uses: actions/setup-node@v4
         with:
@@ -27,6 +31,10 @@ jobs:
           cache-dependency-path: gui-tauri/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui-tauri/src-tauri
 
       - name: Install portable Python dependencies
         run: python -m pip install -r requirements-runtime.txt -r docs/requirements-schemathesis.txt packaging

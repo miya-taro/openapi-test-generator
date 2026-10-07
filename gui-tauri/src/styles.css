@@ -507,6 +507,124 @@ label.checkbox input[type="checkbox"] {
   margin-top: 12px;
 }
 
+.schema-builder {
+  display: grid;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.schema-empty {
+  margin: 0;
+}
+
+.schema-node {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.schema-node-root {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.schema-node-property,
+.schema-node-item {
+  margin-top: 8px;
+}
+
+.schema-node-heading {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.schema-node-heading input[type="text"] {
+  min-width: 0;
+}
+
+.schema-required {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 9pt;
+}
+
+.schema-required input {
+  margin: 0;
+}
+
+.schema-remove,
+.schema-remove-items {
+  padding: 5px 8px;
+  font-size: 8.5pt;
+}
+
+.schema-root-title,
+.schema-item-title {
+  margin-bottom: 7px;
+  color: var(--text-muted);
+  font-size: 9pt;
+  font-weight: 600;
+}
+
+.schema-type-field,
+.schema-constraint {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 7px;
+  font-size: 8.5pt;
+}
+
+.schema-type-field select,
+.schema-constraint input {
+  width: 100%;
+  min-width: 0;
+}
+
+.schema-constraints {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.schema-properties,
+.schema-array-items {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.schema-node-property .schema-properties,
+.schema-node-item .schema-properties,
+.schema-node-property .schema-array-items,
+.schema-node-item .schema-array-items {
+  margin-left: 5px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-light);
+}
+
+.schema-subheading {
+  color: var(--text-muted);
+  font-size: 8.5pt;
+  font-weight: 600;
+}
+
+.schema-add,
+.schema-create,
+.schema-add-items {
+  margin-top: 8px;
+  padding: 6px 9px;
+  font-size: 8.5pt;
+}
+
 .contract-editor .btn-row {
   margin-top: 8px;
   margin-bottom: 0;

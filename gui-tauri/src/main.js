@@ -5,6 +5,7 @@ import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
 import { buildCopilotScenarioPrompt } from "./copilot-scenario-prompt.js";
 import { createWorkflowClient } from "./workflow-client.js";
+import { builderNodeToSchema, renderSchemaBuilder, schemaToBuilderNode } from "./schema-builder.js";
 
 const workflowClient = createWorkflowClient({ invoke, listen });
 
@@ -648,15 +649,34 @@ function contractOption(label, value) {
   return option;
 }
 
+let contractRequestSchemaNode = null;
+let contractResponseSchemaNode = null;
+
+function setContractSchemaBuilder(kind, schema) {
+  const isRequest = kind === "request";
+  const model = schema ? schemaToBuilderNode(schema) : null;
+  if (isRequest) contractRequestSchemaNode = model;
+  else contractResponseSchemaNode = model;
+
+  renderSchemaBuilder(
+    $(isRequest ? "contract-request-schema-builder" : "contract-response-schema-builder"),
+    model,
+    (updated) => {
+      if (isRequest) contractRequestSchemaNode = updated;
+      else contractResponseSchemaNode = updated;
+    },
+  );
+}
+
 function resetContractEditor() {
   $("contract-operation").replaceChildren(contractOption("OpenAPIを選択してください", ""));
   $("contract-operation").disabled = true;
   $("contract-load-button").disabled = true;
   $("contract-save-button").disabled = true;
   $("contract-request-required").checked = false;
-  $("contract-request-schema").value = "";
+  setContractSchemaBuilder("request", null);
   $("contract-response-status").value = "200";
-  $("contract-response-schema").value = "";
+  setContractSchemaBuilder("response", null);
   setContractEditorStatus("");
 }
 
@@ -670,9 +690,9 @@ function populateContractOperationSelect() {
     $("contract-load-button").disabled = true;
     $("contract-save-button").disabled = true;
     $("contract-request-required").checked = false;
-    $("contract-request-schema").value = "";
+    setContractSchemaBuilder("request", null);
     $("contract-response-status").value = "200";
-    $("contract-response-schema").value = "";
+    setContractSchemaBuilder("response", null);
     setContractEditorStatus("");
     return "";
   }
@@ -688,20 +708,6 @@ function populateContractOperationSelect() {
   $("contract-load-button").disabled = false;
   $("contract-save-button").disabled = false;
   return select.value;
-}
-
-export function parseContractSchema(text, label) {
-  if (!text.trim()) return null;
-  let schema;
-  try {
-    schema = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`${label}がJSONとして解析できません: ${error.message}`, { cause: error });
-  }
-  if (!schema || Array.isArray(schema) || typeof schema !== "object") {
-    throw new Error(`${label}はJSONオブジェクトで指定してください`);
-  }
-  return schema;
 }
 
 export function contractEditorDefaultPath(sourcePath) {
@@ -723,14 +729,10 @@ async function loadOperationBodyContract() {
       args: { path, operation_id: operationId },
     });
     $("contract-request-required").checked = !!contract.requestBodyRequired;
-    $("contract-request-schema").value = contract.requestBodySchema
-      ? JSON.stringify(contract.requestBodySchema, null, 2)
-      : "";
+    setContractSchemaBuilder("request", contract.requestBodySchema);
     $("contract-response-status").value = contract.responseStatus || "200";
-    $("contract-response-schema").value = contract.responseBodySchema
-      ? JSON.stringify(contract.responseBodySchema, null, 2)
-      : "";
-    setContractEditorStatus("選択したoperationのJSON body schemaを読み込みました", "ok");
+    setContractSchemaBuilder("response", contract.responseBodySchema);
+    setContractEditorStatus("選択したoperationのbody項目を読み込みました", "ok");
   } catch (error) {
     setContractEditorStatus(`OpenAPIを読み込めませんでした: ${error.message || error}`, "error");
   }
@@ -747,8 +749,8 @@ async function saveOperationBodyContract() {
   let requestSchema;
   let responseSchema;
   try {
-    requestSchema = parseContractSchema($("contract-request-schema").value, "リクエストbody schema");
-    responseSchema = parseContractSchema($("contract-response-schema").value, "レスポンスbody schema");
+    requestSchema = contractRequestSchemaNode ? builderNodeToSchema(contractRequestSchemaNode) : null;
+    responseSchema = contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
   } catch (error) {
     setContractEditorStatus(error.message, "error");
     return;

@@ -67,17 +67,17 @@
                   </div>
                   <div class="contract-schema-grid">
                     <div class="form-field">
-                      <label for="contract-request-schema">リクエストbody schema（application/json）</label>
+                      <label>リクエストbody（application/json）</label>
                       <label class="checkbox"><input type="checkbox" id="contract-request-required" /> リクエストbodyを必須にする</label>
-                      <textarea id="contract-request-schema" rows="13" spellcheck="false" placeholder='{"type":"object","required":["name"],"properties":{"name":{"type":"string","minLength":1}}}'></textarea>
-                      <p class="field-caption">空欄ならJSON Schemaを外します。type、required、enum、minLength、minimumなどを指定できます。</p>
+                      <div id="contract-request-schema-builder" class="schema-builder"></div>
+                      <p class="field-caption">項目名、型、必須、最小・最大を入力します。objectの中にも項目を追加できます。</p>
                     </div>
                     <div class="form-field">
                       <label for="contract-response-status">成功response status</label>
                       <input id="contract-response-status" type="text" value="200" placeholder="200 / 201 / 2XX" />
-                      <label for="contract-response-schema" class="contract-response-schema-label">レスポンスbody schema（application/json）</label>
-                      <textarea id="contract-response-schema" rows="13" spellcheck="false" placeholder='{"type":"object","required":["id"],"properties":{"id":{"type":"integer"}}}'></textarea>
-                      <p class="field-caption">レスポンスの許容範囲を記述します。複数の成功応答はstatusごとに設定できます。空欄なら既存のレスポンスbody schemaを変更しません。</p>
+                      <label class="contract-response-schema-label">レスポンスbody（application/json）</label>
+                      <div id="contract-response-schema-builder" class="schema-builder"></div>
+                      <p class="field-caption">レスポンス項目も同じフォームで設定します。schema未設定のまま保存すると既存定義を保ちます。</p>
                     </div>
                   </div>
                   <div class="btn-row">

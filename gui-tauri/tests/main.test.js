@@ -17,7 +17,6 @@ import {
   renderCaseMaster,
   buildMappingArgs,
   parseAuthProfiles,
-  parseContractSchema,
   contractEditorDefaultPath,
   loadAppVersion,
 } from "../src/main.js";
@@ -154,16 +153,9 @@ describe("API試験の基本導線", () => {
 
   test("request/response body schemaの補正UIを仕様確認工程に表示する", () => {
     expect(document.getElementById("body-contract-editor")).not.toBeNull();
-    expect(document.getElementById("contract-request-schema")).not.toBeNull();
-    expect(document.getElementById("contract-response-schema")).not.toBeNull();
+    expect(document.getElementById("contract-request-schema-builder")).not.toBeNull();
+    expect(document.getElementById("contract-response-schema-builder")).not.toBeNull();
     expect(document.getElementById("contract-editor-status").getAttribute("aria-live")).toBe("polite");
-  });
-
-  test("body schema欄はJSON objectのみを受け付け、空欄でschemaを外せる", () => {
-    expect(parseContractSchema("", "schema")).toBeNull();
-    expect(parseContractSchema('{"type":"object"}', "schema")).toEqual({ type: "object" });
-    expect(() => parseContractSchema("{broken", "request schema")).toThrow("JSONとして解析できません");
-    expect(() => parseContractSchema("[]", "response schema")).toThrow("JSONオブジェクト");
   });
 
   test("補正仕様は元ファイルと別名で保存する既定パスを作る", () => {
@@ -182,9 +174,23 @@ describe("API試験の基本導線", () => {
         return {
           operationId: "createUser",
           requestBodyRequired: true,
-          requestBodySchema: { type: "object", required: ["email"] },
+          requestBodySchema: {
+            type: "object",
+            required: ["profile"],
+            properties: {
+              profile: {
+                type: "object",
+                required: ["name"],
+                properties: { name: { type: "string", minLength: 1 } },
+              },
+            },
+          },
           responseStatus: "201",
-          responseBodySchema: { type: "object", properties: { id: { type: "integer" } } },
+          responseBodySchema: {
+            type: "object",
+            required: ["id"],
+            properties: { id: { type: "integer", minimum: 1 } },
+          },
         };
       }
       if (command === "bridge_call" && payload.command === "save_operation_body_contract") {
@@ -198,14 +204,27 @@ describe("API試験の基本導線", () => {
 
     expect(document.getElementById("contract-operation").value).toBe("createUser");
     expect(document.getElementById("contract-response-status").value).toBe("201");
-    expect(document.getElementById("contract-request-schema").value).toContain('"required"');
+    expect(document.querySelector("#contract-request-schema-builder [data-role='property-name']").value).toBe("profile");
+    expect(document.querySelectorAll("#contract-request-schema-builder .schema-node-property")).toHaveLength(2);
 
-    document.getElementById("contract-request-schema").value = JSON.stringify({
-      type: "object", required: ["name"], properties: { name: { type: "string" } },
-    });
-    document.getElementById("contract-response-schema").value = JSON.stringify({
-      type: "object", required: ["id"], properties: { id: { type: "integer" } },
-    });
+    const requestBuilder = document.getElementById("contract-request-schema-builder");
+    const profile = requestBuilder.querySelector(".schema-node-property");
+    profile.querySelector('[data-role="add-property"]').click();
+    const requestProperties = requestBuilder.querySelectorAll(".schema-node-property");
+    const phone = requestProperties[2];
+    const phoneName = phone.querySelector('[data-role="property-name"]');
+    phoneName.value = "phone";
+    phoneName.dispatchEvent(new window.Event("input", { bubbles: true }));
+    phone.querySelector('[data-role="schema-type"]').value = "string";
+    phone.querySelector('[data-role="schema-type"]').dispatchEvent(new window.Event("change", { bubbles: true }));
+    const updatedPhone = requestBuilder.querySelectorAll(".schema-node-property")[2];
+    updatedPhone.querySelector('[data-role="constraint-min"]').value = "2";
+    updatedPhone.querySelector('[data-role="constraint-min"]').dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    const responseBuilder = document.getElementById("contract-response-schema-builder");
+    const responseId = responseBuilder.querySelector(".schema-node-property");
+    responseId.querySelector('[data-role="constraint-min"]').value = "10";
+    responseId.querySelector('[data-role="constraint-min"]').dispatchEvent(new window.Event("input", { bubbles: true }));
     document.getElementById("contract-save-button").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -219,6 +238,25 @@ describe("API試験の基本導線", () => {
         destination_path: "C:\\work\\openapi.ui-edited.json",
         operation_id: "createUser",
         response_status: "201",
+        request_body_schema: {
+          type: "object",
+          required: ["profile"],
+          properties: {
+            profile: {
+              type: "object",
+              required: ["name"],
+              properties: {
+                name: { type: "string", minLength: 1 },
+                phone: { type: "string", minLength: 2 },
+              },
+            },
+          },
+        },
+        response_body_schema: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "integer", minimum: 10 } },
+        },
       }),
     }));
     expect(document.getElementById("openapi-path").value).toBe("C:\\work\\openapi.ui-edited.json");
