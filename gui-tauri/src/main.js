@@ -634,6 +634,167 @@ $("auth-config-save").addEventListener("click", async () => {
 
 let lastOperations = [];
 
+function setContractEditorStatus(message, state = "") {
+  const status = $("contract-editor-status");
+  status.textContent = message;
+  status.classList.remove("error", "ok");
+  if (state) status.classList.add(state);
+}
+
+function contractOption(label, value) {
+  const option = document.createElement("option");
+  option.textContent = label;
+  option.value = value;
+  return option;
+}
+
+function resetContractEditor() {
+  $("contract-operation").replaceChildren(contractOption("OpenAPIを選択してください", ""));
+  $("contract-operation").disabled = true;
+  $("contract-load-button").disabled = true;
+  $("contract-save-button").disabled = true;
+  $("contract-request-required").checked = false;
+  $("contract-request-schema").value = "";
+  $("contract-response-status").value = "200";
+  $("contract-response-schema").value = "";
+  setContractEditorStatus("");
+}
+
+function populateContractOperationSelect() {
+  const select = $("contract-operation");
+  const previous = select.value;
+  select.replaceChildren();
+  if (lastOperations.length === 0) {
+    select.appendChild(contractOption("OpenAPIを選択してください", ""));
+    select.disabled = true;
+    $("contract-load-button").disabled = true;
+    $("contract-save-button").disabled = true;
+    $("contract-request-required").checked = false;
+    $("contract-request-schema").value = "";
+    $("contract-response-status").value = "200";
+    $("contract-response-schema").value = "";
+    setContractEditorStatus("");
+    return "";
+  }
+
+  for (const operation of lastOperations) {
+    const option = contractOption(`${operation.method} ${operation.path} (${operation.operationId})`, operation.operationId);
+    select.appendChild(option);
+  }
+  select.disabled = false;
+  select.value = lastOperations.some((operation) => operation.operationId === previous)
+    ? previous
+    : lastOperations[0].operationId;
+  $("contract-load-button").disabled = false;
+  $("contract-save-button").disabled = false;
+  return select.value;
+}
+
+export function parseContractSchema(text, label) {
+  if (!text.trim()) return null;
+  let schema;
+  try {
+    schema = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${label}がJSONとして解析できません: ${error.message}`, { cause: error });
+  }
+  if (!schema || Array.isArray(schema) || typeof schema !== "object") {
+    throw new Error(`${label}はJSONオブジェクトで指定してください`);
+  }
+  return schema;
+}
+
+export function contractEditorDefaultPath(sourcePath) {
+  return /\.json$/i.test(sourcePath)
+    ? sourcePath.replace(/\.json$/i, ".ui-edited.json")
+    : `${sourcePath}.ui-edited.json`;
+}
+
+async function loadOperationBodyContract() {
+  const path = $("openapi-path").value.trim();
+  const operationId = $("contract-operation").value;
+  if (!path || !operationId) {
+    setContractEditorStatus("openapi.jsonと対象operationを選択してください", "error");
+    return;
+  }
+  try {
+    const contract = await invoke("bridge_call", {
+      command: "load_operation_body_contract",
+      args: { path, operation_id: operationId },
+    });
+    $("contract-request-required").checked = !!contract.requestBodyRequired;
+    $("contract-request-schema").value = contract.requestBodySchema
+      ? JSON.stringify(contract.requestBodySchema, null, 2)
+      : "";
+    $("contract-response-status").value = contract.responseStatus || "200";
+    $("contract-response-schema").value = contract.responseBodySchema
+      ? JSON.stringify(contract.responseBodySchema, null, 2)
+      : "";
+    setContractEditorStatus("選択したoperationのJSON body schemaを読み込みました", "ok");
+  } catch (error) {
+    setContractEditorStatus(`OpenAPIを読み込めませんでした: ${error.message || error}`, "error");
+  }
+}
+
+async function saveOperationBodyContract() {
+  const sourcePath = $("openapi-path").value.trim();
+  const operationId = $("contract-operation").value;
+  if (!sourcePath || !operationId) {
+    setContractEditorStatus("openapi.jsonと対象operationを選択してください", "error");
+    return;
+  }
+
+  let requestSchema;
+  let responseSchema;
+  try {
+    requestSchema = parseContractSchema($("contract-request-schema").value, "リクエストbody schema");
+    responseSchema = parseContractSchema($("contract-response-schema").value, "レスポンスbody schema");
+  } catch (error) {
+    setContractEditorStatus(error.message, "error");
+    return;
+  }
+
+  const responseStatus = $("contract-response-status").value.trim();
+  if (!/^(?:2\d\d|2XX)$/i.test(responseStatus)) {
+    setContractEditorStatus("成功response statusは200〜299または2XXで指定してください", "error");
+    return;
+  }
+  const destinationPath = await save({
+    filters: [{ name: "OpenAPI JSON", extensions: ["json"] }],
+    defaultPath: contractEditorDefaultPath(sourcePath),
+  });
+  if (!destinationPath) return;
+
+  try {
+    const result = await invoke("bridge_call", {
+      command: "save_operation_body_contract",
+      args: {
+        source_path: sourcePath,
+        destination_path: destinationPath,
+        operation_id: operationId,
+        request_body_required: $("contract-request-required").checked,
+        request_body_schema: requestSchema,
+        response_status: responseStatus,
+        response_body_schema: responseSchema,
+      },
+    });
+    $("openapi-path").value = result.path;
+    updateActiveOpenapiText();
+    await refreshOperationsList({ keepExcluded: true });
+    await persistSettings();
+    setContractEditorStatus(
+      `補正したOpenAPIを保存し、試験対象に設定しました: ${result.path}。続けて「試験ケースを作成して確認」を押してください。`,
+      "ok",
+    );
+  } catch (error) {
+    setContractEditorStatus(`保存できませんでした: ${error.message || error}`, "error");
+  }
+}
+
+$("contract-operation").addEventListener("change", loadOperationBodyContract);
+$("contract-load-button").addEventListener("click", loadOperationBodyContract);
+$("contract-save-button").addEventListener("click", saveOperationBodyContract);
+
 async function refreshOperationsList({ keepExcluded, selectedOperations = null }) {
   const path = $("openapi-path").value.trim();
   const container = $("operations-list");
@@ -641,6 +802,7 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
     container.innerHTML = '<div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div>';
     lastOperations = [];
     populateAuthLoginOpSelect();
+    resetContractEditor();
     return;
   }
 
@@ -654,11 +816,13 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
     container.replaceChildren(message);
     lastOperations = [];
     populateAuthLoginOpSelect();
+    resetContractEditor();
     return;
   }
 
   lastOperations = ops || [];
   populateAuthLoginOpSelect();
+  const selectedContractOperation = populateContractOperationSelect();
   if (lastOperations.length === 0) {
     container.innerHTML = '<div class="op-empty">operationが見つかりませんでした</div>';
     return;
@@ -701,6 +865,7 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
   }
 
   await maybeAutofillBaseUrl(path);
+  if (selectedContractOperation) await loadOperationBodyContract();
 }
 
 function projectDataFromForm() {

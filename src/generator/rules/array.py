@@ -31,7 +31,7 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "minItems",
                 "perspective": "異常系_minItems未満",
                 "inputValue": _build_array_value(sample_item, min_items - 1),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })
@@ -56,7 +56,7 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "maxItems",
                 "perspective": "異常系_maxItems超過",
                 "inputValue": _build_array_value(sample_item, max_items + 1),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })
@@ -68,7 +68,7 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
             "keyword": "uniqueItems",
             "perspective": "異常系_uniqueItems重複",
             "inputValue": f"[{sample_item}, {sample_item}]",
-            "expectedStatus": "400",
+            "expectedStatus": "4xx",
             "expectedResult": "バリデーションエラーが返ること",
             "notes": "",
         })

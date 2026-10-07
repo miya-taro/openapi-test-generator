@@ -197,6 +197,10 @@ python src/cli.py openapi.json --dry-run
 | `pattern` / `format` | 不正な形式の値 |
 | `additionalProperties` | スキーマ外キーを追加（`additionalProperties: false` の場合） |
 
+必須パラメータと必須リクエストボディをまとめた、operation単位の最小有効リクエストも生成します。必須のpath/query/header/cookie parameterとJSON・multipart bodyを送信し、optional parameterは省略します。安全な値を合成できないoperationではこの共通ケースを省略して警告します。`in: cookie` のケースは Cookie ヘッダとして送信します。
+
+正常系は特定の `200` に固定せず、OpenAPIに定義された成功レスポンス（個別statusまたは `2XX`）のどれかを受け付けます。実際に返ったstatusに対応するレスポンス本文のJSON schema、Content-Type、requiredレスポンスヘッダの存在と、返却されたヘッダ値のschemaを runner で検証します。複数の成功statusを同じリクエストで個別に発生させる条件まではOpenAPIから決められないため、その分岐を試すシナリオは別途記述してください。詳細は[自動試験の範囲](docs/automation-boundary.md)を参照してください。
+
 ### Excel 出力フォーマット
 
 `test_spec` シートに以下の列を出力します。
@@ -256,6 +260,8 @@ python runner.py 試験仕様.xlsx openapi.json \
 ---
 
 ## テスト
+
+API 契約、業務シナリオ、DB 照合の自動化範囲と必要な人手確認は、[自動試験の範囲](docs/automation-boundary.md)を参照してください。
 
 **ジェネレーター**
 

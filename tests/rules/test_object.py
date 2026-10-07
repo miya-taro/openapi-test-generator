@@ -11,7 +11,7 @@ def test_additional_properties_false_generates_abnormal_case():
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
     )
     case = next(c for c in cases if c["keyword"] == "additionalProperties")
-    assert case["expectedStatus"] == "400"
+    assert case["expectedStatus"] == "4xx"
     assert case["perspective"] == "異常系_additionalProperties"
 
 
@@ -24,7 +24,7 @@ def test_additional_properties_unspecified_generates_normal_case_allowing_extra_
     )
     case = next(c for c in cases if c["keyword"] == "additionalProperties")
     assert case["perspective"] == "正常系_additionalProperties制限なし"
-    assert case["expectedStatus"] != "400"
+    assert case["expectedStatus"] != "4xx"
 
 
 def test_additional_properties_unspecified_normal_only_generates_case():
@@ -49,7 +49,7 @@ def test_empty_body_when_root_and_required_fields_exist():
     )
     case = next(c for c in cases if c["perspective"] == "異常系_空body")
     assert case["inputValue"] == "{}"
-    assert case["expectedStatus"] == "400"
+    assert case["expectedStatus"] == "4xx"
 
 
 def test_no_empty_body_case_when_not_root_body():
@@ -103,7 +103,7 @@ def test_additional_properties_schema_generates_abnormal_case_with_mismatched_ty
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
     )
     case = next(c for c in cases if c["perspective"] == "異常系_additionalProperties型不適合")
-    assert case["expectedStatus"] == "400"
+    assert case["expectedStatus"] == "4xx"
     assert '"abc"' in case["inputValue"]
 
 

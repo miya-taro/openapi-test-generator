@@ -37,6 +37,7 @@
       "../../runner": "runner",
       "../../workflow": "workflow",
       "../../gui/tauri_bridge.py": "gui/tauri_bridge.py",
+      "../../gui/openapi_editor.py": "gui/openapi_editor.py",
       "../../gui/validators.py": "gui/validators.py",
       "../../.build/python-runtime": "runtime/python"
     }

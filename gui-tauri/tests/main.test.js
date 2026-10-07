@@ -17,6 +17,8 @@ import {
   renderCaseMaster,
   buildMappingArgs,
   parseAuthProfiles,
+  parseContractSchema,
+  contractEditorDefaultPath,
   loadAppVersion,
 } from "../src/main.js";
 import { COPILOT_OPENAPI_PROMPT } from "../src/copilot-openapi-prompt.js";
@@ -148,6 +150,79 @@ describe("API試験の基本導線", () => {
     expect(COPILOT_OPENAPI_PROMPT).toContain("openapi.db-evidence.json");
     expect(COPILOT_OPENAPI_PROMPT).toContain("api-tester.php-db-evidence");
     expect(COPILOT_OPENAPI_PROMPT).toContain("人が確認するまで確定情報にしない");
+  });
+
+  test("request/response body schemaの補正UIを仕様確認工程に表示する", () => {
+    expect(document.getElementById("body-contract-editor")).not.toBeNull();
+    expect(document.getElementById("contract-request-schema")).not.toBeNull();
+    expect(document.getElementById("contract-response-schema")).not.toBeNull();
+    expect(document.getElementById("contract-editor-status").getAttribute("aria-live")).toBe("polite");
+  });
+
+  test("body schema欄はJSON objectのみを受け付け、空欄でschemaを外せる", () => {
+    expect(parseContractSchema("", "schema")).toBeNull();
+    expect(parseContractSchema('{"type":"object"}', "schema")).toEqual({ type: "object" });
+    expect(() => parseContractSchema("{broken", "request schema")).toThrow("JSONとして解析できません");
+    expect(() => parseContractSchema("[]", "response schema")).toThrow("JSONオブジェクト");
+  });
+
+  test("補正仕様は元ファイルと別名で保存する既定パスを作る", () => {
+    expect(contractEditorDefaultPath("C:\\api\\openapi.json")).toBe("C:\\api\\openapi.ui-edited.json");
+    expect(contractEditorDefaultPath("/api/spec")).toBe("/api/spec.ui-edited.json");
+  });
+
+  test("operationを読み込んでbody schemaを補正した別OpenAPIとして試験対象へ切り替える", async () => {
+    mockSave.mockResolvedValue("C:\\work\\openapi.ui-edited.json");
+    mockInvoke.mockImplementation(async (command, payload) => {
+      if (command === "bridge_call" && payload.command === "list_operations") {
+        return [{ operationId: "createUser", method: "POST", path: "/users" }];
+      }
+      if (command === "bridge_call" && payload.command === "servers_url") return null;
+      if (command === "bridge_call" && payload.command === "load_operation_body_contract") {
+        return {
+          operationId: "createUser",
+          requestBodyRequired: true,
+          requestBodySchema: { type: "object", required: ["email"] },
+          responseStatus: "201",
+          responseBodySchema: { type: "object", properties: { id: { type: "integer" } } },
+        };
+      }
+      if (command === "bridge_call" && payload.command === "save_operation_body_contract") {
+        return { path: "C:\\work\\openapi.ui-edited.json", operationId: "createUser", responseStatus: "201" };
+      }
+      return {};
+    });
+    document.getElementById("openapi-path").value = "C:\\work\\openapi.json";
+    document.getElementById("openapi-path").dispatchEvent(new window.Event("change"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.getElementById("contract-operation").value).toBe("createUser");
+    expect(document.getElementById("contract-response-status").value).toBe("201");
+    expect(document.getElementById("contract-request-schema").value).toContain('"required"');
+
+    document.getElementById("contract-request-schema").value = JSON.stringify({
+      type: "object", required: ["name"], properties: { name: { type: "string" } },
+    });
+    document.getElementById("contract-response-schema").value = JSON.stringify({
+      type: "object", required: ["id"], properties: { id: { type: "integer" } },
+    });
+    document.getElementById("contract-save-button").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: "C:\\work\\openapi.ui-edited.json",
+    }));
+    expect(mockInvoke).toHaveBeenCalledWith("bridge_call", expect.objectContaining({
+      command: "save_operation_body_contract",
+      args: expect.objectContaining({
+        source_path: "C:\\work\\openapi.json",
+        destination_path: "C:\\work\\openapi.ui-edited.json",
+        operation_id: "createUser",
+        response_status: "201",
+      }),
+    }));
+    expect(document.getElementById("openapi-path").value).toBe("C:\\work\\openapi.ui-edited.json");
+    expect(document.getElementById("contract-editor-status").textContent).toContain("試験対象に設定しました");
   });
 
   test("Copilot用DBシナリオ依頼に選択済みファイルを差し込む", () => {

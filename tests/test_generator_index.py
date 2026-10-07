@@ -49,23 +49,41 @@ def test_derive_response_header_multiple_content_types():
 
 def test_derive_response_header_includes_header_names_existence_only():
     result = _derive_response_header(
-        {"contentTypes": ["application/json"], "headers": {"X-Total-Count": {}}}
+        {"contentTypes": ["application/json"], "headers": {"X-Total-Count": {"required": True}}}
     )
     assert "X-Total-Count: （存在確認のみ）" in result
 
 
-def test_derive_response_header_uses_concrete_example_when_available():
+def test_derive_response_header_does_not_require_optional_header():
     result = _derive_response_header(
-        {"contentTypes": ["application/json"], "headers": {"X-Api-Version": {"example": "v1"}}}
+        {"contentTypes": ["application/json"], "headers": {"X-Trace": {"schema": {"type": "string"}}}}
     )
-    assert "X-Api-Version: v1" in result
+    assert "X-Trace" not in result
+
+
+def test_derive_response_header_does_not_treat_example_as_fixed_contract_value():
+    result = _derive_response_header(
+        {"contentTypes": ["application/json"], "headers": {"X-Api-Version": {
+            "required": True, "example": "v1",
+        }}}
+    )
+    assert "X-Api-Version: （存在確認のみ）" in result
+
+
+def test_derive_response_header_does_not_treat_default_as_fixed_contract_value():
+    result = _derive_response_header(
+        {"contentTypes": ["application/json"], "headers": {
+            "X-Mode": {"required": True, "schema": {"type": "string", "default": "safe"}},
+        }}
+    )
+    assert "X-Mode: （存在確認のみ）" in result
 
 
 def test_derive_response_header_uses_schema_enum_of_one_when_available():
     result = _derive_response_header(
         {
             "contentTypes": ["application/json"],
-            "headers": {"X-Cache-Status": {"schema": {"enum": ["HIT"]}}},
+            "headers": {"X-Cache-Status": {"required": True, "schema": {"enum": ["HIT"]}}},
         }
     )
     assert "X-Cache-Status: HIT" in result
@@ -97,6 +115,68 @@ def test_generate_test_cases_includes_auth_when_abnormal_enabled():
     assert len(cases) == 2
     assert all(c["keyword"] == "auth" for c in cases)
     assert all(c["expectedResponseBody"] == "" for c in cases)
+
+
+def test_generate_test_cases_emits_documented_unsupported_content_type_case():
+    spec = {
+        "operationId": "createUser", "path": "/users", "method": "POST",
+        "in": "header", "name": "Content-Type", "required": True,
+        "schema": {}, "successStatus": "415",
+        "responsesInfo": {"415": {"contentTypes": ["application/json"], "headers": {}}},
+        "unsupportedContentType": "text/plain",
+    }
+    cases = generate_test_cases([spec], [], ALL_OPTS)
+    assert len(cases) == 1
+    assert cases[0]["paramName"] == "Content-Type"
+    assert cases[0]["inputValue"] == "text/plain"
+    assert cases[0]["expectedStatus"] == "415"
+    assert cases[0]["expectedResponseHeader"] == "Content-Type: application/json"
+
+
+def test_generate_test_cases_omits_unsupported_content_type_case_when_abnormal_disabled():
+    spec = {
+        "operationId": "createUser", "path": "/users", "method": "POST",
+        "in": "header", "name": "Content-Type", "required": True,
+        "schema": {}, "successStatus": "415", "responsesInfo": {},
+        "unsupportedContentType": "text/plain",
+    }
+    cases = generate_test_cases([spec], [], {**ALL_OPTS, "includeAbnormal": False})
+    assert cases == []
+
+
+def test_generate_test_cases_includes_operation_baseline_normal_case():
+    operation = {
+        "operationBaseline": True,
+        "operationId": "createUser",
+        "path": "/users",
+        "method": "POST",
+        "successStatus": "2xx",
+        "responsesInfo": {"201": {"contentTypes": ["application/json"], "headers": {}}},
+    }
+
+    cases = generate_test_cases([operation], [], ALL_OPTS)
+
+    assert len(cases) == 1
+    assert cases[0]["in"] == "operation"
+    assert cases[0]["paramName"] == "__valid_request__"
+    assert cases[0]["keyword"] == "request"
+    assert cases[0]["perspective"] == "正常系_最小有効リクエスト"
+    assert cases[0]["expectedStatus"] == "2xx"
+
+
+def test_generate_test_cases_omits_operation_baseline_when_normal_disabled():
+    operation = {
+        "operationBaseline": True,
+        "operationId": "getUser",
+        "path": "/users/{id}",
+        "method": "GET",
+        "successStatus": "2xx",
+        "responsesInfo": {},
+    }
+
+    cases = generate_test_cases([operation], [], {**ALL_OPTS, "includeNormal": False})
+
+    assert cases == []
 
 
 # --- _generate_from_schema: 型ごとのルーティング ---

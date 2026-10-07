@@ -19,6 +19,9 @@ class ResolvedSchema(TypedDict, total=False):
     type: str | list[str]
     format: str
     enum: list[object]
+    const: object
+    example: object
+    default: object
     minimum: float
     maximum: float
     exclusiveMinimum: float | bool
@@ -30,6 +33,8 @@ class ResolvedSchema(TypedDict, total=False):
     minItems: int
     maxItems: int
     uniqueItems: bool
+    minProperties: int
+    maxProperties: int
     required: list[str]
     properties: dict[str, "ResolvedSchema"]
     additionalProperties: bool | "ResolvedSchema"
@@ -101,7 +106,3 @@ class GenerateOptions(TypedDict):
     includeAbnormal: bool
     enumFullCoverage: NotRequired[bool]
     oneOfFullCoverage: NotRequired[bool]
-    # TODO: --generate-minimal-request を追加予定。
-    # 対象: requestBody が required:true かつ type:object かつ required 配列を持つ operation。
-    # 生成ルール: required フィールドのみを代表値で埋めた最小 JSON を 1 ケース生成する（正常系_最小有効リクエスト）。
-    # 実装タイミング: JSON/Excel/CLI/OpenAPI 3.0+3.1 対応の土台が安定してから後付けオプションとして追加。

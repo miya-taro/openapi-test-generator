@@ -2,8 +2,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from models import RunCase
+from src.schema_example import NoSchemaExample, find_schema_example
 
 _PATH_PARAM_PATTERN = re.compile(r"\{([^{}]+)\}")
 
@@ -47,6 +48,10 @@ def build_url(base_url: str, case: RunCase, openapi: dict | None = None) -> str:
         val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
         query_val = _build_query_value(case, val, openapi) if openapi is not None else val
         url += "?" + urlencode({case.param_name: query_val}, doseq=True)
+    elif case.param_in == "operation" and openapi is not None:
+        query = _build_required_operation_query(openapi, case)
+        if query:
+            url += "?" + urlencode(query, doseq=True)
 
     return url
 
@@ -84,12 +89,21 @@ def _fill_path_params(case: RunCase, openapi: dict | None) -> str:
 def _baseline_path_value(openapi: dict | None, case: RunCase, param_name: str) -> str:
     if openapi is None:
         return "1"
-    schema = _resolve_path_param_schema(openapi, case, param_name)
-    value = _expand_value(schema) if schema is not None else "1"
-    return str(value)
+    param = _resolve_path_param(openapi, case, param_name)
+    if param is None:
+        return "1"
+    value = _expand_value(param.get("schema") or {})
+    style = param.get("style", "simple")
+    explode = param.get("explode", False)
+    return _serialize_path_parameter(param_name, value, style, explode)
 
 
 def _resolve_path_param_schema(openapi: dict, case: RunCase, param_name: str) -> dict | None:
+    param = _resolve_path_param(openapi, case, param_name)
+    return (param or {}).get("schema")
+
+
+def _resolve_path_param(openapi: dict, case: RunCase, param_name: str) -> dict | None:
     paths = openapi.get("paths", {})
     path_item = paths.get(case.path)
     if path_item is None:
@@ -102,8 +116,45 @@ def _resolve_path_param_schema(openapi: dict, case: RunCase, param_name: str) ->
         all_params += op.get("parameters") or []
     for p in all_params:
         if isinstance(p, dict) and p.get("name") == param_name and p.get("in") == "path":
-            return p.get("schema") or {}
+            return p
     return None
+
+
+def _serialize_path_parameter(name: str, value: object, style: str, explode: bool) -> str:
+    def encode(item: object) -> str:
+        if isinstance(item, bool):
+            item = "true" if item else "false"
+        return quote(str(item), safe="-._~")
+
+    if isinstance(value, list):
+        values = [encode(item) for item in value]
+        if style == "label":
+            return "." + ("." if explode else ",").join(values)
+        if style == "matrix":
+            if explode:
+                return "".join(f";{quote(name, safe='-._~')}={item}" for item in values)
+            return f";{quote(name, safe='-._~')}=" + ",".join(values)
+        return ",".join(values)
+    if isinstance(value, dict):
+        pairs = [(encode(key), encode(item)) for key, item in value.items()]
+        if style == "label":
+            separator = "." if explode else ","
+            return "." + separator.join(f"{key}={item}" for key, item in pairs) if explode else "." + ",".join(
+                part for pair in pairs for part in pair
+            )
+        if style == "matrix":
+            if explode:
+                return "".join(f";{key}={item}" for key, item in pairs)
+            return f";{quote(name, safe='-._~')}=" + ",".join(part for pair in pairs for part in pair)
+        return ",".join(f"{key}={item}" for key, item in pairs) if explode else ",".join(
+            part for pair in pairs for part in pair
+        )
+    scalar = encode(value)
+    if style == "label":
+        return "." + scalar
+    if style == "matrix":
+        return f";{quote(name, safe='-._~')}={scalar}"
+    return scalar
 
 
 def _build_query_value(case: RunCase, val: str, openapi: dict) -> object:
@@ -156,6 +207,112 @@ def _resolve_query_param_schema(openapi: dict, case: RunCase) -> dict | None:
     return None
 
 
+def _resolve_path_item(openapi: dict, case: RunCase) -> dict | None:
+    path_item = (openapi.get("paths") or {}).get(case.path)
+    if path_item is None:
+        path_item = _find_path_by_operation_id(openapi.get("paths", {}), case.operation_id)
+    return path_item if isinstance(path_item, dict) else None
+
+
+def _resolve_operation(openapi: dict, case: RunCase) -> dict | None:
+    path_item = _resolve_path_item(openapi, case)
+    operation = path_item.get(case.method.lower()) if path_item else None
+    return operation if isinstance(operation, dict) else None
+
+
+def _merged_operation_parameters(path_item: dict, operation: dict) -> list[dict]:
+    merged: dict[tuple[str | None, str | None], dict] = {}
+    for param in (*(path_item.get("parameters") or []), *(operation.get("parameters") or [])):
+        if isinstance(param, dict):
+            merged[(param.get("name"), param.get("in"))] = param
+    return list(merged.values())
+
+
+def _build_required_operation_query(openapi: dict, case: RunCase) -> dict[str, object]:
+    path_item = _resolve_path_item(openapi, case)
+    operation = _resolve_operation(openapi, case)
+    if path_item is None or operation is None:
+        return {}
+
+    query: dict[str, object] = {}
+    for param in _merged_operation_parameters(path_item, operation):
+        if not param.get("required") or param.get("in") != "query":
+            continue
+        value = _expand_value(param.get("schema") or {})
+        name = param.get("name", "")
+        style = param.get("style", "form")
+        explode = param.get("explode", style == "form")
+        if isinstance(value, list):
+            items = [str(item) for item in value]
+            if style == "form" and explode:
+                query[name] = items
+            else:
+                separator = {"spaceDelimited": " ", "pipeDelimited": "|"}.get(style, ",")
+                query[name] = separator.join(items)
+        elif isinstance(value, dict):
+            if style == "deepObject":
+                query.update({f"{name}[{key}]": str(item) for key, item in value.items()})
+            elif style == "form" and explode:
+                query.update({str(key): str(item) for key, item in value.items()})
+            else:
+                parts = [str(part) for pair in value.items() for part in pair]
+                query[name] = ",".join(parts)
+        elif isinstance(value, bool):
+            query[name] = "true" if value else "false"
+        else:
+            query[name] = str(value)
+    return query
+
+
+def build_operation_header_and_cookie_values(
+    case: RunCase, openapi: dict | None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build required header and cookie parameters for an operation baseline request."""
+    if not openapi:
+        return {}, {}
+    path_item = _resolve_path_item(openapi, case)
+    operation = _resolve_operation(openapi, case)
+    if path_item is None or operation is None:
+        return {}, {}
+
+    headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
+    for param in _merged_operation_parameters(path_item, operation):
+        location = param.get("in")
+        if not param.get("required") or location not in {"header", "cookie"}:
+            continue
+        value = _expand_value(param.get("schema") or {})
+        rendered = _serialize_simple_parameter_value(value, bool(param.get("explode", False)))
+        if location == "header":
+            headers[param["name"]] = rendered
+        else:
+            cookies[param["name"]] = rendered
+    return headers, cookies
+
+
+def _serialize_simple_parameter_value(value: object, explode: bool = False) -> str:
+    if isinstance(value, list):
+        return ",".join(_parameter_scalar(item) for item in value)
+    if isinstance(value, dict):
+        if explode:
+            return ",".join(
+                f"{_parameter_scalar(key)}={_parameter_scalar(item)}"
+                for key, item in value.items()
+            )
+        return ",".join(
+            _parameter_scalar(part) for pair in value.items() for part in pair
+        )
+    return _parameter_scalar(value)
+
+
+def _parameter_scalar(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
+
+
 @dataclass
 class PreparedBody:
     """requests に渡す body 情報。
@@ -174,6 +331,43 @@ class PreparedBody:
 
 
 def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | None:
+    if case.param_in == "header" and case.param_name.lower() == "content-type":
+        if not openapi:
+            return PreparedBody(json_body={})
+        schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi)
+        if schema is None:
+            return PreparedBody(json_body={})
+        content_type = _resolve_request_body_content_type(case.operation_id, case.path, case.method, openapi)
+        if content_type == "multipart/form-data":
+            fields = _expand_multipart_baseline(schema)
+            multipart_fields = {
+                key: ((_DUMMY_UPLOAD_FILENAME, _DUMMY_UPLOAD_CONTENT, _DUMMY_UPLOAD_CONTENT_TYPE)
+                      if isinstance(value, _FileUploadValue) else (None, str(value)))
+                for key, value in fields.items()
+            }
+            return PreparedBody(is_multipart=True, multipart_fields=multipart_fields)
+        body = _expand_value(schema)
+        return PreparedBody(json_body=body if isinstance(body, dict) else {})
+
+    if case.param_in == "operation":
+        operation = _resolve_operation(openapi, case) if openapi else None
+        request_body = (operation or {}).get("requestBody") or {}
+        if not request_body.get("required"):
+            return None
+        schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi) if openapi else None
+        if schema is None:
+            return None
+        content_type = _resolve_request_body_content_type(case.operation_id, case.path, case.method, openapi)
+        if content_type == "multipart/form-data":
+            fields = _expand_multipart_baseline(schema)
+            multipart_fields = {
+                key: ((_DUMMY_UPLOAD_FILENAME, _DUMMY_UPLOAD_CONTENT, _DUMMY_UPLOAD_CONTENT_TYPE)
+                      if isinstance(value, _FileUploadValue) else (None, str(value)))
+                for key, value in fields.items()
+            }
+            return PreparedBody(is_multipart=True, multipart_fields=multipart_fields)
+        return PreparedBody(json_body=_expand_value(schema))
+
     if case.param_in != "body":
         return None
 
@@ -439,48 +633,52 @@ def _resolve_ref(schema: dict, openapi: dict) -> dict:
 
 
 def _expand_value(schema: dict) -> object:
-    # スキーマに default が明示されていれば、型ベースの適当な値より優先する
-    # （リクエストのベースラインとして、実際にAPIが期待するデフォルト値に近い方が正確なため）。
+    try:
+        return find_schema_example(schema)
+    except NoSchemaExample:
+        # Field-level negative cases predate the operation baseline. Retain the historic fallback
+        # for those cases; operation-level baseline cases are only emitted after extractor-side
+        # preflight confirms that every required schema can be synthesized and validated.
+        return _fallback_expand_value(schema)
+
+
+def _fallback_expand_value(schema: dict) -> object:
+    if "const" in schema:
+        return schema["const"]
     if "default" in schema:
         return schema["default"]
 
-    t = schema.get("type", "string")
-    fmt = schema.get("format", "")
     enum = schema.get("enum")
-
     if enum:
         return enum[0]
 
-    if t == "integer" or t == "number":
+    t = schema.get("type", "string")
+    if isinstance(t, list):
+        t = next((item for item in t if item != "null"), "null")
+    fmt = schema.get("format", "")
+
+    if t in ("integer", "number"):
         minimum = schema.get("minimum")
         return minimum if minimum is not None else 1
-
     if t == "boolean":
         return True
-
     if t == "array":
         items = schema.get("items", {})
         return [_expand_value(items)]
-
     if t == "object":
         props = schema.get("properties", {})
         required = schema.get("required", [])
-        # readOnly なプロパティ（サーバー側専用）はリクエストには含めない
-        # readOnly なプロパティ（サーバー側専用）はリクエストには含めない
         return {
             k: _expand_value(props[k])
             for k in required
             if k in props and not props[k].get("readOnly")
         }
 
-    # string
     min_len = schema.get("minLength")
     if min_len and min_len > 0:
         return "a" * min_len
-
     if fmt in FORMAT_SAMPLES:
         return FORMAT_SAMPLES[fmt]
-
     return "test"
 
 

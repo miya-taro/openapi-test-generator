@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 
 from models import EXIT_TIMEOUT, RunResult, ResponseSchema
-from response_validator import validate_body
+from response_validator import validate_body, validate_header_value
 from sensitive_data import (
     contains_private_key_header,
     credential_findings,
@@ -69,7 +69,10 @@ def _content_type_matches(actual_ct: str, expected_ct: str) -> bool:
     """
     actual_media_type = actual_ct.split(";", 1)[0].strip().lower()
     expected_media_type = expected_ct.split(";", 1)[0].strip().lower()
-    return actual_media_type == expected_media_type
+    if "*" not in expected_media_type:
+        return actual_media_type == expected_media_type
+    pattern = "^" + re.escape(expected_media_type).replace(r"\*", ".*") + "$"
+    return re.fullmatch(pattern, actual_media_type) is not None
 
 
 def _find_header(actual_headers: dict[str, str], name: str) -> str | None:
@@ -83,9 +86,23 @@ def _find_header(actual_headers: dict[str, str], name: str) -> str | None:
 
 def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     """Return (verdict, detail). verdict is one of OK/NG/WARNING/SKIP."""
-    result.report_body = redact_sensitive_response(
-        result.actual_body, schema.expected_body_schema
+    actual_content_type = _find_header(result.actual_headers, "Content-Type") or ""
+    schemas_by_media_type = schema.expected_body_schemas_by_status_and_content_type.get(
+        result.actual_status, {},
     )
+    media_schema = next((
+        body_schema for media_type, body_schema in schemas_by_media_type.items()
+        if _content_type_matches(actual_content_type, media_type)
+    ), None)
+    if result.actual_status in schema.expected_content_types_by_status:
+        # A documented non-JSON media type has no JSON Schema to validate. Do not fall back to a
+        # different media type's schema when the response declares several content types.
+        response_body_schema = media_schema
+    elif result.actual_status in schema.expected_body_schemas_by_status:
+        response_body_schema = schema.expected_body_schemas_by_status[result.actual_status]
+    else:
+        response_body_schema = schema.expected_body_schema
+    result.report_body = redact_sensitive_response(result.actual_body, response_body_schema)
     if result.error:
         if result.exit_code == EXIT_TIMEOUT:
             return FAIL, "タイムアウト"
@@ -97,11 +114,17 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     ]
 
     # Level 1: status code
-    if result.actual_status != schema.expected_status:
-        status_detail = (
-            f"ステータス不一致: 期待={schema.expected_status}, "
-            f"実測={result.actual_status}"
-        )
+    if schema.expected_statuses:
+        status_matches = result.actual_status in schema.expected_statuses
+        expected = " or ".join(str(status) for status in sorted(schema.expected_statuses))
+    elif schema.expected_status_class is not None:
+        status_matches = result.actual_status // 100 == schema.expected_status_class
+        expected = f"{schema.expected_status_class}xx"
+    else:
+        status_matches = result.actual_status == schema.expected_status
+        expected = schema.expected_status
+    if not status_matches:
+        status_detail = f"ステータス不一致: 期待={expected}, 実測={result.actual_status}"
         return FAIL, "; ".join([status_detail, *leak_details])
 
     fail_details: list[str] = list(leak_details)
@@ -115,12 +138,18 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
         )
 
     # Level 3: Content-Type
-    if schema.expected_content_type:
-        actual_ct = result.actual_headers.get("Content-Type", "")
-        if not _content_type_matches(actual_ct, schema.expected_content_type):
+    documented_content_types = schema.expected_content_types_by_status.get(result.actual_status)
+    if documented_content_types:
+        if not any(_content_type_matches(actual_content_type, expected) for expected in documented_content_types):
+            fail_details.append(
+                "Content-Type不一致: 期待=" + " or ".join(sorted(documented_content_types))
+                + f", 実測={actual_content_type!r}"
+            )
+    elif schema.expected_content_type:
+        if not _content_type_matches(actual_content_type, schema.expected_content_type):
             fail_details.append(
                 f"Content-Type不一致: 期待={schema.expected_content_type}, "
-                f"実測={actual_ct!r}"
+                f"実測={actual_content_type!r}"
             )
 
     # Level 3: Content-Type以外の期待ヘッダ（存在確認のみ、または具体的な値の一致）
@@ -135,9 +164,26 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
                 f"{header_name}不一致: 期待={safe_expected}, 実測={safe_actual!r}"
             )
 
+    status_header_names = schema.expected_header_names_by_status.get(result.actual_status, frozenset())
+    for header_name in status_header_names:
+        if _find_header(result.actual_headers, header_name) is None:
+            fail_details.append(f"ヘッダ不足: {header_name} が存在しません")
+
+    status_header_schemas = schema.expected_header_schemas_by_status.get(result.actual_status, {})
+    for header_name, header_definition in status_header_schemas.items():
+        actual_value = _find_header(result.actual_headers, header_name)
+        if actual_value is None:
+            continue  # 不足は上のヘッダ存在確認で報告済み。
+        header_errors = validate_header_value(actual_value, header_definition)
+        if header_errors:
+            fail_details.append(
+                f"{header_name}がOpenAPI schemaに不適合: " + " / ".join(header_errors)
+            )
+
     # Level 4: レスポンスボディの JSON Schema 適合
-    if schema.expected_body_schema:
-        body_errors = validate_body(result.actual_body, schema.expected_body_schema)
+    body_schema = response_body_schema
+    if body_schema:
+        body_errors = validate_body(result.actual_body, body_schema)
         if body_errors:
             fail_details.append("ボディ不適合: " + " / ".join(body_errors))
 

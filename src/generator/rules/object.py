@@ -16,7 +16,7 @@ def generate_object_cases(schema: dict, ctx: dict) -> list[dict]:
             "keyword": "additionalProperties",
             "perspective": "異常系_additionalProperties",
             "inputValue": '{ ...validBody, "__extra__": "value" }',
-            "expectedStatus": "400",
+            "expectedStatus": "4xx",
             "expectedResult": "バリデーションエラーが返ること",
             "notes": "スキーマ外のキーを含む JSON",
         })
@@ -44,7 +44,7 @@ def generate_object_cases(schema: dict, ctx: dict) -> list[dict]:
                     "keyword": "additionalProperties",
                     "perspective": "異常系_additionalProperties型不適合",
                     "inputValue": f'{{ ...validBody, "__extra__": {invalid_value} }}',
-                    "expectedStatus": "400",
+                    "expectedStatus": "4xx",
                     "expectedResult": "バリデーションエラーが返ること",
                     "notes": "additionalProperties のスキーマに適合しない型の追加プロパティ",
                 })
@@ -74,7 +74,7 @@ def generate_object_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "required",
                 "perspective": "異常系_空body",
                 "inputValue": "{}",
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "required プロパティが存在するため空 body は不正",
             })

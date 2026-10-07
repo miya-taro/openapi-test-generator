@@ -79,6 +79,74 @@ def test_curl_command_stored():
     assert "http://localhost:8080/users" in result.curl_command
 
 
+def test_declared_cookie_parameter_is_sent_as_cookie_header():
+    case = make_case(param_in="cookie", param_name="session_hint", input_value="abc123")
+    openapi = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "parameters": [{
+                        "name": "session_hint", "in": "cookie", "required": True,
+                        "schema": {"type": "string"},
+                    }],
+                },
+            },
+        },
+    }
+    captured = []
+    with patch("requests.Session.send", mock_send(200, "ok", capture=captured)):
+        execute_with_openapi(case, "http://localhost:8080", openapi)
+
+    assert captured[0].headers["Cookie"] == "session_hint=abc123"
+
+
+def test_operation_baseline_sends_required_parameters_and_body():
+    case = make_case(
+        param_in="operation",
+        param_name="__valid_request__",
+        input_value="（最小有効リクエスト）",
+        path="/users/{tenant}",
+        method="POST",
+    )
+    openapi = {
+        "paths": {
+            "/users/{tenant}": {
+                "post": {
+                    "operationId": "createUser",
+                    "parameters": [
+                        {"name": "tenant", "in": "path", "required": True,
+                         "schema": {"type": "string", "enum": ["north"]}},
+                        {"name": "q", "in": "query", "required": True,
+                         "schema": {"type": "integer", "minimum": 2}},
+                        {"name": "X-Region", "in": "header", "required": True,
+                         "schema": {"type": "string", "enum": ["west"]}},
+                        {"name": "locale", "in": "cookie", "required": True,
+                         "schema": {"type": "string", "enum": ["ja"]}},
+                    ],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": {
+                            "type": "object",
+                            "required": ["name"],
+                            "properties": {"name": {"type": "string", "minLength": 2}},
+                        }}},
+                    },
+                },
+            },
+        },
+    }
+    captured = []
+    with patch("requests.Session.send", mock_send(201, "{}", capture=captured)):
+        execute_with_openapi(case, "http://localhost:8080", openapi)
+
+    request = captured[0]
+    assert request.url == "http://localhost:8080/users/north?q=2"
+    assert request.headers["X-Region"] == "west"
+    assert request.headers["Cookie"] == "locale=ja"
+    assert request.headers["Content-Type"].startswith("application/json")
+    assert request.body == b'{"name": "aa"}'
+
+
 # --- Session 共有・Cookie 永続化 ---
 
 def test_session_passed_in_is_used_for_send():
@@ -281,6 +349,27 @@ def test_body_param_adds_json_content_type():
     assert capture[0].body is not None
 
 
+def test_unsupported_content_type_probe_keeps_valid_json_body_and_header():
+    case = make_case(
+        operation_id="createUser", path="/users", method="POST",
+        param_in="header", param_name="Content-Type", input_value="text/plain",
+    )
+    openapi = {"paths": {"/users": {"post": {
+        "operationId": "createUser",
+        "requestBody": {"required": True, "content": {"application/json": {"schema": {
+            "type": "object", "required": ["name", "email"],
+            "properties": {"name": {"type": "string"}, "email": {"type": "string", "format": "email"}},
+        }}}},
+    }}}}
+    capture: list = []
+    with patch("requests.Session.send", mock_send(415, "unsupported", capture=capture)):
+        execute_with_openapi(case, "http://localhost:8080", openapi)
+    assert capture[0].headers.get("Content-Type") == "text/plain"
+    assert capture[0].body is not None
+    assert b'"name": "test"' in capture[0].body
+    assert b'"email": "test@example.com"' in capture[0].body
+
+
 MULTIPART_OPENAPI = {
     "paths": {
         "/avatars": {
@@ -314,6 +403,20 @@ def test_multipart_body_does_not_add_json_content_type():
     content_type = capture[0].headers.get("Content-Type", "")
     assert content_type.startswith("multipart/form-data")
     assert not content_type.startswith("application/json")
+
+
+def test_unsupported_content_type_probe_keeps_valid_multipart_body_and_header():
+    case = make_case(
+        operation_id="uploadAvatar", path="/avatars", method="POST",
+        param_in="header", param_name="Content-Type", input_value="application/x-invalid",
+    )
+    capture: list = []
+    with patch("requests.Session.send", mock_send(415, "unsupported", capture=capture)):
+        execute_with_openapi(case, "http://localhost:8080", MULTIPART_OPENAPI)
+    assert capture[0].headers.get("Content-Type") == "application/x-invalid"
+    assert capture[0].body is not None
+    assert b'name="caption"' in capture[0].body
+    assert b"\r\na\r\n" in capture[0].body
 
 
 # --- health_check tests ---

@@ -34,6 +34,8 @@ def _derive_response_header(info: dict | None) -> str:
     elif len(content_types) > 1:
         lines.append("Content-Type: （複数あり・要確認）")
     for header_name, header_def in headers_def.items():
+        if not isinstance(header_def, dict) or not header_def.get("required", False):
+            continue
         concrete = _concrete_header_value(header_def)
         if concrete is not None:
             lines.append(f"{header_name}: {concrete}")
@@ -42,30 +44,63 @@ def _derive_response_header(info: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _derive_expected_response_body(expected_status: str, info: dict | None) -> str:
+    if expected_status == "2xx":
+        return "実測した成功statusに対応するOpenAPIレスポンスschemaに従うこと"
+    return _derive_response_body(info)
+
+
+def _derive_expected_response_header(expected_status: str, info: dict | None) -> str:
+    if expected_status == "2xx":
+        return "実測した成功statusに対応するOpenAPIレスポンスheaderを検証すること"
+    return _derive_response_header(info)
+
+
+def _response_info_for_status(expected_status: str, responses_info: dict) -> dict | None:
+    if expected_status in responses_info:
+        return responses_info[expected_status]
+    if expected_status != "4xx":
+        return None
+
+    error_infos = [
+        info for status, info in responses_info.items()
+        if status.isdigit() and 400 <= int(status) < 500
+    ]
+    if not error_infos:
+        return None
+
+    common_types = set(error_infos[0].get("contentTypes", []))
+    for info in error_infos[1:]:
+        common_types.intersection_update(info.get("contentTypes", []))
+    common_headers = dict(error_infos[0].get("headers", {}))
+    for info in error_infos[1:]:
+        common_headers = {
+            name: definition for name, definition in common_headers.items()
+            if name in info.get("headers", {}) and info["headers"][name] == definition
+        }
+    return {"contentTypes": sorted(common_types), "headers": common_headers}
+
+
 def _concrete_header_value(header_def: dict | None) -> str | None:
-    """OpenAPIのheaderオブジェクトから、具体的に一致検証できる値を取り出せる場合は返す。
-    example/enum(1件)/defaultのいずれかがあれば使う。判断できない場合は None
-    （呼び出し側は「存在確認のみ」の期待値として扱う）。"""
+    """OpenAPIのresponse headerから、契約として固定された値を取り出す。
+
+    example/defaultは実際の応答値を制約するものではないため一致検証に使わない。
+    constまたは単一値enumだけを完全一致し、それ以外はschema検証または存在確認に委ねる。
+    """
     if not header_def:
         return None
-    if "example" in header_def:
-        return str(header_def["example"])
     schema = header_def.get("schema") or {}
-    if "example" in schema:
-        return str(schema["example"])
+    if "const" in schema:
+        return str(schema["const"])
     enum = schema.get("enum")
     if isinstance(enum, list) and len(enum) == 1:
         return str(enum[0])
-    if "default" in schema:
-        return str(schema["default"])
     return None
 
 
-# 現在の生成スコープ: Validation Keyword 単位のフィールド個別テスト（Layer 1）のみ。
-# 以下は Layer 1 標準では扱わない:
-#   - string フィールドへの型不正（実装依存で期待ステータスが安定しないため）
-#   - Content-Type 不正 / integer への float / non-nullable への null（実装依存）
-#   - 最小有効リクエスト（Layer 2 寄り）→ --generate-minimal-request として後付け予定（GenerateOptions 参照）
+# Layer 1 の schema-negative ケースは特定の 400 ではなく 4xx を期待する。
+# OpenAPI は不正な値ごとに 400 / 422 等を対応付けないため、具体的な業務エラーコードは
+# DBシナリオ等で人が定義し、契約ケースでは「クライアントエラーとして拒否される」ことを確認する。
 def generate_test_cases(
     param_specs: list[dict],
     body_specs: list[dict],
@@ -76,11 +111,58 @@ def generate_test_cases(
     results: list[dict] = []
 
     for spec in param_specs:
+        if spec.get("operationBaseline"):
+            if not opts["includeNormal"]:
+                continue
+            results.append({
+                "operationId": spec["operationId"],
+                "path": spec["path"],
+                "method": spec["method"],
+                "in": "operation",
+                "paramName": "__valid_request__",
+                "verdict": "",
+                "summary": f"{spec['operationId']} 最小有効リクエスト（正常）",
+                "keyword": "request",
+                "perspective": "正常系_最小有効リクエスト",
+                "inputValue": "（最小有効リクエスト）",
+                "expectedStatus": spec["successStatus"],
+                "expectedResult": "必須の入力を満たしたリクエストが正常に処理され、定義済み成功レスポンスのいずれかが返ること",
+                "notes": "OpenAPIに定義された必須path/query/header/cookie parameterと必須requestBodyを送信",
+                "expectedResponseBody": _derive_expected_response_body(spec["successStatus"], None),
+                "expectedResponseHeader": _derive_expected_response_header(spec["successStatus"], None),
+                "expectedResponseTime": "3秒以内",
+            })
+            continue
+
+        if spec.get("unsupportedContentType"):
+            if not opts["includeAbnormal"]:
+                continue
+            results.append({
+                "operationId": spec["operationId"],
+                "path": spec["path"],
+                "method": spec["method"],
+                "in": "header",
+                "paramName": "Content-Type",
+                "verdict": "",
+                "summary": f"Content-Type 不正値（{spec['unsupportedContentType']}）",
+                "keyword": "contentType",
+                "perspective": "異常系_Content-Type不正",
+                "inputValue": spec["unsupportedContentType"],
+                "expectedStatus": "415",
+                "expectedResult": "Unsupported Media Type が返ること",
+                "notes": "OpenAPI に 415 応答が定義されているため、本文を保ったまま未対応メディアタイプを送信",
+                "expectedResponseBody": _derive_response_body(spec["responsesInfo"].get("415")),
+                "expectedResponseHeader": _derive_response_header(spec["responsesInfo"].get("415")),
+                "expectedResponseTime": "3秒以内",
+            })
+            continue
+
         partials = _generate_from_schema(
             spec["schema"], spec["required"], spec["in"], spec["name"], opts, spec["successStatus"]
         )
         for partial in partials:
-            responses_info = spec["responsesInfo"].get(partial["expectedStatus"])
+            expected_status = partial["expectedStatus"]
+            responses_info = _response_info_for_status(expected_status, spec["responsesInfo"])
             results.append({
                 "operationId": spec["operationId"],
                 "path": spec["path"],
@@ -89,8 +171,8 @@ def generate_test_cases(
                 "paramName": spec["name"],
                 "verdict": "",
                 **partial,
-                "expectedResponseBody": _derive_response_body(responses_info),
-                "expectedResponseHeader": _derive_response_header(responses_info),
+                "expectedResponseBody": _derive_expected_response_body(expected_status, responses_info),
+                "expectedResponseHeader": _derive_expected_response_header(expected_status, responses_info),
                 "expectedResponseTime": "3秒以内",
             })
 
@@ -103,7 +185,8 @@ def generate_test_cases(
             spec["schema"], spec["required"], param_in, param_name, opts, spec["successStatus"], is_root_body
         )
         for partial in partials:
-            responses_info = spec["responsesInfo"].get(partial["expectedStatus"])
+            expected_status = partial["expectedStatus"]
+            responses_info = _response_info_for_status(expected_status, spec["responsesInfo"])
             results.append({
                 "operationId": spec["operationId"],
                 "path": spec["path"],
@@ -112,8 +195,8 @@ def generate_test_cases(
                 "paramName": param_name,
                 "verdict": "",
                 **partial,
-                "expectedResponseBody": _derive_response_body(responses_info),
-                "expectedResponseHeader": _derive_response_header(responses_info),
+                "expectedResponseBody": _derive_expected_response_body(expected_status, responses_info),
+                "expectedResponseHeader": _derive_expected_response_header(expected_status, responses_info),
                 "expectedResponseTime": "3秒以内",
             })
 

@@ -90,7 +90,7 @@ def test_required_true_query_missing_400():
         {"type": "string"}, True, {"paramIn": "query", "paramName": "name", "opts": ALL_OPTS}
     )
     required_case = next(c for c in cases if c["keyword"] == "required")
-    assert required_case["expectedStatus"] == "400"
+    assert required_case["expectedStatus"] == "4xx"
 
 
 def test_required_true_path_missing_404():
@@ -98,7 +98,7 @@ def test_required_true_path_missing_404():
         {"type": "string"}, True, {"paramIn": "path", "paramName": "id", "opts": ALL_OPTS}
     )
     required_case = next(c for c in cases if c["keyword"] == "required")
-    assert required_case["expectedStatus"] == "404"
+    assert required_case["expectedStatus"] == "4xx"
 
 
 def test_required_false_no_missing_case():
@@ -168,7 +168,7 @@ def test_not_nullable_generates_abnormal_null_case():
     )
     null_case = next(c for c in cases if c["keyword"] == "nullable")
     assert null_case["perspective"] == "異常系_null不可"
-    assert null_case["expectedStatus"] == "400"
+    assert null_case["expectedStatus"] == "4xx"
 
 
 def test_no_nullable_case_when_type_missing():

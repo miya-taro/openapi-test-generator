@@ -5,6 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from verifier import verify, PASS, FAIL, WARN
+from response_schema import from_run_case
 from models import EXIT_ERROR, EXIT_OK, EXIT_TIMEOUT, RunCase, RunResult, ResponseSchema
 
 
@@ -43,12 +44,26 @@ def make_schema(
     expected_response_time_ms: float = 3000.0,
     expected_body_schema: dict | None = None,
     expected_headers: dict | None = None,
+    expected_status_class: int | None = None,
+    expected_statuses: frozenset[int] = frozenset(),
+    expected_body_schemas_by_status: dict[int, dict] | None = None,
+    expected_body_schemas_by_status_and_content_type: dict[int, dict[str, dict]] | None = None,
+    expected_content_types_by_status: dict[int, frozenset[str]] | None = None,
+    expected_header_schemas_by_status: dict[int, dict[str, dict]] | None = None,
+    expected_header_names_by_status: dict[int, frozenset[str]] | None = None,
 ) -> ResponseSchema:
     return ResponseSchema(
         expected_status=expected_status,
         expected_content_type=expected_content_type,
         expected_response_time_ms=expected_response_time_ms,
         expected_body_schema=expected_body_schema,
+        expected_status_class=expected_status_class,
+        expected_statuses=expected_statuses,
+        expected_body_schemas_by_status=expected_body_schemas_by_status or {},
+        expected_body_schemas_by_status_and_content_type=expected_body_schemas_by_status_and_content_type or {},
+        expected_content_types_by_status=expected_content_types_by_status or {},
+        expected_header_schemas_by_status=expected_header_schemas_by_status or {},
+        expected_header_names_by_status=expected_header_names_by_status or {},
         expected_headers=expected_headers or {},
     )
 
@@ -65,6 +80,39 @@ def test_level1_fail_status_mismatch():
     verdict, detail = verify(make_result(500), make_schema(200))
     assert verdict == FAIL
     assert "ステータス不一致" in detail
+
+
+def test_schema_negative_case_accepts_4xx_and_rejects_non_4xx():
+    for status in (400, 404, 422):
+        verdict, _ = verify(
+            make_result(status), make_schema(expected_status=None, expected_status_class=4),
+        )
+        assert verdict == PASS
+    verdict, detail = verify(make_result(500), make_schema(expected_status=None, expected_status_class=4))
+    assert verdict == FAIL
+    assert "期待=4xx" in detail
+
+
+def test_schema_negative_case_validates_body_schema_for_actual_error_status():
+    schema = make_schema(
+        expected_status=None,
+        expected_status_class=4,
+        expected_body_schemas_by_status={422: {"type": "object", "required": ["message"]}},
+    )
+    verdict, _ = verify(make_result(422, body='{"message":"invalid"}'), schema)
+    assert verdict == PASS
+    verdict, detail = verify(make_result(422, body='{"error":"invalid"}'), schema)
+    assert verdict == FAIL
+    assert "ボディ不適合" in detail
+
+
+def test_schema_negative_case_rejects_non_validation_4xx_when_openapi_documents_validation_statuses():
+    schema = make_schema(
+        expected_status=None, expected_status_class=4, expected_statuses=frozenset({400, 422}),
+    )
+    verdict, detail = verify(make_result(405), schema)
+    assert verdict == FAIL
+    assert "期待=400 or 422" in detail
 
 
 def test_level1_fail_on_timeout():
@@ -193,6 +241,145 @@ def test_level3_no_expected_headers_does_not_affect_pass():
     schema = make_schema(200, expected_headers={})
     verdict, _ = verify(result, schema)
     assert verdict == PASS
+
+
+def test_documented_2xx_response_accepts_each_success_status_and_uses_its_body_schema():
+    schema = make_schema(
+        expected_status=None,
+        expected_status_class=2,
+        expected_statuses=frozenset({200, 201}),
+        expected_body_schemas_by_status={
+            200: {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
+        },
+        expected_body_schemas_by_status_and_content_type={
+            201: {"application/vnd.example+json": {"type": "array", "items": {"type": "string"}}},
+        },
+        expected_content_types_by_status={
+            200: frozenset({"application/json"}),
+            201: frozenset({"application/json", "application/vnd.example+json"}),
+        },
+    )
+
+    verdict, detail = verify(
+        make_result(201, headers={"Content-Type": "application/vnd.example+json"}, body='["created"]'),
+        schema,
+    )
+
+    assert verdict == PASS
+    assert detail == ""
+
+    bad, bad_detail = verify(
+        make_result(201, headers={"Content-Type": "application/vnd.example+json"}, body='{"unexpected":true}'),
+        schema,
+    )
+    assert bad == FAIL
+    assert "ボディ不適合" in bad_detail
+
+
+def test_documented_2xx_response_rejects_undocumented_success_status():
+    schema = make_schema(
+        expected_status=None,
+        expected_status_class=2,
+        expected_statuses=frozenset({200, 201}),
+    )
+
+    verdict, detail = verify(make_result(202), schema)
+
+    assert verdict == FAIL
+    assert "期待=200 or 201" in detail
+
+
+def test_response_header_schema_checks_scalar_values_and_required_presence():
+    schema = make_schema(
+        expected_status=200,
+        expected_header_schemas_by_status={
+            200: {
+                "X-Count": {"schema": {"type": "integer", "minimum": 1}},
+                "X-Mode": {"schema": {"type": "string", "enum": ["safe", "fast"]}},
+            },
+        },
+        expected_header_names_by_status={200: frozenset({"X-Count", "X-Mode"})},
+    )
+    good, _ = verify(
+        make_result(200, headers={"x-count": "12", "X-Mode": "safe"}), schema,
+    )
+    bad, detail = verify(
+        make_result(200, headers={"X-Count": "zero", "X-Mode": "unsafe"}), schema,
+    )
+
+    assert good == PASS
+    assert bad == FAIL
+    assert "X-Count" in detail
+    assert "X-Mode" in detail
+
+
+def test_optional_response_header_is_validated_only_when_returned():
+    case = make_case()
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {"description": "OK", "headers": {
+            "X-Trace": {"schema": {"type": "string", "pattern": "^req-"}},
+        }},
+    }}}}}
+    schema = from_run_case(case, api)
+
+    absent, _ = verify(make_result(200), schema)
+    invalid, detail = verify(make_result(200, headers={"X-Trace": "wrong"}), schema)
+
+    assert absent == PASS
+    assert invalid == FAIL
+    assert "X-Trace" in detail
+
+
+def test_documented_non_json_response_media_type_does_not_use_json_schema():
+    case = make_case()
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {"description": "OK", "content": {
+            "application/json": {"schema": {"type": "object", "required": ["ok"]}},
+            "text/plain": {"schema": {"type": "string"}},
+        }},
+    }}}}}
+    schema = from_run_case(case, api)
+
+    verdict, detail = verify(
+        make_result(200, headers={"Content-Type": "text/plain"}, body="accepted"), schema,
+    )
+
+    assert verdict == PASS
+    assert detail == ""
+
+
+def test_response_header_schema_parses_simple_array_serialization():
+    schema = make_schema(
+        expected_status=200,
+        expected_header_schemas_by_status={
+            200: {"X-Tags": {"schema": {"type": "array", "items": {"type": "integer"}}}},
+        },
+        expected_header_names_by_status={200: frozenset({"X-Tags"})},
+    )
+
+    good, _ = verify(make_result(200, headers={"X-Tags": "2, 3,4"}), schema)
+    bad, detail = verify(make_result(200, headers={"X-Tags": "2,nope"}), schema)
+
+    assert good == PASS
+    assert bad == FAIL
+    assert "X-Tags" in detail
+
+
+def test_response_header_enum_without_explicit_type_is_validated_as_its_declared_json_type():
+    schema = make_schema(
+        expected_status=200,
+        expected_header_schemas_by_status={
+            200: {"X-Page": {"schema": {"enum": [1, 2, 3]}}},
+        },
+        expected_header_names_by_status={200: frozenset({"X-Page"})},
+    )
+
+    good, _ = verify(make_result(200, headers={"X-Page": "2"}), schema)
+    bad, detail = verify(make_result(200, headers={"X-Page": "two"}), schema)
+
+    assert good == PASS
+    assert bad == FAIL
+    assert "X-Page" in detail
 
 
 # Level 2/3 混在時の verdict 分離

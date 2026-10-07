@@ -120,6 +120,50 @@ def test_operation_level_parameter_overrides_path_level_parameter():
     assert id_specs[0]["schema"]["type"] == "integer"
 
 
+def test_extract_specs_emits_one_baseline_marker_per_operation():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {
+            "/users": {
+                "post": {
+                    "operationId": "createUser",
+                    "responses": {"201": {"description": "Created"}},
+                },
+                "get": {
+                    "operationId": "listUsers",
+                    "responses": {"200": {"description": "OK"}},
+                },
+            }
+        },
+    }
+
+    param_specs, _ = extract_specs(api)
+
+    baselines = [spec for spec in param_specs if spec.get("operationBaseline")]
+    assert {(spec["operationId"], spec["successStatus"]) for spec in baselines} == {
+        ("createUser", "2xx"),
+        ("listUsers", "2xx"),
+    }
+
+
+def test_extract_specs_skips_baseline_when_required_schema_has_no_valid_value():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/items": {"post": {
+            "operationId": "createItem",
+            "parameters": [{
+                "name": "code", "in": "query", "required": True,
+                "schema": {"type": "string", "minLength": 8, "maxLength": 2},
+            }],
+            "responses": {"201": {"description": "Created"}},
+        }}},
+    }
+
+    param_specs, _ = extract_specs(api)
+
+    assert not any(spec.get("operationBaseline") for spec in param_specs)
+
+
 def test_path_level_parameter_kept_when_not_overridden():
     api = {
         "openapi": "3.1.0",
@@ -134,6 +178,28 @@ def test_path_level_parameter_kept_when_not_overridden():
     id_specs = [s for s in param_specs if s["name"] == "id" and s["in"] == "path"]
     assert len(id_specs) == 1
     assert id_specs[0]["schema"]["type"] == "string"
+
+
+def test_extract_specs_adds_content_type_probe_only_when_415_is_documented():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/users": {"post": {
+            "operationId": "createUser",
+            "requestBody": {"required": True, "content": {
+                "application/json": {"schema": {"type": "object", "required": ["name"],
+                    "properties": {"name": {"type": "string"}}}}
+            }},
+            "responses": {"201": {"description": "Created"}, "415": {"description": "Unsupported media type"}},
+        }}},
+    }
+    params, _ = extract_specs(api)
+    probe = next(p for p in params if p.get("unsupportedContentType"))
+    assert probe["name"] == "Content-Type"
+    assert probe["unsupportedContentType"] != "application/json"
+
+    del api["paths"]["/users"]["post"]["responses"]["415"]
+    params, _ = extract_specs(api)
+    assert not any(p.get("unsupportedContentType") for p in params)
 
 
 def _openapi_with_multipart_upload() -> dict:
@@ -357,7 +423,7 @@ def test_extract_specs_skips_param_missing_name():
         },
     }
     param_specs, _ = extract_specs(api)
-    assert param_specs == []
+    assert not any(spec.get("in") == "query" for spec in param_specs)
 
 
 def test_extract_specs_skips_binary_format_param():
@@ -376,7 +442,7 @@ def test_extract_specs_skips_binary_format_param():
         },
     }
     param_specs, _ = extract_specs(api)
-    assert param_specs == []
+    assert not any(spec.get("in") == "query" for spec in param_specs)
 
 
 def test_extract_specs_skips_non_json_request_body():
@@ -567,3 +633,31 @@ def test_success_status_defaults_to_200_when_no_responses():
     param_specs, _ = extract_specs(api)
     assert param_specs[0]["successStatus"] == "200"
     assert param_specs[0]["responsesInfo"] == {}
+
+
+def test_success_status_uses_class_for_multiple_documented_success_responses():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/x": {"get": {"operationId": "getX", "responses": {
+            "200": {"description": "OK"},
+            "201": {"description": "Created"},
+            "400": {"description": "Bad request"},
+        }}}},
+    }
+
+    param_specs, _ = extract_specs(api)
+
+    assert param_specs[0]["successStatus"] == "2xx"
+
+
+def test_success_status_uses_class_for_documented_2xx_range_response():
+    api = {
+        "openapi": "3.1.0",
+        "paths": {"/x": {"get": {"operationId": "getX", "responses": {
+            "2XX": {"description": "Success"},
+        }}}},
+    }
+
+    param_specs, _ = extract_specs(api)
+
+    assert param_specs[0]["successStatus"] == "2xx"

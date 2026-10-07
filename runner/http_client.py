@@ -9,7 +9,12 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from models import DEFAULT_REQUEST_TIMEOUT, EXIT_ERROR, EXIT_OK, EXIT_TIMEOUT, RunCase, RunResult
-from request_builder import PreparedBody, build_url, build_request_body
+from request_builder import (
+    PreparedBody,
+    build_operation_header_and_cookie_values,
+    build_request_body,
+    build_url,
+)
 from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
 from src.cmd_escape import quote_cmd_arg
 
@@ -55,7 +60,7 @@ def execute_with_openapi(
 ) -> RunResult:
     url = build_url(base_url, case, openapi)
     prepared_body = build_request_body(case, openapi)
-    return _send_request(case, url, prepared_body, session, persist_cookies)
+    return _send_request(case, url, prepared_body, session, persist_cookies, openapi)
 
 
 def _send_request(
@@ -64,8 +69,10 @@ def _send_request(
     prepared_body: PreparedBody | None,
     session: requests.Session | None = None,
     persist_cookies: bool = False,
+    openapi: dict | None = None,
 ) -> RunResult:
     headers: dict[str, str] = {}
+    cookies: dict[str, str] = {}
     security_payload = None
     is_auth_probe = case.param_name == OPENAPI_SECURITY_PARAM or case.input_value == AUTH_NONE_MARKER
     if case.param_name == OPENAPI_SECURITY_PARAM and case.input_value != AUTH_NONE_MARKER:
@@ -84,11 +91,18 @@ def _send_request(
     # 通常のheaderケースも入力値を優先し、それ以外には設定済み認証を追加する。
     if security_payload is not None:
         headers.update(security_payload["headers"])
+        cookies.update(security_payload["cookies"])
     elif case.param_in == "header":
         if case.input_value != AUTH_NONE_MARKER:
             headers[case.param_name] = case.input_value
         # （認証ヘッダなし）の場合は何も追加しない（auth なしケース）
     else:
+        if case.param_in == "cookie" and case.input_value not in {"（省略）", "（フィールドを省略）"}:
+            cookies[case.param_name] = "" if case.input_value == "（空文字）" else case.input_value
+        elif case.param_in == "operation":
+            baseline_headers, baseline_cookies = build_operation_header_and_cookie_values(case, openapi)
+            headers.update(baseline_headers)
+            cookies.update(baseline_cookies)
         auth_header = _resolve_auth_header()
         if auth_header:
             header_name, _, header_value = auth_header.partition(": ")
@@ -101,7 +115,7 @@ def _send_request(
         if prepared_body.is_multipart:
             kwargs["files"] = prepared_body.multipart_fields
         else:
-            headers["Content-Type"] = "application/json; charset=utf-8"
+            headers.setdefault("Content-Type", "application/json; charset=utf-8")
             kwargs["json"] = prepared_body.json_body
 
     request = requests.Request(
@@ -109,7 +123,7 @@ def _send_request(
         url=url,
         headers=headers,
         params=security_payload["query"] if security_payload else None,
-        cookies=security_payload["cookies"] if security_payload else None,
+        cookies=cookies,
         **kwargs,
     )
 

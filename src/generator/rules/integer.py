@@ -33,7 +33,7 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "minimum",
                 "perspective": "異常系_最小値未満",
                 "inputValue": _num_str(minimum - step if is_number else minimum - 1),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "小数点以下を考慮" if is_number else "",
             })
@@ -56,7 +56,7 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "maximum",
                 "perspective": "異常系_最大値超過",
                 "inputValue": _num_str(maximum + step if is_number else maximum + 1),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })
@@ -82,7 +82,7 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "exclusiveMinimum",
                 "perspective": "異常系_exclusiveMinimum境界値",
                 "inputValue": _num_str(ex_min_val),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })
@@ -105,7 +105,7 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "exclusiveMaximum",
                 "perspective": "異常系_exclusiveMaximum境界値",
                 "inputValue": _num_str(ex_max_val),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })
@@ -143,7 +143,7 @@ def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
                 "keyword": "multipleOf",
                 "perspective": "異常系_multipleOf非倍数",
                 "inputValue": _num_str(non_multiple),
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "",
             })

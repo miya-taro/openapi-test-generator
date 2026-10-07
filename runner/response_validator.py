@@ -1,5 +1,7 @@
 from __future__ import annotations
 import json
+import math
+import re
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -9,7 +11,14 @@ from sensitive_data import WRITE_ONLY_SCHEMA_MARKER
 MAX_ERRORS = 10
 
 
-def resolve_response_schema(operation_id: str, path: str, method: str, status: str, openapi: dict) -> dict | None:
+def resolve_response_schema(
+    operation_id: str,
+    path: str,
+    method: str,
+    status: str,
+    openapi: dict,
+    content_type: str | None = None,
+) -> dict | None:
     """openapi（src.parser.parse_openapi 済みで $ref/allOf/oneOf/anyOf 解決済みの前提）から
     該当 operation の該当ステータスのレスポンス JSON Schema を取得する。
     定義がない場合（ボディなしのレスポンス等）は None を返す。
@@ -30,19 +39,55 @@ def resolve_response_schema(operation_id: str, path: str, method: str, status: s
     # レスポンス（列挙されていない全ステータスの受け皿）にフォールバックする。
     # これを見ないと、"default" にしかスキーマが無いエンドポイントは
     # Level 4（レスポンスボディのスキーマ適合）検証が常にスキップされてしまう。
-    response = responses.get(str(status)) or responses.get("default")
+    response = responses.get(str(status))
+    if response is None:
+        try:
+            status_code = int(status)
+        except (TypeError, ValueError):
+            status_code = None
+        if status_code is not None:
+            response = next(
+                (value for code, value in responses.items()
+                 if str(code).upper() == f"{status_code // 100}XX"),
+                None,
+            )
+    if response is None:
+        response = responses.get("default")
     if not response:
         return None
 
     content = response.get("content") or {}
-    json_content = content.get("application/json")
-    if not json_content:
+    selected_content = None
+    if content_type:
+        selected_content = next(
+            (value for media_type, value in content.items() if _media_type_matches(content_type, media_type)),
+            None,
+        )
+    else:
+        selected_content = content.get("application/json")
+        if selected_content is None:
+            json_media_types = [
+                value for media_type, value in content.items()
+                if str(media_type).lower().endswith("+json")
+            ]
+            if len(json_media_types) == 1:
+                selected_content = json_media_types[0]
+    if not selected_content:
         return None
 
-    schema = json_content.get("schema")
+    schema = selected_content.get("schema")
     if not isinstance(schema, dict) or not schema:
         return None
     return _strip_write_only(schema)
+
+
+def _media_type_matches(actual: str, expected: str) -> bool:
+    actual_media = actual.split(";", 1)[0].strip().lower()
+    expected_media = expected.split(";", 1)[0].strip().lower()
+    if "*" not in expected_media:
+        return actual_media == expected_media
+    pattern = "^" + re.escape(expected_media).replace(r"\*", ".*") + "$"
+    return re.fullmatch(pattern, actual_media) is not None
 
 
 def _strip_write_only(schema: dict) -> dict:
@@ -125,6 +170,127 @@ def validate_body(actual_body: str, schema: dict | None) -> list[str]:
         return _validate_against_any_variant(parsed, variants)
 
     return _validate_against_schema(parsed, schema)
+
+
+def validate_header_value(actual_value: str, header_definition: dict) -> list[str]:
+    """Validate a serialized response header against its OpenAPI Header Object schema.
+
+    HTTP header fields arrive as strings. The common OpenAPI `simple` serialization is decoded
+    for integer, number, boolean, array, and object schemas before applying JSON Schema rules.
+    Error details identify the failed constraint without echoing the header value.
+    """
+    schema = header_definition.get("schema")
+    if not isinstance(schema, dict) or not schema:
+        return []
+    try:
+        value = _parse_simple_header_value(actual_value, schema, header_definition)
+    except ValueError:
+        return ["ヘッダ値をOpenAPIの型として読み取れません"]
+    try:
+        validator = Draft202012Validator(schema)
+    except SchemaError:
+        return ["OpenAPIヘッダschemaが不正です"]
+    errors = sorted(validator.iter_errors(value), key=lambda error: list(map(str, error.path)))
+    return [
+        f"schema制約 {error.validator!s} に不適合"
+        for error in errors[:MAX_ERRORS]
+    ]
+
+
+def _parse_simple_header_value(raw: str, schema: dict, header_definition: dict) -> Any:
+    type_ = _header_schema_type(schema)
+    if type_ == "integer":
+        if not raw or raw.strip() != raw or not raw.lstrip("+-").isdigit():
+            raise ValueError("invalid integer")
+        return int(raw)
+    if type_ == "number":
+        try:
+            value = float(raw)
+        except ValueError as error:
+            raise ValueError("invalid number") from error
+        if not math.isfinite(value):
+            raise ValueError("invalid number")
+        return value
+    if type_ == "boolean":
+        lowered = raw.lower()
+        if lowered not in {"true", "false"}:
+            raise ValueError("invalid boolean")
+        return lowered == "true"
+    if type_ == "array":
+        item_schema = schema.get("items") or {}
+        return [
+            _parse_simple_header_scalar(part.strip(), item_schema)
+            for part in raw.split(",")
+        ]
+    if type_ == "object":
+        explode = header_definition.get("explode", False)
+        parts = [part.strip() for part in raw.split(",")]
+        if explode:
+            result = {}
+            for part in parts:
+                key, separator, value = part.partition("=")
+                if not separator or not key:
+                    raise ValueError("invalid object")
+                result[key] = value
+            return _coerce_header_object(result, schema)
+        if len(parts) % 2:
+            raise ValueError("invalid object")
+        return _coerce_header_object(dict(zip(parts[::2], parts[1::2], strict=True)), schema)
+    return raw
+
+
+def _parse_simple_header_scalar(raw: str, schema: dict) -> Any:
+    type_ = _header_schema_type(schema)
+    if type_ == "integer":
+        if not raw or raw.strip() != raw or not raw.lstrip("+-").isdigit():
+            raise ValueError("invalid integer")
+        return int(raw)
+    if type_ == "number":
+        try:
+            value = float(raw)
+        except ValueError as error:
+            raise ValueError("invalid number") from error
+        if not math.isfinite(value):
+            raise ValueError("invalid number")
+        return value
+    if type_ == "boolean":
+        lowered = raw.lower()
+        if lowered not in {"true", "false"}:
+            raise ValueError("invalid boolean")
+        return lowered == "true"
+    return raw
+
+
+def _coerce_header_object(value: dict[str, str], schema: dict) -> dict[str, Any]:
+    properties = schema.get("properties") or {}
+    additional = schema.get("additionalProperties")
+    result: dict[str, Any] = {}
+    for name, raw in value.items():
+        property_schema = properties.get(name)
+        if not isinstance(property_schema, dict) and isinstance(additional, dict):
+            property_schema = additional
+        result[name] = _parse_simple_header_scalar(raw, property_schema or {})
+    return result
+
+
+def _header_schema_type(schema: dict) -> str | None:
+    type_ = schema.get("type")
+    if isinstance(type_, list):
+        return "string" if "string" in type_ else next((item for item in type_ if item != "null"), None)
+    if isinstance(type_, str):
+        return type_
+    values = schema.get("enum")
+    if not isinstance(values, list):
+        values = [schema["const"]] if "const" in schema else []
+    if values and all(isinstance(value, bool) for value in values):
+        return "boolean"
+    if values and all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "integer"
+    if values and all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+        return "number"
+    if values and all(isinstance(value, str) for value in values):
+        return "string"
+    return None
 
 
 def _validate_against_any_variant(parsed: Any, variants: list[dict]) -> list[str]:

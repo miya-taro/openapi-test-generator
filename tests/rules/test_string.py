@@ -31,6 +31,74 @@ def test_max_length():
     abnormal = next(c for c in cases if c["keyword"] == "maxLength" and c["perspective"].startswith("異常系"))
     assert normal["inputValue"] == "aaaaa"
     assert abnormal["inputValue"] == "aaaaaa"
+    assert abnormal["expectedStatus"] == "4xx"
+
+
+def test_email_max_length_keeps_the_format_valid():
+    cases = generate_string_cases(
+        {"type": "string", "format": "email", "maxLength": 254},
+        {"paramName": "email", "opts": ALL_OPTS},
+    )
+    normal = next(c for c in cases if c["keyword"] == "maxLength" and c["perspective"].startswith("正常系"))
+    assert len(normal["inputValue"]) == 254
+    assert normal["inputValue"].count("@") == 1
+    local, domain = normal["inputValue"].split("@")
+    assert len(local) <= 64
+    assert all(1 <= len(label) <= 63 for label in domain.split("."))
+    assert len(domain.split(".")[-1]) >= 2
+
+
+def test_email_max_length_abnormal_case_keeps_format_valid():
+    cases = generate_string_cases(
+        {"type": "string", "format": "email", "maxLength": 253},
+        {"paramName": "email", "opts": ALL_OPTS},
+    )
+    abnormal = next(c for c in cases if c["keyword"] == "maxLength" and c["perspective"].startswith("異常系"))
+    assert len(abnormal["inputValue"]) == 254
+    assert abnormal["inputValue"].count("@") == 1
+
+
+def test_email_max_length_abnormal_case_is_omitted_when_format_would_also_fail():
+    cases = generate_string_cases(
+        {"type": "string", "format": "email", "maxLength": 254},
+        {"paramName": "email", "opts": ALL_OPTS},
+    )
+    assert not any(
+        c["keyword"] == "maxLength" and c["perspective"].startswith("異常系")
+        for c in cases
+    )
+
+
+def test_email_format_case_respects_tight_length_constraints():
+    cases = generate_string_cases(
+        {"type": "string", "format": "email", "maxLength": 13},
+        {"paramName": "email", "opts": ALL_OPTS},
+    )
+    normal = next(c for c in cases if c["keyword"] == "format" and c["perspective"].startswith("正常系"))
+    assert len(normal["inputValue"]) <= 13
+    assert "@" in normal["inputValue"]
+
+
+def test_normal_max_length_case_respects_enum():
+    cases = generate_string_cases(
+        {"type": "string", "enum": ["one", "two"], "maxLength": 5},
+        {"paramName": "value", "opts": ALL_OPTS},
+    )
+    assert not any(
+        c["keyword"] == "maxLength" and c["perspective"].startswith("正常系")
+        for c in cases
+    )
+
+
+def test_normal_format_case_respects_enum():
+    cases = generate_string_cases(
+        {"type": "string", "format": "email", "enum": ["not-an-email"]},
+        {"paramName": "email", "opts": ALL_OPTS},
+    )
+    assert not any(
+        c["keyword"] == "format" and c["perspective"].startswith("正常系")
+        for c in cases
+    )
 
 
 def test_min_length_zero_no_abnormal():
@@ -51,6 +119,18 @@ def test_format_date_samples():
     abnormal = next(c for c in cases if c["keyword"] == "format" and c["perspective"].startswith("異常系"))
     assert normal["inputValue"] == "2024-01-01"
     assert abnormal["inputValue"] == "not-a-date"
+    assert abnormal["expectedStatus"] == "4xx"
+
+
+def test_invalid_format_case_respects_length_constraints():
+    cases = generate_string_cases(
+        {"type": "string", "format": "date", "maxLength": 8},
+        {"paramName": "date", "opts": ALL_OPTS},
+    )
+    assert not any(
+        c["keyword"] == "format" and c["perspective"].startswith("異常系")
+        for c in cases
+    )
 
 
 def test_format_unknown_generates_no_cases():
@@ -104,17 +184,16 @@ def test_pattern_complex_form_uses_exrex():
     assert normal["notes"] == ""
 
 
-def test_pattern_exrex_unavailable_falls_back_to_manual_input(monkeypatch):
+def test_pattern_exrex_unavailable_skips_automated_normal_case(monkeypatch):
     monkeypatch.setattr(string_rule, "exrex", None)
     cases = generate_string_cases(
         {"type": "string", "pattern": "^[A-Z]{2}-[0-9]{4}$"}, {"paramName": "code", "opts": ALL_OPTS}
     )
-    normal = next(c for c in cases if c["keyword"] == "pattern" and c["perspective"].startswith("正常系"))
-    assert normal["inputValue"] == "[手動入力]"
-    assert "正規表現" in normal["notes"]
+    assert not any(c["keyword"] == "pattern" and c["perspective"].startswith("正常系") for c in cases)
+    assert any(c["keyword"] == "pattern" and c["perspective"].startswith("異常系") for c in cases)
 
 
-def test_pattern_exrex_raises_falls_back_to_manual_input(monkeypatch):
+def test_pattern_exrex_raises_skips_automated_normal_case(monkeypatch):
     def _boom(_pattern):
         raise ValueError("boom")
 
@@ -122,8 +201,35 @@ def test_pattern_exrex_raises_falls_back_to_manual_input(monkeypatch):
     cases = generate_string_cases(
         {"type": "string", "pattern": "^[A-Z]{2}-[0-9]{4}$"}, {"paramName": "code", "opts": ALL_OPTS}
     )
+    assert not any(c["keyword"] == "pattern" and c["perspective"].startswith("正常系") for c in cases)
+
+
+def test_pattern_abnormal_case_is_guaranteed_to_miss_pattern():
+    import re
+
+    cases = generate_string_cases(
+        {"type": "string", "pattern": "^[A-Za-z ]+$"}, {"paramName": "name", "opts": ALL_OPTS}
+    )
+    abnormal = next(c for c in cases if c["keyword"] == "pattern" and c["perspective"].startswith("異常系"))
+    assert re.search(r"^[A-Za-z ]+$", abnormal["inputValue"]) is None
+
+
+def test_pattern_abnormal_case_is_omitted_when_no_mismatch_exists():
+    cases = generate_string_cases(
+        {"type": "string", "pattern": ".*"}, {"paramName": "text", "opts": ALL_OPTS}
+    )
+    assert not any(c["keyword"] == "pattern" and c["perspective"].startswith("異常系") for c in cases)
+
+
+def test_pattern_case_respects_other_string_constraints():
+    cases = generate_string_cases(
+        {"type": "string", "pattern": "^x+$", "minLength": 3, "maxLength": 5},
+        {"paramName": "text", "opts": ALL_OPTS},
+    )
     normal = next(c for c in cases if c["keyword"] == "pattern" and c["perspective"].startswith("正常系"))
-    assert normal["inputValue"] == "[手動入力]"
+    abnormal = next(c for c in cases if c["keyword"] == "pattern" and c["perspective"].startswith("異常系"))
+    assert 3 <= len(normal["inputValue"]) <= 5
+    assert 3 <= len(abnormal["inputValue"]) <= 5
 
 
 def test_pattern_normal_only_no_abnormal_case():

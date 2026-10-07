@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import validators  # noqa: E402
+from openapi_editor import load_operation_body_contract, save_operation_body_contract  # noqa: E402
 from workflow.project_store import load_project  # noqa: E402
 from workflow.case_master import (  # noqa: E402
     load_case_master,
@@ -73,6 +74,18 @@ def _dispatch(command: str, args: dict) -> object:
         return _load_failed_case_ids(args["path"])
     if command == "list_operations":
         return validators.list_operations(args["path"])
+    if command == "load_operation_body_contract":
+        return load_operation_body_contract(args["path"], args["operation_id"])
+    if command == "save_operation_body_contract":
+        return save_operation_body_contract(
+            args["source_path"],
+            args["destination_path"],
+            args["operation_id"],
+            args["request_body_required"],
+            args.get("request_body_schema"),
+            args["response_status"],
+            args.get("response_body_schema"),
+        )
     if command == "login_operation_hints":
         return validators.login_operation_hints(args["path"], args["operation_id"])
     if command == "health_check":

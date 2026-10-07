@@ -41,9 +41,9 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
             "keyword": "required",
             "perspective": "異常系_必須欠落",
             "inputValue": "（フィールドを省略）",
-            "expectedStatus": "404" if is_path else "400",
+            "expectedStatus": "4xx",
             "expectedResult": (
-                "ルーティング失敗によりリソースが見つからないこと"
+                "ルーティングまたは入力エラーとして4xxが返ること"
                 if is_path else "バリデーションエラーが返ること"
             ),
             "notes": "ルーティング失敗により 404 の可能性あり" if is_path else "",
@@ -61,7 +61,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "keyword": "required",
                 "perspective": "異常系_空値",
                 "inputValue": "（空文字）",
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "キーは存在するが値が空文字",
             })
@@ -76,7 +76,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "keyword": "type",
                 "perspective": "異常系_型不正",
                 "inputValue": invalid_value,
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "型エラーが返ること",
                 "notes": "ルーティング失敗により 404 になる場合あり（実装依存）" if is_path else "",
             })
@@ -104,7 +104,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "keyword": "nullable",
                 "perspective": "異常系_null不可",
                 "inputValue": "null",
-                "expectedStatus": "400",
+                "expectedStatus": "4xx",
                 "expectedResult": "バリデーションエラーが返ること",
                 "notes": "nullable が明示されていないため null は不正な値として扱う",
             })

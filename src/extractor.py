@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from . import logger as log
+from .schema_example import NoSchemaExample, find_schema_example
 
 STANDARD_HEADERS = {
     "authorization",
@@ -122,6 +123,7 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                 path_item.get("parameters") or [],
                 operation.get("parameters") or [],
             )
+            baseline_supported = _required_parameters_have_examples(parameters)
 
             for param in parameters:
                 name = param.get("name")
@@ -170,15 +172,60 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                     )
                     continue
 
-                body_schema = picked_content.get("schema")
-                if not body_schema:
-                    continue
+                if "415" in (operation.get("responses") or {}):
+                    supported_types = {str(value).lower() for value in content}
+                    invalid_type = "application/x-api-tester-invalid"
+                    while invalid_type in supported_types:
+                        invalid_type += "-x"
+                    param_specs.append({
+                        "operationId": operation_id,
+                        "path": path,
+                        "method": method.upper(),
+                        "in": "header",
+                        "name": "Content-Type",
+                        "required": True,
+                        "schema": {},
+                        "successStatus": "415",
+                        "responsesInfo": responses_info,
+                        "unsupportedContentType": invalid_type,
+                    })
 
-                fields = _flatten_body_schema(
-                    body_schema, "", operation_id, path, method.upper(), success_status, responses_info,
-                    content_type,
+                body_schema = picked_content.get("schema")
+                if body_schema:
+                    fields = _flatten_body_schema(
+                        body_schema, "", operation_id, path, method.upper(), success_status, responses_info,
+                        content_type,
+                    )
+                    body_specs.extend(fields)
+                    if request_body.get("required"):
+                        baseline_supported = baseline_supported and _request_body_has_example(
+                            body_schema, content_type,
+                        )
+                elif request_body.get("required"):
+                    baseline_supported = False
+
+            # Every operation gets one whole-request happy-path case. The runner uses this marker
+            # to synthesize all required path/query/header/cookie parameters and the required body
+            # together, so a valid response contract can be exercised even when no individual
+            # property has a boundary keyword such as minLength or enum.
+            if baseline_supported:
+                param_specs.append({
+                    "operationBaseline": True,
+                    "operationId": operation_id,
+                    "path": path,
+                    "method": method.upper(),
+                    "in": "operation",
+                    "name": "__valid_request__",
+                    "required": False,
+                    "schema": {},
+                    "successStatus": success_status,
+                    "responsesInfo": responses_info,
+                })
+            else:
+                log.warn(
+                    {"operationId": operation_id},
+                    "有効な最小リクエストを合成できないため、正常リクエスト共通ケースを省略",
                 )
-                body_specs.extend(fields)
 
     return param_specs, body_specs
 
@@ -196,11 +243,52 @@ def _merge_parameters(path_params: list[dict], operation_params: list[dict]) -> 
     return list(merged.values())
 
 
+def _required_parameters_have_examples(parameters: list[dict]) -> bool:
+    for parameter in parameters:
+        if parameter.get("in") != "path" and not parameter.get("required"):
+            continue
+        if parameter.get("in") not in {"path", "query", "header", "cookie"} or not parameter.get("name"):
+            return False
+        schema = parameter.get("schema")
+        if not isinstance(schema, dict):
+            return False
+        try:
+            find_schema_example(schema)
+        except NoSchemaExample:
+            return False
+    return True
+
+
+def _request_body_has_example(schema: dict, content_type: str) -> bool:
+    if content_type != "multipart/form-data":
+        try:
+            find_schema_example(schema)
+            return True
+        except NoSchemaExample:
+            return False
+
+    properties = schema.get("properties") or {}
+    for name in schema.get("required") or []:
+        field_schema = properties.get(name)
+        if not isinstance(field_schema, dict):
+            return False
+        if field_schema.get("format") == "binary":
+            continue
+        try:
+            find_schema_example(field_schema)
+        except NoSchemaExample:
+            return False
+    return True
+
+
 def _resolve_success_status(responses: dict | None) -> str:
     if not responses:
         return "200"
-    success_codes = sorted(code for code in responses if re.fullmatch(r"2\d\d", code))
-    return success_codes[0] if success_codes else "200"
+    success_codes = [
+        code for code in responses
+        if re.fullmatch(r"2\d\d", str(code)) or str(code).upper() == "2XX"
+    ]
+    return "2xx" if success_codes else "200"
 
 
 def _build_responses_info(responses: dict | None) -> dict:

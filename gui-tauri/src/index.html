@@ -52,6 +52,39 @@
               <div id="test-preview" class="form-section">
                 <h3 class="form-section-title">2. 仕様と試験を確認</h3>
                 <p class="form-section-desc">左の「対象API」で実行対象を選びます。OpenAPI定義から、選択した操作の正常系・異常系ケースを生成します。</p>
+                <div id="body-contract-editor" class="contract-editor">
+                  <h4 class="form-section-title">リクエスト・レスポンスbody schemaを補正<span class="optional-tag">任意</span></h4>
+                  <p class="field-caption">
+                    PHPから作ったOpenAPIで不足しているJSON Schemaを操作ごとに補えます。入力するのはJSONの実例ではなく、許されるbodyのschemaです。
+                    保存すると元のopenapi.jsonを残したまま、補正した別ファイルを作って試験対象に切り替えます。
+                  </p>
+                  <div class="form-field">
+                    <label for="contract-operation">対象API操作</label>
+                    <div class="row">
+                      <select id="contract-operation"><option value="">OpenAPIを選択してください</option></select>
+                      <button class="secondary" id="contract-load-button" type="button">読み直す</button>
+                    </div>
+                  </div>
+                  <div class="contract-schema-grid">
+                    <div class="form-field">
+                      <label for="contract-request-schema">リクエストbody schema（application/json）</label>
+                      <label class="checkbox"><input type="checkbox" id="contract-request-required" /> リクエストbodyを必須にする</label>
+                      <textarea id="contract-request-schema" rows="13" spellcheck="false" placeholder='{"type":"object","required":["name"],"properties":{"name":{"type":"string","minLength":1}}}'></textarea>
+                      <p class="field-caption">空欄ならJSON Schemaを外します。type、required、enum、minLength、minimumなどを指定できます。</p>
+                    </div>
+                    <div class="form-field">
+                      <label for="contract-response-status">成功response status</label>
+                      <input id="contract-response-status" type="text" value="200" placeholder="200 / 201 / 2XX" />
+                      <label for="contract-response-schema" class="contract-response-schema-label">レスポンスbody schema（application/json）</label>
+                      <textarea id="contract-response-schema" rows="13" spellcheck="false" placeholder='{"type":"object","required":["id"],"properties":{"id":{"type":"integer"}}}'></textarea>
+                      <p class="field-caption">レスポンスの許容範囲を記述します。複数の成功応答はstatusごとに設定できます。空欄なら既存のレスポンスbody schemaを変更しません。</p>
+                    </div>
+                  </div>
+                  <div class="btn-row">
+                    <button class="secondary" id="contract-save-button" type="button">補正したOpenAPIを別ファイルに保存</button>
+                  </div>
+                  <div id="contract-editor-status" class="field-caption status-message" aria-live="polite"></div>
+                </div>
                 <div id="case-review-panel" class="case-review-panel" hidden>
                   <div class="case-review-heading">
                     <strong id="case-review-summary"></strong>

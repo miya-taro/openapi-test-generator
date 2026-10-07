@@ -43,10 +43,17 @@ class RunResult:
 
 @dataclass
 class ResponseSchema:
-    expected_status: int
+    expected_status: int | None
     expected_content_type: str | None
     expected_response_time_ms: float
     expected_body_schema: dict | None = None
+    expected_status_class: int | None = None
+    expected_statuses: frozenset[int] = frozenset()
+    expected_body_schemas_by_status: dict[int, dict | None] = field(default_factory=dict)
+    expected_body_schemas_by_status_and_content_type: dict[int, dict[str, dict]] = field(default_factory=dict)
+    expected_content_types_by_status: dict[int, frozenset[str]] = field(default_factory=dict)
+    expected_header_schemas_by_status: dict[int, dict[str, dict]] = field(default_factory=dict)
+    expected_header_names_by_status: dict[int, frozenset[str]] = field(default_factory=dict)
     # ヘッダ名 -> 期待値（存在確認のみの場合は None）。Content-Type は
     # expected_content_type 側で扱うためここには含めない。
     expected_headers: dict = field(default_factory=dict)

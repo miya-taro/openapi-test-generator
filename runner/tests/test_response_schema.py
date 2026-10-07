@@ -31,6 +31,93 @@ def test_status_parsed():
     assert schema.expected_status == 201
 
 
+def test_2xx_expectation_uses_all_documented_success_responses():
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {
+            "description": "OK",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["ok"]}}},
+            "headers": {"X-Count": {"required": True, "schema": {"type": "integer", "minimum": 1}}},
+        },
+        "201": {
+            "description": "Created",
+            "content": {"application/json": {"schema": {"type": "array", "items": {"type": "string"}}}},
+            "headers": {"X-Tag": {"required": True, "schema": {"type": "string", "pattern": "^a"}}},
+        },
+        "400": {"description": "Bad request"},
+    }}}}}
+
+    schema = from_run_case(make_case(expected_status="2xx"), api)
+
+    assert schema.expected_status_class == 2
+    assert schema.expected_statuses == frozenset({200, 201})
+    assert set(schema.expected_body_schemas_by_status) == {200, 201}
+    assert schema.expected_content_types_by_status == {
+        200: frozenset({"application/json"}),
+        201: frozenset({"application/json"}),
+    }
+    assert schema.expected_header_schemas_by_status[200] == {
+        "X-Count": {"required": True, "schema": {"type": "integer", "minimum": 1}},
+    }
+    assert schema.expected_header_schemas_by_status[201] == {
+        "X-Tag": {"required": True, "schema": {"type": "string", "pattern": "^a"}},
+    }
+    assert schema.expected_header_names_by_status == {
+        200: frozenset({"X-Count"}),
+        201: frozenset({"X-Tag"}),
+    }
+    assert schema.expected_body_schemas_by_status_and_content_type[201] == {
+        "application/json": {"type": "array", "items": {"type": "string"}},
+    }
+
+
+def test_response_headers_can_be_validated_from_documented_header_schema():
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {"description": "OK", "headers": {
+            "X-Count": {"required": True, "schema": {"type": "integer", "minimum": 1}},
+        }},
+    }}}}}
+
+    schema = from_run_case(make_case(expected_status="200"), api)
+
+    assert schema.expected_header_schemas_by_status == {
+        200: {"X-Count": {"required": True, "schema": {"type": "integer", "minimum": 1}}},
+    }
+    assert schema.expected_header_names_by_status == {200: frozenset({"X-Count"})}
+
+
+def test_optional_response_header_is_schema_checked_if_present_but_not_required():
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {"description": "OK", "headers": {
+            "X-Trace": {"schema": {"type": "string", "pattern": "^req-"}},
+        }},
+    }}}}}
+
+    schema = from_run_case(make_case(expected_status="200"), api)
+
+    assert schema.expected_header_schemas_by_status == {
+        200: {"X-Trace": {"schema": {"type": "string", "pattern": "^req-"}}},
+    }
+    assert schema.expected_header_names_by_status == {}
+
+
+def test_2xx_response_range_applies_its_contract_to_each_actual_success_status():
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "2XX": {
+            "description": "Success",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["ok"]}}},
+            "headers": {"X-Trace": {"required": True, "schema": {"type": "string", "pattern": "^req-"}}},
+        },
+    }}}}}
+
+    schema = from_run_case(make_case(expected_status="2xx"), api)
+
+    assert schema.expected_statuses == frozenset()
+    assert schema.expected_status_class == 2
+    assert set(schema.expected_body_schemas_by_status) == set(range(200, 300))
+    assert schema.expected_header_names_by_status[299] == frozenset({"X-Trace"})
+    assert schema.expected_body_schemas_by_status[201]["required"] == ["ok"]
+
+
 def test_content_type_from_header():
     case = make_case(expected_response_header="Content-Type: application/json")
     schema = from_run_case(case)
@@ -129,3 +216,16 @@ def test_body_schema_resolved_when_openapi_provided():
     schema = from_run_case(make_case(expected_status="200"), OPENAPI)
     assert schema.expected_body_schema is not None
     assert schema.expected_body_schema["required"] == ["id"]
+
+
+def test_4xx_expectation_collects_documented_error_body_schemas():
+    api = {"paths": {"/": {"get": {"operationId": "op", "responses": {
+        "200": {"description": "OK"},
+        "400": {"description": "Bad request", "content": {"application/json": {"schema": {"type": "object", "required": ["error"]}}}},
+        "422": {"description": "Invalid input", "content": {"application/json": {"schema": {"type": "object", "required": ["message"]}}}},
+    }}}}}
+    schema = from_run_case(make_case(expected_status="4xx"), api)
+    assert schema.expected_status is None
+    assert schema.expected_status_class == 4
+    assert schema.expected_statuses == frozenset({400, 422})
+    assert set(schema.expected_body_schemas_by_status) == {400, 422}

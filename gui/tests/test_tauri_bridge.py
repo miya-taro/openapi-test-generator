@@ -65,6 +65,39 @@ def test_dispatch_login_operation_hints(tmp_path):
     assert result == {"body": {"email": "email"}, "token_path": None}
 
 
+def test_dispatch_loads_and_saves_operation_body_contract(tmp_path):
+    source = tmp_path / "openapi.json"
+    destination = tmp_path / "openapi.ui-edited.json"
+    source.write_text(json.dumps({
+        "openapi": "3.0.3",
+        "paths": {"/users": {"post": {
+            "operationId": "createUser",
+            "requestBody": {"required": True, "content": {"application/json": {
+                "schema": {"type": "object", "required": ["email"],
+                           "properties": {"email": {"type": "string"}}},
+            }}},
+            "responses": {"201": {"description": "Created"}},
+        }}},
+    }), encoding="utf-8")
+
+    loaded = tauri_bridge._dispatch("load_operation_body_contract", {
+        "path": str(source), "operation_id": "createUser",
+    })
+    saved = tauri_bridge._dispatch("save_operation_body_contract", {
+        "source_path": str(source),
+        "destination_path": str(destination),
+        "operation_id": "createUser",
+        "request_body_required": True,
+        "request_body_schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+        "response_status": "201",
+        "response_body_schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+    })
+
+    assert loaded["requestBodyRequired"] is True
+    assert loaded["responseStatus"] == "201"
+    assert saved["path"] == str(destination.resolve())
+
+
 def test_dispatch_health_check_unreachable_host():
     result = tauri_bridge._dispatch("health_check", {"base_url": "http://127.0.0.1:1", "health_path": "/health"})
     assert result is False
