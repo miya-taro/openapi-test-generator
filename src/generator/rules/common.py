@@ -22,7 +22,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
     opts = ctx["opts"]
 
     # required: false — 省略可能パラメータ省略時の正常系
-    if not required and opts["includeNormal"]:
+    if not required and not ctx.get("skipPresence") and opts["includeNormal"]:
         cases.append({
             "summary": f"{ctx['paramName']} 省略（正常）",
             "keyword": "optional",
@@ -34,7 +34,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
         })
 
     # required: true — 必須欠落（異常）
-    if required and opts["includeAbnormal"]:
+    if required and not ctx.get("skipPresence") and opts["includeAbnormal"]:
         is_path = ctx.get("paramIn") == "path"
         cases.append({
             "summary": f"{ctx['paramName']} 必須フィールド欠落（異常）",
@@ -68,7 +68,11 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
 
     # type — 型不正（異常）
     if schema.get("type") and opts["includeAbnormal"]:
-        invalid_value = _get_invalid_value_for_type(schema["type"])
+        schema_type = schema["type"]
+        if isinstance(schema_type, list):
+            non_null_types = [value for value in schema_type if value != "null"]
+            schema_type = non_null_types[0] if len(non_null_types) == 1 else None
+        invalid_value = _get_invalid_value_for_type(schema_type) if schema_type else None
         if invalid_value is not None:
             is_path = ctx.get("paramIn") == "path"
             cases.append({
@@ -85,7 +89,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
     # OAS 3.0: `nullable: true`、OAS 3.1: `type` 配列に "null" を含める、の両方に対応。
     if schema.get("type"):
         type_ = schema["type"]
-        is_nullable = schema.get("nullable") is True or (
+        is_nullable = schema.get("nullable") is True or schema.get("type") == "null" or (
             isinstance(type_, list) and "null" in type_
         )
         if is_nullable and opts["includeNormal"]:

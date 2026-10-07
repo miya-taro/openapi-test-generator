@@ -179,10 +179,17 @@ def generate_test_cases(
     for spec in body_specs:
         is_root_body = spec["fieldPath"] == "__body__"
         param_in = "body"
-        param_name = "requestBody" if is_root_body else spec["fieldPath"]
+        field_path = spec["fieldPath"]
+        if is_root_body:
+            param_name = "requestBody"
+        elif field_path.startswith("[]"):
+            param_name = f"requestBody{field_path}"
+        else:
+            param_name = field_path
 
         partials = _generate_from_schema(
-            spec["schema"], spec["required"], param_in, param_name, opts, spec["successStatus"], is_root_body
+            spec["schema"], spec["required"], param_in, param_name, opts, spec["successStatus"], is_root_body,
+            skip_presence=bool(spec.get("schemaOnly")),
         )
         for partial in partials:
             expected_status = partial["expectedStatus"]
@@ -229,11 +236,13 @@ def _generate_from_schema(
     opts: dict,
     success_status: str,
     is_root_body: bool = False,
+    skip_presence: bool = False,
 ) -> list[dict]:
     cases: list[dict] = []
     ctx = {
         "paramIn": param_in, "paramName": param_name, "opts": opts,
         "successStatus": success_status, "isRootBody": is_root_body,
+        "skipPresence": skip_presence,
     }
 
     # 共通ルール（required, type）

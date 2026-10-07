@@ -2,6 +2,8 @@
 from __future__ import annotations
 import json
 
+from ...schema_example import NoSchemaExample, find_schema_example
+
 
 def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
     cases: list[dict] = []
@@ -83,6 +85,11 @@ def _get_sample_item(item_type: str, item_schema: dict) -> str:
     要素になり、境界値以外の理由（型不正）で失敗する誤ったテストケースになってしまう
     ため、items スキーマの required プロパティを埋めた最小限のオブジェクトを生成する。
     """
+    try:
+        return json.dumps(find_schema_example(item_schema), ensure_ascii=False, separators=(",", ":"))
+    except NoSchemaExample:
+        pass
+
     if item_type in ("integer", "number"):
         return "1"
     if item_type == "boolean":

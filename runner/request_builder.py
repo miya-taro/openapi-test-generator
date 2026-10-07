@@ -15,7 +15,6 @@ NULL_VALUE_MARKER = "null"
 # ルートbody（paramName == "requestBody"）向けのプレースホルダ値。
 # openapi-test-gen の src/generator/rules/object.py が出力する値と対応させている。
 _ROOT_BODY_EMPTY_MARKER = "{}"
-_ROOT_BODY_EXTRA_PROP_MARKER = '{ ...validBody, "__extra__": "value" }'
 
 # oneOf/anyOfバリアント網羅生成用マーカー。
 # src/generator/rules/common.py の ONE_OF_VARIANT_MARKER_PREFIX と対応させている。
@@ -317,13 +316,13 @@ def _parameter_scalar(value: object) -> str:
 class PreparedBody:
     """requests に渡す body 情報。
 
-    json_body が None でない場合（空dict {} も含む）は json= として送る。
+    json_body は JSON として送る値（None は JSON null、空dict {} も含む）。
     is_multipart が True の場合は multipart_fields を files= として送る
     （テキストフィールドも (None, value) 形式で files= に含めることで、ファイル
     フィールドが1つも無いスキーマでも確実に multipart/form-data エンコードになる。
     requests は files= に何も渡さないと application/x-www-form-urlencoded に
     フォールバックしてしまうため）。
-    どちらでもない場合（build_request_body が None を返す場合）は body なし。
+    body 自体を省略する場合は build_request_body が None を返す。
     """
     json_body: object | None = None
     is_multipart: bool = False
@@ -346,8 +345,7 @@ def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | No
                 for key, value in fields.items()
             }
             return PreparedBody(is_multipart=True, multipart_fields=multipart_fields)
-        body = _expand_value(schema)
-        return PreparedBody(json_body=body if isinstance(body, dict) else {})
+        return PreparedBody(json_body=_expand_value(schema))
 
     if case.param_in == "operation":
         operation = _resolve_operation(openapi, case) if openapi else None
@@ -369,6 +367,9 @@ def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | No
         return PreparedBody(json_body=_expand_value(schema))
 
     if case.param_in != "body":
+        return None
+    if case.param_name == "requestBody" and case.input_value in OMIT_MARKERS:
+        # Omission of the entire requestBody is different from omission of a property.
         return None
 
     content_type = (
@@ -459,47 +460,82 @@ def _expand_multipart_baseline(schema: dict) -> dict:
     return baseline
 
 
-def _build_body(case: RunCase, openapi: dict | None) -> dict:
+def _build_body(case: RunCase, openapi: dict | None) -> object:
     schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi) if openapi else None
 
     # ベースライン: required フィールドを（ネスト・配列要素も含めて）全階層分、有効な値で埋めた body
     baseline = _expand_value(schema) if schema is not None else {}
-    body: dict = baseline if isinstance(baseline, dict) else {}
+    body = baseline if isinstance(baseline, (dict, list)) else {}
 
     # ルートbody全体を対象とするケース（空body / additionalProperties / oneOfバリアント）は
     # body 全体を差し替える
     if case.param_name == "requestBody":
+        if case.input_value == NULL_VALUE_MARKER:
+            return None
+        if case.input_value == EMPTY_VALUE_MARKER:
+            return ""
         if case.input_value == _ROOT_BODY_EMPTY_MARKER:
             return {}
-        if case.input_value == _ROOT_BODY_EXTRA_PROP_MARKER:
-            return {**body, "__extra__": "value"}
+        extra_property_body = _build_extra_property_body(case.input_value, schema or {})
+        if extra_property_body is not _MISSING:
+            return extra_property_body
         if case.input_value.startswith(_ONE_OF_VARIANT_MARKER_PREFIX):
             variant_value = _resolve_one_of_variant_value(schema, case.input_value)
-            if isinstance(variant_value, dict):
+            if variant_value is not _MISSING:
                 return variant_value
-        return body
+        return _coerce_value(case.input_value, schema or {})
 
+    field_path = case.param_name
+    if field_path.startswith("requestBody[]"):
+        field_path = field_path[len("requestBody"):]
     if case.input_value in OMIT_MARKERS:
-        _delete_nested(body, case.param_name, schema)
+        _delete_nested(body, field_path, schema)
     elif case.input_value == NULL_VALUE_MARKER:
-        _set_nested(body, case.param_name, None, schema)
+        _set_nested(body, field_path, None, schema)
+    elif case.input_value.startswith("{ ...validBody,"):
+        field_schema = _resolve_nested_schema(schema, field_path) if schema is not None else {}
+        extra_property_body = _build_extra_property_body(case.input_value, field_schema)
+        if extra_property_body is not _MISSING:
+            _set_nested(body, field_path, extra_property_body, schema)
     else:
         raw = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
-        field_schema = _resolve_nested_schema(schema, case.param_name) if schema is not None else {}
+        field_schema = _resolve_nested_schema(schema, field_path) if schema is not None else {}
         if raw.startswith(_ONE_OF_VARIANT_MARKER_PREFIX):
             # バリアントごとに型が異なりうるため、field_schema（代表バリアントの型）を
             # 基準にした _coerce_value の型判定には委ねず、対象バリアントのスキーマから
             # 直接ベースライン値を組み立てる。
             variant_value = _resolve_one_of_variant_value(field_schema, raw)
             if variant_value is not _MISSING:
-                _set_nested(body, case.param_name, variant_value, schema)
+                _set_nested(body, field_path, variant_value, schema)
                 return body
-        _set_nested(body, case.param_name, _coerce_value(raw, field_schema), schema)
+        _set_nested(body, field_path, _coerce_value(raw, field_schema), schema)
 
     return body
 
 
 _MISSING = object()
+
+
+def _build_extra_property_body(input_value: str, schema: dict) -> object:
+    """Expand the generator's validBody expression into a concrete object value."""
+    match = re.fullmatch(
+        r'\{\s*\.\.\.validBody,\s*("(?:\\.|[^"\\])*")\s*:\s*(.*?)\s*\}',
+        input_value,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return _MISSING
+    try:
+        key = json.loads(match.group(1))
+        extra_value = json.loads(match.group(2))
+    except json.JSONDecodeError:
+        return _MISSING
+
+    value = _expand_value(schema)
+    if not isinstance(value, dict):
+        return _MISSING
+    value[key] = extra_value
+    return value
 
 
 def _resolve_one_of_variant_value(schema: dict | None, input_value: str) -> object:
@@ -524,11 +560,11 @@ def _resolve_one_of_variant_value(schema: dict | None, input_value: str) -> obje
     return _expand_value(variants[index])
 
 
-def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) -> tuple[dict, str]:
+def _navigate_to_parent(body: object, dotted_path: str, root_schema: dict | None) -> tuple[object, str]:
     """ドット区切りパスの最終セグメント手前まで辿り、(親コンテナ, 最終キー) を返す。
 
-    セグメントが "lines[]" のように "[]" で終わる場合は配列として扱い、
-    先頭要素（存在しなければ新規作成した空dict）に読み替える。
+    セグメントが "lines[]" または独立した "[]" の場合は配列として扱い、
+    先頭要素（存在しなければスキーマに合う値）に読み替える。
     途中のコンテナが存在しない場合（親フィールドが required でない等）は、
     スキーマから有効なベースライン値を生成して埋める
     （そうしないと、そのコンテナの他の required フィールドが欠けたリクエストになってしまう）。
@@ -537,18 +573,34 @@ def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) 
     container = body
     schema_node: dict | None = root_schema
     for part in parts[:-1]:
+        if part == "[]":
+            item_schema = schema_node.get("items") if isinstance(schema_node, dict) else None
+            if not isinstance(container, list):
+                raise ValueError(f"配列要素のbodyパスが不正です: {dotted_path}")
+            if not container:
+                seed = _expand_value(item_schema) if isinstance(item_schema, dict) else {}
+                container.append(seed)
+            container = container[0]
+            schema_node = item_schema if isinstance(item_schema, dict) else None
+            continue
+
         is_array = part.endswith("[]")
         key = part[:-2] if is_array else part
 
         props = schema_node.get("properties", {}) if isinstance(schema_node, dict) else {}
         field_schema = props.get(key) if isinstance(props, dict) else None
+        if not isinstance(container, dict):
+            raise ValueError(f"object要素のbodyパスが不正です: {dotted_path}")
 
         if is_array:
             item_schema = field_schema.get("items") if isinstance(field_schema, dict) else None
             lst = container.get(key)
             if not isinstance(lst, list) or not lst or not isinstance(lst[0], dict):
-                seed = _expand_value(item_schema) if isinstance(item_schema, dict) else {}
-                lst = [seed if isinstance(seed, dict) else {}]
+                candidate = _expand_value(field_schema) if isinstance(field_schema, dict) else []
+                if not isinstance(candidate, list) or not candidate:
+                    seed = _expand_value(item_schema) if isinstance(item_schema, dict) else {}
+                    candidate = [seed if isinstance(seed, dict) else {}]
+                lst = candidate
                 container[key] = lst
             container = lst[0]
             schema_node = item_schema
@@ -565,14 +617,76 @@ def _navigate_to_parent(body: dict, dotted_path: str, root_schema: dict | None) 
     return container, last_key
 
 
-def _set_nested(body: dict, dotted_path: str, value: object, root_schema: dict | None) -> None:
+def _set_nested(body: object, dotted_path: str, value: object, root_schema: dict | None) -> None:
+    if dotted_path == "[]":
+        if isinstance(body, list):
+            if body:
+                body[0] = value
+            else:
+                body.append(value)
+            return
+
+    if dotted_path.endswith("[]"):
+        array_path = dotted_path[:-2].rstrip(".")
+        values = body if not array_path else _resolve_body_path(body, array_path, root_schema)
+        if isinstance(values, list):
+            if values:
+                values[0] = value
+            else:
+                values.append(value)
+            return
+
     container, key = _navigate_to_parent(body, dotted_path, root_schema)
+    if not isinstance(container, dict):
+        raise ValueError(f"object要素のbodyパスが不正です: {dotted_path}")
     container[key] = value
 
 
-def _delete_nested(body: dict, dotted_path: str, root_schema: dict | None) -> None:
+def _resolve_body_path(body: object, dotted_path: str, root_schema: dict | None) -> object | None:
+    """Resolve a schema-aware body path, including array items, and seed missing containers."""
+    container = body
+    schema_node = root_schema
+    for part in dotted_path.split("."):
+        if part == "[]":
+            item_schema = schema_node.get("items") if isinstance(schema_node, dict) else None
+            if not isinstance(container, list):
+                return None
+            if not container:
+                container.append(_expand_value(item_schema) if isinstance(item_schema, dict) else {})
+            container = container[0]
+            schema_node = item_schema if isinstance(item_schema, dict) else None
+            continue
+
+        if not isinstance(container, dict):
+            return None
+        is_array = part.endswith("[]")
+        key = part[:-2] if is_array else part
+        properties = schema_node.get("properties", {}) if isinstance(schema_node, dict) else {}
+        field_schema = properties.get(key) if isinstance(properties, dict) else None
+
+        if is_array:
+            item_schema = field_schema.get("items") if isinstance(field_schema, dict) else None
+            values = container.get(key)
+            if not isinstance(values, list) or not values:
+                candidate = _expand_value(field_schema) if isinstance(field_schema, dict) else []
+                if not isinstance(candidate, list) or not candidate:
+                    candidate = [_expand_value(item_schema) if isinstance(item_schema, dict) else {}]
+                values = candidate
+                container[key] = values
+            container = values[0]
+            schema_node = item_schema if isinstance(item_schema, dict) else None
+        else:
+            if key not in container:
+                container[key] = _expand_value(field_schema) if isinstance(field_schema, dict) else {}
+            container = container[key]
+            schema_node = field_schema if isinstance(field_schema, dict) else None
+    return container
+
+
+def _delete_nested(body: object, dotted_path: str, root_schema: dict | None) -> None:
     container, key = _navigate_to_parent(body, dotted_path, root_schema)
-    container.pop(key, None)
+    if isinstance(container, dict):
+        container.pop(key, None)
 
 
 def _resolve_nested_schema(root_schema: dict | None, dotted_path: str) -> dict:
@@ -581,6 +695,11 @@ def _resolve_nested_schema(root_schema: dict | None, dotted_path: str) -> dict:
         return {}
     node: dict = root_schema
     for part in dotted_path.split("."):
+        if part == "[]":
+            node = node.get("items", {})
+            if not isinstance(node, dict):
+                return {}
+            continue
         is_array = part.endswith("[]")
         key = part[:-2] if is_array else part
         props = node.get("properties", {}) if isinstance(node, dict) else {}
@@ -684,13 +803,28 @@ def _fallback_expand_value(schema: dict) -> object:
 
 def _coerce_value(raw_value: str, field_schema: dict) -> object:
     t = field_schema.get("type", "string")
+    if isinstance(t, list):
+        non_null_types = [value for value in t if value != "null"]
+        t = non_null_types[0] if len(non_null_types) == 1 else None
     if t in ("integer", "number"):
         try:
             return int(raw_value) if t == "integer" else float(raw_value)
         except ValueError:
             pass
     if t == "boolean":
-        return raw_value.lower() in ("true", "1", "yes")
+        try:
+            value = json.loads(raw_value)
+        except json.JSONDecodeError:
+            value = raw_value
+        if isinstance(value, bool):
+            return value
+        # JSON-quoted strings such as "yes" are deliberately invalid boolean
+        # inputs; only unquoted runner literals are coerced to boolean values.
+        if value == raw_value and isinstance(value, str) and value.lower() in ("true", "1", "yes"):
+            return True
+        if value == raw_value and isinstance(value, str) and value.lower() in ("false", "0", "no"):
+            return False
+        return value
     if t in ("array", "object"):
         # generator（array.py/object.py/common.py）はこのフィールド自体が array/object 型の
         # 場合、inputValue に JSON リテラル文字列（例: '[{"a": 1}]' や '"not-an-array"'）を

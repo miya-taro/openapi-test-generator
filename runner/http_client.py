@@ -116,7 +116,10 @@ def _send_request(
             kwargs["files"] = prepared_body.multipart_fields
         else:
             headers.setdefault("Content-Type", "application/json; charset=utf-8")
-            kwargs["json"] = prepared_body.json_body
+            if prepared_body.json_body is None:
+                kwargs["data"] = "null"
+            else:
+                kwargs["json"] = prepared_body.json_body
 
     request = requests.Request(
         method=case.method.upper(),

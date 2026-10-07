@@ -194,7 +194,7 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                 if body_schema:
                     fields = _flatten_body_schema(
                         body_schema, "", operation_id, path, method.upper(), success_status, responses_info,
-                        content_type,
+                        content_type, request_body_required=bool(request_body.get("required", False)),
                     )
                     body_specs.extend(fields)
                     if request_body.get("required"):
@@ -336,29 +336,30 @@ def _flatten_body_schema(
     success_status: str,
     responses_info: dict,
     content_type: str = "application/json",
+    request_body_required: bool = False,
 ) -> list[dict]:
     results: list[dict] = []
     is_multipart = content_type == "multipart/form-data"
+    is_root = parent_path == ""
+
+    # A request body is itself a schema node, even when its root type is not object.
+    # Keep its requiredness separate from the required properties inside an object.
+    if is_root and not is_multipart:
+        results.append({
+            "operationId": operation_id,
+            "path": path,
+            "method": method,
+            "fieldPath": "__body__",
+            "required": request_body_required,
+            "schema": schema,
+            "successStatus": success_status,
+            "responsesInfo": responses_info,
+            "contentType": content_type,
+        })
 
     if schema.get("type") == "object" or "properties" in schema:
         required_fields = set(schema.get("required") or [])
         properties = schema.get("properties") or {}
-
-        # オブジェクト自体のスペック（空body / additionalProperties チェック等に使う）。
-        # multipart/form-data はJSONのオブジェクト構造ではなくフォームフィールドの集合
-        # なので、「空body」「未定義プロパティ追加」というJSON観点の検証は意味を持たない。
-        if parent_path == "" and not is_multipart:
-            results.append({
-                "operationId": operation_id,
-                "path": path,
-                "method": method,
-                "fieldPath": "__body__",
-                "required": True,
-                "schema": schema,
-                "successStatus": success_status,
-                "responsesInfo": responses_info,
-                "contentType": content_type,
-            })
 
         for prop_name, prop_schema in properties.items():
             if not prop_schema:
@@ -396,31 +397,37 @@ def _flatten_body_schema(
                 results.extend(
                     _flatten_body_schema(
                         prop_schema, field_path, operation_id, path, method, success_status, responses_info,
-                        content_type,
+                        content_type, request_body_required,
                     )
                 )
 
-            # 配列の要素がオブジェクトの場合、その要素のプロパティも再帰的に展開する
-            # （フィールドパスは "lines[].sku" のように "[]" で配列であることを表す）
-            # OAS 3.1 の type は配列形式（例: ["array", "null"]、nullable な配列でよくある
-            # 書き方）もありうるため、文字列との等値比較だけだと素通りしてしまい、
-            # ネストしたオブジェクトのフィールド単位テストが丸ごと生成されなくなる。
             elif _has_type(prop_schema, "array"):
-                items_schema = prop_schema.get("items")
-                if isinstance(items_schema, dict) and (
-                    items_schema.get("type") == "object" or "properties" in items_schema
-                ):
-                    results.extend(
-                        _flatten_body_schema(
-                            items_schema,
-                            f"{field_path}[]",
-                            operation_id,
-                            path,
-                            method,
-                            success_status,
-                            responses_info,
-                            content_type,
-                        )
-                    )
+                results.extend(_flatten_body_schema(
+                    prop_schema, field_path, operation_id, path, method, success_status, responses_info,
+                    content_type, request_body_required,
+                ))
+
+    elif _has_type(schema, "array") and not is_multipart and schema.get("maxItems") != 0:
+        # The array's own schema creates minItems/maxItems cases. Create item-level
+        # specs too, so item type/constraints and nested object properties are covered.
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            item_path = f"{parent_path}.[]" if parent_path else "[]"
+            results.append({
+                "operationId": operation_id,
+                "path": path,
+                "method": method,
+                "fieldPath": item_path,
+                "required": False,
+                "schema": items_schema,
+                "successStatus": success_status,
+                "responsesInfo": responses_info,
+                "contentType": content_type,
+                "schemaOnly": True,
+            })
+            results.extend(_flatten_body_schema(
+                items_schema, item_path, operation_id, path, method, success_status, responses_info,
+                content_type, request_body_required,
+            ))
 
     return results
