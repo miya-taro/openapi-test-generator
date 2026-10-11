@@ -103,6 +103,12 @@
                     <button class="secondary" id="contract-save-button" type="button">補正したOpenAPIを別ファイルに保存</button>
                   </div>
                   <div id="contract-editor-status" class="field-caption status-message" aria-live="polite"></div>
+                  <details>
+                    <summary>自動生成する異常系でDBが変わらないことを確認</summary>
+                    <p class="field-caption">PostgreSQLの比較範囲を設定すると、このAPIの全異常系ケースに前後比較を付けます。DB接続設定が必要です。並列実行はできません。空の行条件はテーブル全体、上限5,000行です。</p>
+                    <div id="contract-error-db-scopes"></div>
+                    <button class="secondary" id="contract-add-error-db-scope" type="button">＋ 比較範囲を追加</button>
+                  </details>
                 </div>
                 <div id="case-review-panel" class="case-review-panel" hidden>
                   <div class="case-review-heading">

@@ -1,7 +1,6 @@
 """Conservative JSON Schema example synthesis for valid operation-level requests."""
 from __future__ import annotations
 
-from copy import deepcopy
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from itertools import islice
 
@@ -9,6 +8,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 
 from .samples.format_samples import FORMAT_VALID_SAMPLES
+from .schema_contract import validation_schema, map_children
 
 try:
     import exrex  # type: ignore
@@ -29,7 +29,7 @@ def find_schema_example(schema: dict) -> object:
     if not isinstance(schema, dict):
         raise NoSchemaExample("schema is not an object")
 
-    request_schema = _request_schema(schema)
+    request_schema = _request_schema(validation_schema(schema))
     try:
         validator = Draft202012Validator(request_schema, format_checker=FormatChecker())
     except SchemaError as error:
@@ -45,7 +45,7 @@ def find_schema_example(schema: dict) -> object:
             if validator.is_valid(candidate):
                 return candidate
 
-    for candidate in _candidate_values(request_schema):
+    for candidate in _candidate_values(_request_schema(schema)):
         if validator.is_valid(candidate):
             return candidate
 
@@ -54,7 +54,7 @@ def find_schema_example(schema: dict) -> object:
 
 def _request_schema(schema: dict) -> dict:
     """Remove request-irrelevant readOnly properties before validating a request sample."""
-    result = deepcopy(schema)
+    result = map_children(schema, lambda child: _request_schema(child) if isinstance(child, dict) else child)
     properties = result.get("properties")
     if isinstance(properties, dict):
         readonly = {

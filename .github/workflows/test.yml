@@ -151,7 +151,7 @@ jobs:
           OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
           OTG_MEASURE_EVIDENCE_DIR: docs/_ci_measure_evidence
           OTG_SIDE_EFFECT_EVIDENCE_DIR: docs/_ci_measure_evidence/side-effects
-        run: python -m pytest runner/tests/test_measure_get_e2e.py runner/tests/test_db_scenario_e2e.py runner/tests/test_comparison_unchanged_e2e.py -q -s
+        run: python -m pytest runner/tests/test_measure_get_e2e.py runner/tests/test_db_scenario_e2e.py runner/tests/test_comparison_unchanged_e2e.py runner/tests/test_contract_db_guard_e2e.py -q -s
 
       - name: Upload GET JSON body comparison evidence
         if: always()

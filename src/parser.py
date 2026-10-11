@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import logger as log
+from .schema_contract import CONTRACT, map_children
 
 
 class OpenAPIParseError(Exception):
@@ -34,6 +35,14 @@ def parse_openapi(input_path: str) -> dict:
     _walk_schemas(api, _normalize_schema, set())
     _walk_schemas(api, _validate_comparison_rules, set())
     _validate_comparison_locations(api)
+    from .db_scope import KEY as DB_KEY, validate_scopes
+    for item in (api.get("paths") or {}).values():
+        for operation in item.values():
+            if isinstance(operation, dict) and DB_KEY in operation:
+                try:
+                    validate_scopes(operation[DB_KEY])
+                except ValueError as exc:
+                    raise OpenAPIParseError(str(exc)) from exc
 
     log.info({"version": version}, "OpenAPI パース完了")
     return api
@@ -92,13 +101,9 @@ def _lookup_ref(ref: str, root: dict) -> Any:
 
 
 def _normalize_schema(schema: dict) -> None:
-    """スキーマ1件分の正規化（exclusiveMinimum/Maximum の数値化 + allOf/oneOf/anyOf の展開）を行う。
-
-    正規化後のスキーマは標準の JSON Schema (2020-12) として妥当な形になる
-    （$ref 済み・allOf/oneOf/anyOf 展開済み・exclusiveMinimum/Maximum は常に数値）。
-    これにより、生成ロジックだけでなく `jsonschema` 等の汎用バリデータにも
-    そのまま渡せる（ランナー側のレスポンスボディ検証で利用）。
-    """
+    """生成用の形を展開する。検証にはvalidation_schema()で元の合成制約を使う。"""
+    if CONTRACT not in schema and any(key in schema for key in ("allOf", "oneOf", "anyOf")):
+        schema[CONTRACT] = _canonical_schema(schema)
     _merge_all_of(schema)
     _extract_presence_rules(schema)
     _validate_presence_rules(schema)
@@ -106,6 +111,15 @@ def _normalize_schema(schema: dict) -> None:
     _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
     _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
     _normalize_nullable(schema)
+
+
+def _canonical_schema(schema):
+    result = map_children(schema, _canonical_schema)
+    if isinstance(result, dict):
+        _normalize_exclusive_bound(result, "minimum", "exclusiveMinimum")
+        _normalize_exclusive_bound(result, "maximum", "exclusiveMaximum")
+        _normalize_nullable(result)
+    return result
 
 
 def _validate_comparison_rules(schema: dict) -> None:
@@ -258,9 +272,9 @@ def _merge_all_of(schema: dict) -> None:
 
     このツールが対象とする「ベーススキーマ + 拡張」パターンに限定した簡易マージであり、
     JSON Schema の厳密な合成意味論（矛盾検出等）は扱わない。
-    - properties: 全 allOf 要素を単純結合（先勝ち）
+    - properties: 同じ項目の複数制約はallOfとして保持
     - required: 全 allOf 要素の required を和集合
-    - additionalProperties: いずれかが false なら false を継承（安全側に倒す）
+    - additionalProperties: 生成候補は保守的に絞る。判定は元の契約で行う
     """
     all_of = schema.get("allOf")
     if not isinstance(all_of, list):
@@ -282,14 +296,28 @@ def _merge_all_of(schema: dict) -> None:
         _merge_all_of(sub)  # ネストした allOf も先に展開しておく
 
         for k, v in sub.get("properties", {}).items():
-            merged_properties.setdefault(k, v)
+            if k in merged_properties and merged_properties[k] != v:
+                merged_properties[k] = {"allOf": [merged_properties[k], v]}
+            else:
+                merged_properties[k] = v
         for r in sub.get("required", []):
             if r not in merged_required:
                 merged_required.append(r)
         if sub.get("additionalProperties") is False:
             additional_properties_false = True
 
-    schema.setdefault("type", "object")
+        for key in ("minimum", "exclusiveMinimum", "minLength", "minItems", "minProperties"):
+            if isinstance(sub.get(key), (int, float)) and not isinstance(sub[key], bool):
+                schema[key] = max(schema.get(key, sub[key]), sub[key])
+        for key in ("maximum", "exclusiveMaximum", "maxLength", "maxItems", "maxProperties"):
+            if isinstance(sub.get(key), (int, float)) and not isinstance(sub[key], bool):
+                schema[key] = min(schema.get(key, sub[key]), sub[key])
+        for key in ("type", "enum", "const", "items", "pattern", "format", "multipleOf", "example"):
+            if key in sub:
+                schema.setdefault(key, sub[key])
+
+    if merged_properties:
+        schema.setdefault("type", "object")
     if merged_properties:
         schema["properties"] = merged_properties
     if merged_required:
@@ -379,8 +407,9 @@ def _walk_schemas(obj: Any, visitor, visited: set[int]) -> None:
     if isinstance(obj, dict):
         if _is_schema_object(obj):
             visitor(obj)
-        for v in obj.values():
-            _walk_schemas(v, visitor, visited)
+        for key, v in obj.items():
+            if key != CONTRACT:
+                _walk_schemas(v, visitor, visited)
     else:
         for v in obj:
             _walk_schemas(v, visitor, visited)

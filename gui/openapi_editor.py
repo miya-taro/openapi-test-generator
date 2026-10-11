@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 from src.parser import OpenAPIParseError, parse_openapi
+from src.db_scope import KEY as DB_KEY, validate_scopes
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 _SUCCESS_STATUS = re.compile(r"(?:2\d\d|2XX)", re.IGNORECASE)
@@ -40,6 +41,7 @@ def load_operation_body_contract(path: str, operation_id: str) -> dict:
         "requestBodySchema": request_schema,
         "responseStatus": response_status,
         "responseBodySchema": response_schema,
+        "errorDbUnchanged": operation.get(DB_KEY, []),
     }
 
 
@@ -51,6 +53,7 @@ def save_operation_body_contract(
     request_body_schema: dict | None,
     response_status: str,
     response_body_schema: dict | None,
+    error_db_unchanged: list | None = None,
 ) -> dict:
     """Save edited schemas to a validated copy; never overwrite the selected source file."""
     source = Path(source_path).expanduser().resolve()
@@ -68,6 +71,9 @@ def save_operation_body_contract(
 
     document = _read_document(str(source))
     _, _, operation = _find_operation(document, operation_id)
+
+    if error_db_unchanged is not None:
+        operation[DB_KEY] = validate_scopes(error_db_unchanged)
 
     raw_request_body = operation.get("requestBody")
     if raw_request_body is not None or request_body_schema is not None or request_body_required:

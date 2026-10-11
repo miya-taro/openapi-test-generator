@@ -43,6 +43,14 @@ beforeEach(() => {
   mockSave.mockResolvedValue(null);
 });
 
+test("レビュー画面は未対応の制約を合格扱いせず表示する", () => {
+  renderCaseMaster({ cases: [], coverage: [{ operationId: "op", location: "body", field: "items",
+    keyword: "contains", status: "未対応", caseIds: [], detail: "専用ケースなし" }] }, "/tmp/master.json");
+  expect(document.querySelector(".coverage-review").textContent).toContain("未対応");
+  expect(document.querySelector(".coverage-review").textContent).toContain("試験の合否とは別");
+  expect(document.querySelector("#case-review-panel").hidden).toBe(false);
+});
+
 // ---------- 5工程の基本導線 ----------
 
 describe("API試験の基本導線", () => {

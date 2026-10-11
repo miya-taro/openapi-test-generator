@@ -498,15 +498,19 @@ def test_missing_openapi_file_warns_and_continues(monkeypatch, tmp_path, capsys)
     assert "openapi.json が見つかりません" in capsys.readouterr().err
 
 
-def test_invalid_openapi_warns_and_continues(monkeypatch, tmp_path, capsys):
+def test_invalid_openapi_stops_before_sending(monkeypatch, tmp_path, capsys):
     excel_path = tmp_path / "spec.xlsx"
     excel_path.write_bytes(b"dummy")
     bad_openapi = tmp_path / "bad.json"
     bad_openapi.write_text(json.dumps({"openapi": "2.0", "paths": {}}), encoding="utf-8")
     _patch_happy_path(monkeypatch)
 
+    def must_not_send(*args, **kwargs):
+        raise AssertionError("Invalid contracts must never send requests")
+    monkeypatch.setattr(runner_module, "execute_with_openapi", must_not_send)
+
     code = run_main(monkeypatch, [str(excel_path), str(bad_openapi), "--base-url", "http://x"])
-    assert code == 0
+    assert code == 3
     assert "openapi.json の読み込みに失敗しました" in capsys.readouterr().err
 
 

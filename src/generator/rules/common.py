@@ -5,6 +5,8 @@ import json
 from jsonschema import Draft202012Validator, FormatChecker
 
 from ...samples.format_samples import FORMAT_VALID_SAMPLES
+from ...schema_contract import CONTRACT, validation_schema
+from ...schema_example import find_schema_example, NoSchemaExample
 
 # body フィールド（requestBody ルート・ネスト両方）向けの oneOf/anyOf バリアント用マーカー。
 # runner/request_builder.py の _ONE_OF_VARIANT_MARKER_PREFIX と対応させている
@@ -132,6 +134,13 @@ def generate_one_of_variant_cases(schema: dict, ctx: dict) -> list[dict]:
     is_body = ctx.get("paramIn") == "body"
     cases = []
     for i in range(1, len(variants)):
+        if CONTRACT in schema:
+            try:
+                candidate = find_schema_example(variants[i])
+            except NoSchemaExample:
+                continue
+            if not Draft202012Validator(validation_schema(schema), format_checker=FormatChecker()).is_valid(candidate):
+                continue
         if is_body:
             # バリアントごとに型が異なりうるため、実行時にスキーマを見て正しく
             # 組み立てられるよう request_builder.py 側で解決するマーカーにする。
@@ -139,7 +148,7 @@ def generate_one_of_variant_cases(schema: dict, ctx: dict) -> list[dict]:
         else:
             # path/query/header/cookie は常に文字列として送信されるため、
             # ここで直接バリアントの代表値を文字列化して埋め込む。
-            input_value = _stringify_example(_example_value(variants[i]))
+            input_value = _stringify_example(candidate if CONTRACT in schema else _example_value(variants[i]))
         cases.append({
             "summary": f"{ctx['paramName']} oneOf/anyOf バリアント{i + 1}（正常）",
             "keyword": "oneOf",

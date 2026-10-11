@@ -155,13 +155,17 @@ def _emit_contract_result(emit, paths, result: StageResult) -> int:
     _artifact(emit, "spec_excel", paths.spec_excel)
     _artifact(emit, "result_excel", paths.result_excel)
     _artifact(emit, "junit_xml", paths.junit_xml)
+    db_evidence = paths.result_excel.with_name(paths.result_excel.stem + "-db-evidence.json")
+    if db_evidence.is_file():
+        _artifact(emit, "contract_db_evidence_json", db_evidence)
     try:
         write_failed_case_ids([paths.junit_xml], paths.failed_case_ids_json)
         _artifact(emit, "failed_case_ids_json", paths.failed_case_ids_json)
         _write_html_report(
             paths, [paths.junit_xml],
             {"試験仕様書": paths.case_spec_excel, "結果Excel": paths.result_excel,
-             "JUnit XML": paths.junit_xml},
+             "JUnit XML": paths.junit_xml,
+             **({"異常系DB変更なし証跡": db_evidence} if db_evidence.is_file() else {})},
         )
         _artifact(emit, "html_report", paths.html_report)
     except (CaseMasterError, OSError, ValueError) as exc:
@@ -452,8 +456,6 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 _write_contract_case_master(config, paths)
                 prepared_master = load_case_master(paths.case_master_json)
-                if not any(case["kind"] == "contract" for case in prepared_master["cases"]):
-                    raise CaseMasterError("OpenAPIから実行可能なLayer 1ケースが生成されませんでした")
             except (CaseMasterError, OSError) as exc:
                 emit(WorkflowEvent.log("case-master", f"試験ケースマスターを作成できませんでした: {exc}", level="error"))
                 return _finish(emit, StageResult.failed(3))
@@ -464,6 +466,9 @@ def main(argv: list[str] | None = None) -> int:
                 ("case_spec_excel", paths.case_spec_excel),
             ):
                 _artifact(emit, kind, path)
+            if not any(case["kind"] == "contract" for case in prepared_master["cases"]):
+                emit(WorkflowEvent.log("prepare", "実行可能なケースがありません。対応状況の未生成・未対応を確認してください", level="error"))
+                return _finish(emit, StageResult.failed(3))
             emit(WorkflowEvent.log("prepare", "試験ケースを準備しました。レビュー後に承認済み実行または予備実行を選んでください"))
             return _finish(emit, StageResult.passed())
 

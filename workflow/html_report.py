@@ -115,6 +115,14 @@ def write_html_report(
     summary = "　".join(
         f"{_e(_STATUS_LABELS[key])}: {counts[key]}" for key in _STATUS_LABELS if counts[key]
     ) or "ケースなし"
+    coverage_rows = "".join(
+        "<tr>" + "".join(f"<td>{_e(row.get(key, ''))}</td>" for key in
+                         ("operationId", "location", "field", "keyword", "status", "detail")) + "</tr>"
+        for row in master.get("coverage", [])
+    )
+    coverage_html = ("<details><summary>仕様の対応状況（実行済み・合格を意味しません）</summary>"
+                     "<table><thead><tr><th>API操作</th><th>場所</th><th>項目</th><th>制約</th><th>対応状況</th><th>補足</th></tr></thead>"
+                     f"<tbody>{coverage_rows}</tbody></table></details>") if coverage_rows else ""
 
     document = f"""<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -134,6 +142,7 @@ ul{{padding-left:1.2rem}}
 <p class="notice">仕様状態: {_e(approval_text)}。HTTP本文・認証情報はこのHTMLに保存していません。</p>
 <p class="summary">{summary}</p>
 <ul>{link_html}</ul>
+{coverage_html}
 <table><thead><tr><th>試験ID</th><th>層</th><th>試験項目</th><th>判定</th><th>レビュー状態</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
 </main></body></html>"""

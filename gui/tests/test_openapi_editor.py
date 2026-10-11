@@ -9,6 +9,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from openapi_editor import load_operation_body_contract, save_operation_body_contract
 
 
+def test_error_db_scopes_round_trip_and_validate(tmp_path):
+    source, output = tmp_path / "source.json", tmp_path / "edited.json"
+    source.write_text(json.dumps(_document()), encoding="utf-8")
+    scopes = [{"table": "t_data", "columns": ["id", "value"], "where": {"site_id": 1}}]
+    save_operation_body_contract(str(source), str(output), "createUser", True,
+                                 {"type": "object"}, "201", {"type": "object"}, scopes)
+    assert load_operation_body_contract(str(output), "createUser")["errorDbUnchanged"] == scopes
+    assert load_operation_body_contract(str(source), "createUser")["errorDbUnchanged"] == []
+    with pytest.raises(ValueError):
+        save_operation_body_contract(str(source), str(output), "createUser", True,
+                                     {"type": "object"}, "201", {}, [{"table": "t_data", "columns": []}])
+    assert load_operation_body_contract(str(output), "createUser")["errorDbUnchanged"] == scopes
+
+
 def _document():
     return {
         "openapi": "3.0.3",
@@ -59,6 +73,7 @@ def test_load_operation_contract_reads_json_body_schemas_and_resolves_body_objec
         "requestBodySchema": {"$ref": "#/components/schemas/CreateUser"},
         "responseStatus": "201",
         "responseBodySchema": {"$ref": "#/components/schemas/User"},
+        "errorDbUnchanged": [],
     }
 
 

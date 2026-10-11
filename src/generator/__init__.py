@@ -1,5 +1,8 @@
 """ParamSpec / BodyFieldSpec / AuthSpec から TestCase を生成するメインロジック。"""
 from __future__ import annotations
+import json
+from jsonschema import Draft202012Validator, FormatChecker
+from src.schema_contract import CONTRACT, validation_schema
 
 from src.comparison_rules import KEY as COMPARISON_KEY, OPERATORS
 
@@ -354,4 +357,19 @@ def _generate_from_schema(
         ):
             cases.extend(generate_string_cases(schema, ctx))
 
+    if CONTRACT in schema:
+        validator = Draft202012Validator(validation_schema(schema), format_checker=FormatChecker())
+        filtered = []
+        for case in cases:
+            raw = case["inputValue"]
+            if raw.startswith(("（", "__")) and raw != "（空文字）":
+                filtered.append(case)
+                continue
+            try:
+                value = "" if raw == "（空文字）" else json.loads(raw)
+            except (ValueError, TypeError):
+                value = raw
+            if validator.is_valid(value) == case["perspective"].startswith("正常"):
+                filtered.append(case)
+        return filtered
     return cases
