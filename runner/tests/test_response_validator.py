@@ -407,3 +407,15 @@ def test_validate_body_without_one_of_variants_still_validates_flat_schema():
     # _oneOfVariants を持たない従来のスキーマは今まで通り単一スキーマとして検証される
     errors = validate_body('{"id": 1, "name": "Alice"}', SCHEMA)
     assert errors == []
+
+
+@pytest.mark.parametrize('payload', ['NaN', 'Infinity', '-Infinity', '{"v":NaN}', '[Infinity]'])
+@pytest.mark.parametrize('schema', [{}, {'type': ['number', 'array', 'object']}])
+def test_non_json_numeric_constants_are_rejected_even_without_type_constraints(payload, schema):
+    assert any('JSON' in error for error in validate_body(payload, schema))
+
+
+def test_empty_schema_still_requires_json_but_no_schema_does_not():
+    assert validate_body('not JSON', {})
+    assert validate_body('null', {}) == []
+    assert validate_body('not JSON', None) == []

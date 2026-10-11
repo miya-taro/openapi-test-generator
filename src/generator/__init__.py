@@ -1,12 +1,13 @@
 """ParamSpec / BodyFieldSpec / AuthSpec から TestCase を生成するメインロジック。"""
 from __future__ import annotations
-import json
 from jsonschema import Draft202012Validator, FormatChecker
-from src.schema_contract import CONTRACT, validation_schema
+from src.schema_contract import validation_schema
+from src.case_values import coerce_value, encode_json_value, JSON_VALUE_PREFIX
 
 from src.comparison_rules import KEY as COMPARISON_KEY, OPERATORS
 
 from .rules.common import generate_common_cases, generate_one_of_variant_cases
+from .rules.choices import generate_choice_cases
 from .rules.integer import generate_integer_cases
 from .rules.string import generate_string_cases
 from .rules.array import generate_array_cases
@@ -195,7 +196,7 @@ def generate_test_cases(
 
         partials = _generate_from_schema(
             spec["schema"], spec["required"], param_in, param_name, opts, spec["successStatus"], is_root_body,
-            skip_presence=bool(spec.get("schemaOnly")),
+            skip_presence=bool(spec.get("schemaOnly")), content_type=spec.get("contentType", "application/json"),
         )
         for partial in partials:
             expected_status = partial["expectedStatus"]
@@ -302,6 +303,7 @@ def _generate_from_schema(
     success_status: str | None,
     is_root_body: bool = False,
     skip_presence: bool = False,
+    content_type: str = "application/json",
 ) -> list[dict]:
     cases: list[dict] = []
     if success_status is None:
@@ -309,7 +311,8 @@ def _generate_from_schema(
     ctx = {
         "paramIn": param_in, "paramName": param_name, "opts": opts,
         "successStatus": success_status, "isRootBody": is_root_body,
-        "skipPresence": skip_presence,
+        "skipPresence": skip_presence, "includeChoices": False,
+        "jsonBody": param_in == "body" and content_type == "application/json",
     }
 
     # 共通ルール（required, type）
@@ -340,8 +343,6 @@ def _generate_from_schema(
         cases.extend(generate_string_cases(schema, ctx))
     elif type_ == "boolean":
         cases.extend(generate_boolean_cases(schema, ctx))
-        if schema.get("enum"):
-            cases.extend(generate_string_cases(schema, ctx))
     elif type_ == "array":
         cases.extend(generate_array_cases(schema, ctx))
     elif type_ == "object":
@@ -357,19 +358,34 @@ def _generate_from_schema(
         ):
             cases.extend(generate_string_cases(schema, ctx))
 
-    if CONTRACT in schema:
-        validator = Draft202012Validator(validation_schema(schema), format_checker=FormatChecker())
-        filtered = []
-        for case in cases:
-            raw = case["inputValue"]
-            if raw.startswith(("（", "__")) and raw != "（空文字）":
-                filtered.append(case)
-                continue
-            try:
-                value = "" if raw == "（空文字）" else json.loads(raw)
-            except (ValueError, TypeError):
-                value = raw
-            if validator.is_valid(value) == case["perspective"].startswith("正常"):
-                filtered.append(case)
-        return filtered
-    return cases
+    cases.extend(generate_choice_cases(schema, ctx))
+
+    # Exercise every branch's constraints, not just one valid representative.
+    if opts.get("oneOfFullCoverage"):
+        for index, variant in enumerate(schema.get("_oneOfVariants", [])):
+            branch_cases = _generate_from_schema(
+                variant, required, param_in, param_name,
+                {**opts, "oneOfFullCoverage": False}, success_status,
+                is_root_body=is_root_body, skip_presence=True, content_type=content_type,
+            )
+            for case in branch_cases:
+                raw = case["inputValue"]
+                if raw.startswith(("（", "__")) and raw != "（空文字）" and not raw.startswith(JSON_VALUE_PREFIX):
+                    continue
+                value = None if raw == "null" else coerce_value("" if raw == "（空文字）" else raw, variant)
+                case["inputValue"] = encode_json_value(value) if ctx["jsonBody"] else raw
+                case["summary"] += f" [分岐{index + 1}]"
+                case["branchIndex"] = index
+                cases.append(case)
+
+    validator = Draft202012Validator(validation_schema(schema), format_checker=FormatChecker())
+    filtered = []
+    for case in cases:
+        raw = case["inputValue"]
+        if raw.startswith(("（", "__", "{ ...validBody,")) and raw != "（空文字）" and not raw.startswith(JSON_VALUE_PREFIX):
+            filtered.append(case)
+            continue
+        value = None if raw == "null" and param_in == "body" else coerce_value("" if raw == "（空文字）" else raw, schema)
+        if validator.is_valid(value) == case["perspective"].startswith("正常"):
+            filtered.append(case)
+    return filtered

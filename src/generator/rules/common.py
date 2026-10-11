@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from jsonschema import Draft202012Validator, FormatChecker
 
+from ...case_values import encode_json_value
 from ...samples.format_samples import FORMAT_VALID_SAMPLES
 from ...schema_contract import CONTRACT, validation_schema
 from ...schema_example import find_schema_example, NoSchemaExample
@@ -72,7 +73,7 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
         if isinstance(schema_type, list):
             non_null_types = [value for value in schema_type if value != "null"]
             schema_type = non_null_types[0] if len(non_null_types) == 1 else None
-        invalid_value = _get_invalid_value_for_type(schema_type) if schema_type else None
+        invalid_value = _get_invalid_value_for_type(schema_type) if schema_type and schema_type != "string" else None
         if invalid_value is not None:
             is_path = ctx.get("paramIn") == "path"
             cases.append({
@@ -83,6 +84,20 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
                 "expectedStatus": "4xx",
                 "expectedResult": "型エラーが返ること",
                 "notes": "ルーティング失敗により 404 になる場合あり（実装依存）" if is_path else "",
+            })
+
+    # JSON body types must stay typed on the wire ("123" is a valid string).
+    if ctx.get("jsonBody", ctx.get("paramIn") == "body") and opts["includeAbnormal"] and schema.get("type") and schema.get("format") != "binary":
+        type_validator = Draft202012Validator({"type": schema["type"]})
+        for label, value in (("integer", 123), ("fractional", 1.5), ("boolean", True),
+                             ("array", []), ("object", {}), ("string", "abc")):
+            if type_validator.is_valid(value):
+                continue
+            cases.append({
+                "summary": f"{ctx['paramName']} {label}型の不正入力（異常）",
+                "keyword": "type", "perspective": f"異常系_型不正_{label}",
+                "inputValue": encode_json_value(value), "expectedStatus": "4xx",
+                "expectedResult": "型エラーが返ること", "notes": "JSONの型を保持して送信",
             })
 
     # nullable — null値の扱い
@@ -239,4 +254,6 @@ def _get_invalid_value_for_type(type_: str | list[str]) -> str | None:
         return '"not-an-array"'
     if type_ == "object":
         return '"not-an-object"'
+    if type_ == "string":
+        return "123"
     return None

@@ -116,3 +116,33 @@ def test_number_type_as_nullable_array_form_uses_decimal_step():
     )
     abnormal = next(c for c in cases if c["keyword"] == "minimum")
     assert abnormal["inputValue"] == "1.4"
+
+
+def test_combined_bounds_and_multiple_choose_valid_lattice():
+    cases = generate_integer_cases(
+        {"type": "integer", "minimum": 10, "maximum": 20, "multipleOf": 3},
+        {"paramName": "n", "opts": ALL_OPTS})
+    normals = {c['keyword']: int(c['inputValue']) for c in cases if c['perspective'].startswith('正常')}
+    assert normals['minimum'] == 12
+    assert normals['minimum+maximum'] == 15
+    assert normals['maximum'] == 18
+    assert all(10 <= n <= 20 and n % 3 == 0 for n in normals.values())
+
+
+def test_fractional_middle_does_not_floor_to_zero():
+    cases = generate_integer_cases(
+        {"type": "number", "minimum": 0.2, "maximum": 0.5}, {"paramName": "n", "opts": ALL_OPTS})
+    assert next(c['inputValue'] for c in cases if c['keyword'] == 'minimum+maximum') == '0.35'
+
+
+def test_narrow_open_interval_has_valid_normal_cases():
+    cases = generate_integer_cases(
+        {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 0.01},
+        {"paramName": "n", "opts": ALL_OPTS})
+    normals = [float(c['inputValue']) for c in cases if c['perspective'].startswith('正常')]
+    assert len(normals) == 2 and all(0 < n < 0.01 for n in normals)
+
+
+def test_integer_multiple_of_one_has_no_false_negative_probe():
+    cases = generate_integer_cases({"type": "integer", "multipleOf": 1}, {"paramName": "n", "opts": ALL_OPTS})
+    assert not any(c['perspective'].startswith('異常') for c in cases)

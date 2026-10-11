@@ -125,14 +125,13 @@ def test_additional_properties_schema_abnormal_only_skips_normal_case():
     assert any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
 
 
-def test_additional_properties_schema_string_type_has_no_abnormal_case():
-    # common.py の _get_invalid_value_for_type は string 型に対する不正値を定義していない
-    # （既存の型不正テストと同じ挙動を踏襲）
+def test_additional_properties_string_rejects_numeric_value():
     cases = generate_object_cases(
         {"type": "object", "additionalProperties": {"type": "string"}},
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
     )
-    assert not any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
+    abnormal = next(c for c in cases if c["perspective"] == "異常系_additionalProperties型不適合")
+    assert ": 123" in abnormal["inputValue"]
 
 
 def test_additional_properties_true_generates_normal_case_allowing_extra_prop():
