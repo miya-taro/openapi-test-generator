@@ -1,6 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { invoke, listen, open, save, openPath } from "./runtime.js";
 import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
 import { createWorkflowClient } from "./workflow-client.js";
@@ -1136,7 +1134,6 @@ export function appendArtifact(containerId, event) {
   openButton.className = "secondary";
   openButton.textContent = "開く";
   openButton.addEventListener("click", async () => {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
     await openPath(event.path).catch(() => {});
   });
   item.append(name, path, openButton);
@@ -1531,7 +1528,6 @@ $("dbscenario-cancel-button").addEventListener("click", async () => {
 
 $("dbscenario-open-result-button").addEventListener("click", async () => {
   if (dbScenarioResultPath) {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
     await openPath(dbScenarioResultPath).catch(() => {});
   }
 });
@@ -2003,8 +1999,7 @@ $("cancel-button").addEventListener("click", async () => {
 
 $("open-result-button").addEventListener("click", async () => {
   if (currentResultPath) {
-    // 結果を開く操作はOS標準の関連付けアプリで開く。opener権限を使う。
-    const { openPath } = await import("@tauri-apps/plugin-opener");
+    // デスクトップ版はOSの関連付けで開き、ブラウザー版はダウンロードする。
     await openPath(currentResultPath).catch(() => {});
   }
 });
