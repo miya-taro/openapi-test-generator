@@ -12,3 +12,15 @@ test("DB比較範囲を複数設定して削除できる", () => {
   container.querySelector('[data-key="where"]').value = "broken";
   expect(() => collectErrorDbScopes(container)).toThrow("DB行条件");
 });
+
+test("InfluxDB比較範囲の種類と固定期間を保存し、PostgreSQLに戻せる", () => {
+  const container = document.createElement("div");
+  const scope = { engine: "influxdb", table: "measure", columns: ["time", "item", "value"], where: { item: "a" }, time_start: "2026-01-01T00:00:00Z", time_end: "2026-01-02T00:00:00Z" };
+  addErrorDbScope(container, scope);
+  expect(collectErrorDbScopes(container)).toEqual([scope]);
+  expect(container.querySelector('[data-key="time_start"]').parentElement.hidden).toBe(false);
+  const engine = container.querySelector('[data-key="engine"]');
+  engine.value = "postgres"; engine.dispatchEvent(new window.Event("change"));
+  expect(container.querySelector('[data-key="time_start"]').parentElement.hidden).toBe(true);
+  expect(collectErrorDbScopes(container)[0]).not.toHaveProperty("time_start");
+});

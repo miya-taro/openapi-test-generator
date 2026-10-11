@@ -69,10 +69,13 @@ class DBCheck:
 
 @dataclass
 class DBUnchangedCheck:
-    """Explicit PostgreSQL scope whose rows and selected values must remain unchanged."""
+    """Explicit database scope whose selected values must remain unchanged."""
     table: str
     columns: list[str]
     where: dict = field(default_factory=dict)
+    engine: str = "postgres"
+    time_start: str | None = None
+    time_end: str | None = None
 
 
 @dataclass
@@ -89,11 +92,12 @@ class DBResponseFilter:
 
 @dataclass
 class DBResponseCheck:
-    """Derive an API response expectation from existing PostgreSQL rows."""
+    """Derive an API response expectation from existing database rows."""
     table: str
     fields: dict[str, str] = field(default_factory=dict)  # response path -> DB column
     filters: list[DBResponseFilter] = field(default_factory=list)
     array_path: str | None = "$"
+    engine: str = "postgres"
 
 
 @dataclass
@@ -198,12 +202,15 @@ class DBScenario:
         }
         if self.db_unchanged:
             definition["dbUnchanged"] = [
-                {"table": check.table, "columns": check.columns, "where": check.where}
+                {"table": check.table, "columns": check.columns, "where": check.where,
+                 **({"engine": check.engine, "time_start": check.time_start, "time_end": check.time_end}
+                    if check.engine != "postgres" else {})}
                 for check in self.db_unchanged
             ]
         if self.db_response_check:
             definition["dbResponseCheck"] = {
                 "table": self.db_response_check.table,
+                **({"engine": self.db_response_check.engine} if self.db_response_check.engine != "postgres" else {}),
                 "fields": self.db_response_check.fields,
                 "filters": [
                     {
@@ -327,7 +334,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError(
                 "engine が指定されていません（db_check.engine か scenarios.defaults.engine のどちらかで指定してください）"
             )
-        if engine not in SUPPORTED_ENGINES:
+        if not isinstance(engine, str) or engine not in SUPPORTED_ENGINES:
             raise ScenarioError(
                 f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"
             )
@@ -445,8 +452,11 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
                 raise ScenarioError(f"db_response_check.filters[{i}] のAPIパラメータが重複しています: {source}.{parameter}")
             seen_params.add(param_key)
             filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format, group))
+        engine = check_raw.get("engine", "postgres")
+        if not isinstance(engine, str) or engine not in SUPPORTED_ENGINES:
+            raise ScenarioError("db_response_check.engine はpostgresまたはinfluxdbです")
         db_response_check = DBResponseCheck(
-            table=check_raw["table"], fields=fields, filters=filters, array_path=array_path,
+            table=check_raw["table"], fields=fields, filters=filters, array_path=array_path, engine=engine,
         )
 
     cleanup = None
@@ -490,7 +500,12 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
                 raise ScenarioError("db_unchanged.columns が重複しています")
             if not isinstance(where, dict) or not all(identifier(k) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in where.items()):
                 raise ScenarioError("db_unchanged.where は列名と単一値のオブジェクトにしてください")
-            db_unchanged.append(DBUnchangedCheck(table=table, columns=columns, where=where))
+            from src.db_scope import validate_scopes
+            try:
+                validate_scopes([check])
+            except ValueError as exc:
+                raise ScenarioError(str(exc)) from exc
+            db_unchanged.append(DBUnchangedCheck(**check))
 
     given: list[GivenItem] = []
     for i, g in enumerate(raw.get("given") or []):

@@ -178,6 +178,11 @@ def check_db_rows(
 def _response_value_matches(actual, expected) -> bool:
     if actual is _MISSING:
         return False
+    if isinstance(actual, bool) != isinstance(expected, bool):
+        return False
+    from db_backends.influx_response import InfluxTimestamp
+    if isinstance(expected, InfluxTimestamp):
+        return _value_matches(actual, str(expected), "date-time")
     if isinstance(expected, Decimal):
         try:
             return Decimal(str(actual)) == expected

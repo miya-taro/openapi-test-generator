@@ -257,3 +257,23 @@ test("DB変更なしのstatusと比較する列を人間が指定しなければ
   expect(() => buildDbScenario({ ...form, unchangedStatus: 400 })).toThrow("DB列");
   expect(() => buildDbScenario({ ...form, unchangedStatus: 400, unchangedColumns: "id", unchangedWhere: { id: [] } })).toThrow("単一");
 });
+
+test("InfluxDBを選んで変更なし比較の期間とmeasurementを保存する", async () => {
+  const invoke = vi.fn(async (_command, payload) => payload?.command === "list_db_scenario_operations" ? [createUserOperation] : "db-checks.yaml");
+  const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(async () => "db-checks.yaml"), onSaved: vi.fn() });
+  await editor.load("openapi.json");
+  selectOperation("createUser");
+  const select = document.getElementById("dbscenario-editor-engine"); select.value = "influxdb"; select.dispatchEvent(new window.Event("change"));
+  const mode = document.getElementById("dbscenario-editor-mode"); mode.value = "unchanged"; mode.dispatchEvent(new window.Event("change"));
+  expect(document.getElementById("dbscenario-editor-influx-period").hidden).toBe(false);
+  for (const [id, value] of Object.entries({
+    "table": "measure", "unchanged-status": "400", "unchanged-columns": "time, item, value",
+    "time-start": "2026-01-01T00:00:00Z", "time-end": "2026-01-02T00:00:00Z",
+  })) document.getElementById(`dbscenario-editor-${id}`).value = value;
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  document.getElementById("dbscenario-editor-save").click();
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("bridge_call", expect.objectContaining({ command: "save_db_scenario_yaml" })));
+  const saved = invoke.mock.calls.find((call) => call[1]?.command === "save_db_scenario_yaml")[1].args.scenarios[0];
+  expect(saved.db_unchanged[0]).toMatchObject({ engine: "influxdb", table: "measure", time_start: "2026-01-01T00:00:00Z", time_end: "2026-01-02T00:00:00Z" });
+  expect(saved).not.toHaveProperty("given");
+});

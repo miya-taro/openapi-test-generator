@@ -26,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
-from config_loader import load_config, get_postgres_config
+from config_loader import load_config, get_postgres_config, get_influxdb_config
 from excel_reader import read_excel
 from excel_writer import write_results
 from hook_runner import run_hook
@@ -58,7 +58,7 @@ def _run_all_sequential(
     for case in cases:
         schema = from_run_case(case, openapi)
         result, db_failures = execute_guarded(
-            case, openapi, getattr(args, "db_config", None),
+            case, openapi, getattr(args, "guard_config", getattr(args, "db_config", None)),
             lambda current=case: execute_with_openapi(current, args.base_url, openapi, session, args.cookie_jar),
             getattr(args, "db_evidence", []),
         )
@@ -245,7 +245,15 @@ def main() -> int:
     db_config: dict | None = None
     if args.config:
         try:
-            db_config = get_postgres_config(load_config(args.config))
+            raw_config = load_config(args.config)
+            args.guard_config = raw_config
+            if guarded:
+                for case in cases:
+                    for scope in scopes_for_case(openapi, case):
+                        getter = get_influxdb_config if scope.get("engine") == "influxdb" else get_postgres_config
+                        getter(raw_config)
+            if args.setup or args.teardown or (not guarded and "postgres" in raw_config):
+                db_config = get_postgres_config(raw_config)
         except (FileNotFoundError, ValueError) as e:
             print(f"[ERROR] config.json の読み込みに失敗しました: {e}", file=sys.stderr)
             return 3

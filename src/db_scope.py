@@ -12,8 +12,30 @@ def validate_scopes(scopes):
     def identifier(value):
         return isinstance(value, str) and IDENTIFIER.fullmatch(value)
     for scope in scopes:
-        if not isinstance(scope, dict) or set(scope) - {"table", "columns", "where"}:
-            raise ValueError("DB比較範囲はtable・columns・whereで指定してください")
+        if not isinstance(scope, dict) or set(scope) - {"table", "columns", "where", "engine", "time_start", "time_end"}:
+            raise ValueError("DB比較範囲にはtable・columns・where・engine・time_start・time_endを指定できます")
+        engine = scope.get("engine", "postgres")
+        if not isinstance(engine, str) or engine not in {"postgres", "influxdb"}:
+            raise ValueError("対応DBはpostgresまたはinfluxdbです")
+        if engine == "influxdb":
+            from rfc3339_validator import validate_rfc3339
+            from datetime import datetime
+            for key in ("time_start", "time_end"):
+                value = scope.get(key)
+                if not isinstance(value, str) or not validate_rfc3339(value.upper()):
+                    raise ValueError("InfluxDBの比較には開始・終了の日時（タイムゾーン付き）が必要です")
+            # Preserve nanoseconds when checking the interval.
+            def instant(value):
+                from decimal import Decimal
+                fraction = re.search(r"\.(\d+)", value)
+                parsed = datetime.fromisoformat(re.sub(r"\.\d+", "", value.upper()).replace("Z", "+00:00"))
+                return Decimal(int(parsed.timestamp())) + (Decimal("0." + fraction[1]) if fraction else 0)
+            if instant(scope["time_start"]) > instant(scope["time_end"]):
+                raise ValueError("比較期間の開始は終了以前にしてください")
+            if isinstance(scope.get("where", {}), dict) and any(v is None for v in scope.get("where", {}).values()):
+                raise ValueError("InfluxDBの行条件ではnullを指定できません")
+        elif scope.get("time_start") is not None or scope.get("time_end") is not None:
+            raise ValueError("期間の専用設定はInfluxDBのみ対応しています")
         if not identifier(scope.get("table")):
             raise ValueError("DBテーブル名は英字・数字・_で指定してください")
         columns = scope.get("columns")

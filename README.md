@@ -78,6 +78,8 @@ run-windows.bat
 
 OpenAPIに `anyOf: [{"required":["site_id"]},{"required":["location_id"]}]` と書いた場合も「どちらか必須」のケースを生成する。OpenAPI 3.1の `dependentRequired: {"start":["end"],"end":["start"]}` からは「両方指定または両方省略」のケースを生成する。
 
+対応DBはPostgreSQLとInfluxDB 1.x（InfluxQL）です。InfluxDBのGET全ポイント照合・異常系のDB変更なし確認はUIで設定できます。[InfluxDBの設定・検証結果・制限](docs/influxdb-testing.md)
+
 測定結果検索の具体的な画面設定・試験範囲・実API検証手順は [GET JSONボディの測定結果検索](docs/measure-get-testing.md) を参照。
 - 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
 - 契約試験とDBシナリオ試験は同じ統一ワークフローで実行され、実行ごとのフォルダに試験仕様Excel、結果Excel、JUnit XML、JSONをまとめて出力する。DB試験は `db-scenario-evidence.json` に対応設定・期待値・実測値・判定も保存する（認証情報に該当する項目はマスクする）

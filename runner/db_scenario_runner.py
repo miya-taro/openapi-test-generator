@@ -40,7 +40,7 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
-from db_backends import postgres_backend, influx_backend
+from db_backends import postgres_backend, influx_backend, influx_response
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
@@ -485,9 +485,10 @@ def _run_scenario(
         expected_db_rows = None
         if scenario.db_response_check is not None:
             try:
-                pg_config = get_postgres_config(db_config)
-                prepared = postgres_backend.prepare_db_response_check(
-                    scenario.db_response_check, pg_config, resolved_query_params, resolved_path_params, resolved_body
+                backend = influx_response if scenario.db_response_check.engine == "influxdb" else postgres_backend
+                response_db_config = get_influxdb_config(db_config) if scenario.db_response_check.engine == "influxdb" else get_postgres_config(db_config)
+                prepared = backend.prepare_db_response_check(
+                    scenario.db_response_check, response_db_config, resolved_query_params, resolved_path_params, resolved_body
                 )
             except postgres_backend.DBResponseCheckUnverified as e:
                 return False, f"[UNVERIFIED] {e}", "未実行", previous_response
@@ -504,6 +505,7 @@ def _run_scenario(
             if evidence is not None:
                 evidence["db_response_comparison"] = {
                     "table": scenario.db_response_check.table,
+                    "engine": scenario.db_response_check.engine,
                     "fields": scenario.db_response_check.fields,
                     "filters": [
                         {"source": item.source, "parameter": item.parameter, "column": item.column,
@@ -521,11 +523,13 @@ def _run_scenario(
         snapshots = []
         if scenario.db_unchanged:
             try:
-                pg_config = get_postgres_config(db_config)
                 for scope in scenario.db_unchanged:
                     resolved_scope = replace(scope, where=resolve_placeholders(scope.where, previous_response, given_data))
-                    before = postgres_backend.snapshot_rows(pg_config, resolved_scope)
-                    record = {"table": scope.table, "columns": scope.columns, "where": resolved_scope.where,
+                    backend = influx_response if scope.engine == "influxdb" else postgres_backend
+                    scope_config = get_influxdb_config(db_config) if scope.engine == "influxdb" else get_postgres_config(db_config)
+                    before = backend.snapshot_rows(scope_config, resolved_scope)
+                    record = {"table": scope.table, "engine": scope.engine, "columns": scope.columns, "where": resolved_scope.where,
+                              "time_start": scope.time_start, "time_end": scope.time_end,
                               "before_rows": before, "before_count": len(before), "verdict": "未確認"}
                     snapshots.append((resolved_scope, before, record))
                 if evidence is not None:
@@ -553,7 +557,9 @@ def _run_scenario(
         unchanged_unverified = []
         for scope, before, record in snapshots:
             try:
-                after = postgres_backend.snapshot_rows(pg_config, scope)
+                backend = influx_response if scope.engine == "influxdb" else postgres_backend
+                scope_config = get_influxdb_config(db_config) if scope.engine == "influxdb" else get_postgres_config(db_config)
+                after = backend.snapshot_rows(scope_config, scope)
                 unchanged = postgres_backend.unchanged_rows(before, after)
                 record.update(after_rows=after, after_count=len(after), verdict="OK" if unchanged else "NG")
                 if not unchanged:

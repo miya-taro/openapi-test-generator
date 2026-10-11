@@ -105,7 +105,7 @@
                   <div id="contract-editor-status" class="field-caption status-message" aria-live="polite"></div>
                   <details>
                     <summary>自動生成する異常系でDBが変わらないことを確認</summary>
-                    <p class="field-caption">PostgreSQLの比較範囲を設定すると、このAPIの全異常系ケースに前後比較を付けます。DB接続設定が必要です。並列実行はできません。空の行条件はテーブル全体、上限5,000行です。</p>
+                    <p class="field-caption">PostgreSQLまたはInfluxDB 1.xの比較範囲を設定すると、このAPIの全異常系ケースに前後比較を付けます。DB接続設定が必要です。並列実行はできません。InfluxDBは固定の比較期間も指定します。上限5,000行／ポイントです。</p>
                     <div id="contract-error-db-scopes"></div>
                     <button class="secondary" id="contract-add-error-db-scope" type="button">＋ 比較範囲を追加</button>
                   </details>
@@ -295,7 +295,9 @@
                       <input id="dbscenario-editor-name" type="text" placeholder="例: createUser のDB保存を確認" />
                     </div>
                     <div class="form-field">
-                      <label for="dbscenario-editor-table">確認するDBテーブル</label>
+                      <label for="dbscenario-editor-engine">確認するDB</label>
+                      <select id="dbscenario-editor-engine"><option value="postgres">PostgreSQL</option><option value="influxdb">InfluxDB 1.x（InfluxQL）</option></select>
+                      <label for="dbscenario-editor-table">確認するテーブル / measurement</label>
                       <input id="dbscenario-editor-table" type="text" placeholder="例: users" />
                     </div>
                   </div>
@@ -307,7 +309,12 @@
                       <option value="unchanged">API実行前後でDBに変更がないこと</option>
                     </select>
                   </div>
+                  <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETのレスポンスと既存ポイントを照合、または各メソッドの実行前後を比較できます。time・タグ・フィールドをDB項目として入力してください。前提ポイントの自動投入は行いません。</p>
                   <div id="dbscenario-editor-unchanged-panel" hidden>
+                    <div id="dbscenario-editor-influx-period" class="db-scenario-editor-grid" hidden>
+                      <label>比較期間の開始（含む）<input id="dbscenario-editor-time-start" type="text" placeholder="2026-01-01T00:00:00Z" /></label>
+                      <label>比較期間の終了（含む）<input id="dbscenario-editor-time-end" type="text" placeholder="2026-01-02T00:00:00Z" /></label>
+                    </div>
                     <p class="field-caption">正常な参照処理や、エラー時の副作用を確認します。選択した列の値・行数を実行前後で比較します。順序は問いません。比較中に他の処理がDBを更新しない試験環境で実行してください。</p>
                     <div class="form-field">
                       <label for="dbscenario-editor-unchanged-body">送信するJSON body（異常値もそのまま送信）</label>
@@ -320,12 +327,12 @@
                     <div class="form-field">
                       <label for="dbscenario-editor-unchanged-columns">比較するDB列（カンマ区切り）</label>
                       <input id="dbscenario-editor-unchanged-columns" type="text" placeholder="id, name, updated_at" />
-                      <p class="field-caption">値の入れ替わりも検出するには主キーを含めてください。指定しない列の値は比較しません。</p>
+                      <p class="field-caption">値の入れ替わりも検出するには主キー（InfluxDBではtimeとポイントを識別する全タグ）を含めてください。指定しない列の値は比較しません。</p>
                     </div>
                     <div class="form-field">
                       <label for="dbscenario-editor-unchanged-where">比較する行の条件（JSON、{}ならテーブル全体）</label>
                       <textarea id="dbscenario-editor-unchanged-where" rows="3" spellcheck="false">{}</textarea>
-                      <p class="field-caption">例：{"site_id": 1}。各列はANDで一致判定し、nullはIS NULLとして扱います。対象は最大5,000行。超過は合格にせず未確認とします。</p>
+                      <p class="field-caption">例：{"site_id": 1}。各項目はANDで一致判定します。PostgreSQLではnullはIS NULL、InfluxDBではnull不可・タグ値は文字列です。対象は最大5,000行。超過は合格にせず未確認とします。</p>
                     </div>
                   </div>
 
