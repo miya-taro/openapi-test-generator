@@ -44,17 +44,19 @@ api test generator/
 `gui-tauri/`（Tauri版）を使う。かつて `gui/`（PySide6版）のexeも配布していたが廃止し、
 `gui-tauri/` に一本化した。
 
-### ソースから実行（開発用）
+### Windowsでソースから起動
 
-```sh
-cd gui-tauri
-npm install
-npm run tauri dev
+Windowsではリポジトリ直下の `run-windows.bat` を実行する。初回はPython環境とnpm依存を準備し、Tauriアプリをローカルでビルドして起動する。2回目以降は依存の再インストールを省略する。
+
+初回起動前に、Python 3.10以降、Node.js 22以降、Rust、Visual Studio 2022 Build Toolsの「Desktop development with C++」を一度だけインストールする。Windows 10/11にはWebView2が通常含まれている。必要なビルドツールがない場合、起動スクリプトが不足項目を表示する。
+
+```text
+git clone https://github.com/miya-taro/openapi-test-generator.git
+cd openapi-test-generator
+run-windows.bat
 ```
 
-Node.js と Rust（`cargo`）のインストールが必要。実行対象のPython（`src/` / `runner/` /
-`gui/tauri_bridge.py` / `gui/validators.py`）はTauriシェルからサブプロセスとして
-呼び出しているだけなので、CLI自体は今まで通り単独でも使用できる。
+この方法は配布済みインストーラーを使わず、手元で開発版アプリをビルドする。Windowsのアプリ制御ポリシーが未署名のローカルビルドも拒否する場合は、cloneだけでは起動できず、管理者による許可が必要になる。実行対象のPython（`src/` / `runner/` / `gui/tauri_bridge.py` / `gui/validators.py`）はTauriシェルからサブプロセスとして呼び出す。
 
 - 画面は「対象を登録 → 仕様を確認 → 試験を確認 → 実行 → 結果」の5工程で進める
 - 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
