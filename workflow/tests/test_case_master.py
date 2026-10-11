@@ -433,3 +433,16 @@ def test_no_change_scope_is_visible_in_master_and_excel(tmp_path):
     workbook = load_workbook(excel)
     values = [str(cell.value) for sheet in workbook for row in sheet for cell in row]
     assert any("databaseUnchanged" in value and "users" in value for value in values)
+
+
+def test_influx_mutation_is_visible_in_review_and_spec(tmp_path):
+    import yaml
+    spec = tmp_path / 'api.json'
+    spec.write_text(json.dumps({'openapi': '3.1.0', 'paths': {'/m': {'post': {'operationId': 'write', 'responses': {'200': {'description': 'ok'}}}}}}))
+    check = {'action': 'insert', 'measurement': 'measure', 'time': '2026-01-01T00:00:00Z', 'tags': {'item': 'a'}, 'fields': {'value': 2}}
+    source = tmp_path / 'db.yaml'
+    source.write_text(yaml.safe_dump({'scenarios': {'list': [{'name': 'write', 'request': {'operationId': 'write'}, 'influx_mutation': check}]}}))
+    master = build_case_master('influx', None, source, spec)
+    case = master['cases'][0]
+    assert case['definition']['influxMutation'] == check
+    assert case['expected']['influxMutation'] == check

@@ -193,6 +193,7 @@ def _scenario_case(
             ),
             "database": definition["dbCheck"],
             "databaseResponse": definition.get("dbResponseCheck"),
+            **({"influxMutation": definition["influxMutation"]} if definition.get("influxMutation") else {}),
             **({"databaseUnchanged": definition["dbUnchanged"]} if definition.get("dbUnchanged") else {}),
         },
         "reviewStatus": "draft",

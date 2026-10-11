@@ -40,7 +40,7 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
-from db_backends import postgres_backend, influx_backend, influx_response
+from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
@@ -520,6 +520,19 @@ def _run_scenario(
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
 
+        mutation_evidence = None
+        if scenario.influx_mutation is not None:
+            if method not in {"POST", "PUT", "PATCH", "DELETE"}:
+                return False, "InfluxDB変更確認はPOST/PUT/PATCH/DELETEで指定してください", "ERR", previous_response
+            try:
+                mutation_evidence = influx_mutation.prepare(scenario.influx_mutation, get_influxdb_config(db_config))
+            except postgres_backend.DBResponseCheckUnverified as exc:
+                return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
+            except Exception:
+                return False, "InfluxDB変更確認の事前取得に失敗しました。接続・ポイント時刻・全タグを確認してください", "ERR", previous_response
+            if evidence is not None:
+                evidence["influx_mutation"] = mutation_evidence
+
         snapshots = []
         if scenario.db_unchanged:
             try:
@@ -554,6 +567,14 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        if mutation_evidence is not None:
+            try:
+                ok, detail = influx_mutation.verify(scenario.influx_mutation, get_influxdb_config(db_config), mutation_evidence)
+                if not ok:
+                    failures.append("InfluxDB変更確認: " + detail)
+            except Exception:
+                mutation_evidence["verdict"] = "未確認"
+                failures.append("InfluxDB変更確認の事後取得に失敗・未確認")
         unchanged_unverified = []
         for scope, before, record in snapshots:
             try:

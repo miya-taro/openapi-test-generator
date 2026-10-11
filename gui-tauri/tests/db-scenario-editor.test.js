@@ -277,3 +277,26 @@ test("InfluxDBを選んで変更なし比較の期間とmeasurementを保存す�
   expect(saved.db_unchanged[0]).toMatchObject({ engine: "influxdb", table: "measure", time_start: "2026-01-01T00:00:00Z", time_end: "2026-01-02T00:00:00Z" });
   expect(saved).not.toHaveProperty("given");
 });
+
+test("InfluxDBのPOSTではAPI項目から保存期待値を生成し、SQLと前提行は不要", async () => {
+  const invoke = vi.fn(async (_command, payload) => payload?.command === "list_db_scenario_operations" ? [createUserOperation] : "db-checks.yaml");
+  const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(async () => "db-checks.yaml"), onSaved: vi.fn() });
+  await editor.load("openapi.json"); selectOperation("createUser");
+  const engine = document.getElementById("dbscenario-editor-engine"); engine.value = "influxdb"; engine.dispatchEvent(new window.Event("change"));
+  expect(document.getElementById("dbscenario-editor-influx-mutation").hidden).toBe(false);
+  expect(document.getElementById("dbscenario-editor-add-scenario").disabled).toBe(false);
+  document.getElementById("dbscenario-editor-table").value = "measure";
+  document.getElementById("dbscenario-editor-influx-time").value = "2026-01-01T00:00:00Z";
+  document.getElementById("dbscenario-editor-influx-tags").value = '{"item":"a"}';
+  const row = document.querySelector('#dbscenario-editor-write-mappings tr[data-field-path="email"]');
+  row.querySelector('[data-api-value]').value = "test@example.com";
+  row.querySelector('input[aria-label="DBカラム"]').value = "email";
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  expect(document.getElementById("dbscenario-editor-status").textContent).toContain("1件の対応を追加");
+  document.getElementById("dbscenario-editor-save").click();
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("bridge_call", expect.objectContaining({ command: "save_db_scenario_yaml" })));
+  const saved = invoke.mock.calls.find((call) => call[1]?.command === "save_db_scenario_yaml")[1].args.scenarios[0];
+  expect(saved.influx_mutation).toMatchObject({ action: "insert", measurement: "measure", fields: { email: "test@example.com" }, tags: { item: "a" } });
+  expect(saved).not.toHaveProperty("given");
+  expect(saved).not.toHaveProperty("db_check");
+});

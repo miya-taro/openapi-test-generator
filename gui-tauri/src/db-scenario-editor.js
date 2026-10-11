@@ -732,7 +732,34 @@ export function buildDbScenario(form) {
     scenario.db_unchanged = [{ table, columns, where, ...influx }];
     return scenario;
   }
-  if (engine === "influxdb" && method !== "GET") throw new Error("InfluxDBの値照合UIはGETに対応しています。変更なし確認は各メソッドで利用できます");
+  if (engine === "influxdb" && method !== "GET") {
+    const action = form.influxAction || ({ POST: "insert", PUT: "update", PATCH: "update", DELETE: "delete" })[method];
+    if (!["insert", "update", "delete"].includes(action)) throw new Error("期待する変更を選択してください");
+    const status = Number(form.influxStatus);
+    if (!Number.isInteger(status) || status < 200 || status > 299) throw new Error("変更確認の成功statusを200〜299で指定してください");
+    const time = String(form.influxTime || "").trim();
+    if (!time) throw new Error("ポイント時刻を入力してください");
+    const tags = form.influxTags || {};
+    if (typeof tags !== "object" || Array.isArray(tags)) throw new Error("全タグをJSONオブジェクトで指定してください");
+    for (const [key, value] of Object.entries(tags)) {
+      requireDbIdentifier(key, "タグ名");
+      if (key === "time" || typeof value !== "string" || !value) throw new Error("タグ値は空でない文字列にしてください");
+    }
+    const fields = {};
+    if (action !== "delete") {
+      for (const [key, value] of Object.entries(form.influxFields || {})) {
+        requireDbIdentifier(key, "フィールド名");
+        if (key === "time" || Object.hasOwn(tags, key)) continue;
+        if (value === null || !["string", "number", "boolean"].includes(typeof value)) throw new Error("InfluxDBフィールドには文字列・数値・booleanを指定してください");
+        fields[key] = value;
+      }
+      if (!Object.keys(fields).length) throw new Error("API項目に比較するInfluxDBフィールドを対応付けてください");
+    }
+    scenario.request.body = form.requestBody || {};
+    scenario.response_check = { expect: { status } };
+    scenario.influx_mutation = { measurement: table, time, tags, fields, action, preserve_unmapped: !!form.influxPreserve };
+    return scenario;
+  }
   if (MUTATING_METHODS.has(method)) {
     const writeStatus = Number(form.writeStatus);
     if (!Number.isInteger(writeStatus) || writeStatus < 100 || writeStatus > 599) {
@@ -1115,6 +1142,12 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     byId("dbscenario-editor-guidance").textContent = guidance;
     byId("dbscenario-editor-guidance").dataset.mappingGuidance = guidance;
     if (operationChanged) {
+      byId("dbscenario-editor-influx-action").value = ({ POST: "insert", PUT: "update", PATCH: "update", DELETE: "delete" })[method] || "insert";
+      byId("dbscenario-editor-influx-status").value = operation.successStatus || "200";
+      byId("dbscenario-editor-influx-time").value = "";
+      byId("dbscenario-editor-influx-tags").value = "{}";
+      byId("dbscenario-editor-influx-delete-body").value = "{}";
+      byId("dbscenario-editor-influx-preserve").checked = false;
       byId("dbscenario-editor-expand-combinations").checked = false;
       byId("dbscenario-editor-name").value = `${operation.operationId} のDB検証`;
       byId("dbscenario-editor-table").value = "";
@@ -1182,13 +1215,21 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     byId("dbscenario-editor-write-panel").hidden = unchanged || !["POST", "PUT", "PATCH"].includes(method);
     byId("dbscenario-editor-seed-panel").hidden = influx || unchanged || !SEEDED_METHODS.has(method);
     byId("dbscenario-editor-get-panel").hidden = unchanged || method !== "GET";
-    const unsupportedMapping = influx && !unchanged && method !== "GET";
-    byId("dbscenario-editor-add-scenario").disabled = unsupportedMapping;
-    if (unsupportedMapping) byId("dbscenario-editor-write-panel").hidden = true;
+    const mutation = influx && !unchanged && MUTATING_METHODS.has(method);
+    byId("dbscenario-editor-influx-mutation").hidden = !mutation;
+    byId("dbscenario-editor-influx-delete-body-field").hidden = !mutation || method !== "DELETE";
+    byId("dbscenario-editor-add-scenario").disabled = false;
+    byId("dbscenario-editor-post-cleanup").hidden = influx || method !== "POST";
+    byId("dbscenario-editor-post-row-id").hidden = influx || method !== "POST";
+    byId("dbscenario-editor-write-status").closest(".form-field").hidden = influx;
+    for (const input of byId("dbscenario-editor-write-mappings").querySelectorAll('input[aria-label="保存後の照合に使う"]')) {
+      input.disabled = influx;
+      input.title = influx ? "InfluxDBは上のポイント時刻と全タグで対象を指定します" : "";
+    }
     // Seed references are not available in the no-change mode.
     for (const checkbox of byId("dbscenario-editor-path-param-rows").querySelectorAll("input[data-auto-path-param]")) {
-      if (unchanged && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
-      checkbox.disabled = unchanged;
+      if ((unchanged || influx) && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
+      checkbox.disabled = unchanged || influx;
     }
     if (unchanged) {
       for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input")) input.disabled = false;
@@ -1197,7 +1238,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-guidance").textContent = byId("dbscenario-editor-guidance").dataset.mappingGuidance || "API操作を選択してください";
       syncMappedQueryParams();
     }
-    if (unsupportedMapping) byId("dbscenario-editor-guidance").textContent = "InfluxDBの保存・更新・削除の期待値を作るUIは未対応です。GETの内容照合、または各メソッドの変更なし確認を選択してください。";
+    if (mutation) byId("dbscenario-editor-guidance").textContent = "InfluxDBの対象時刻・全タグ・期待する変更を指定してください。保存は事前なし、更新・削除は既存ポイントが必要です。";
   }
 
   function currentForm() {
@@ -1235,6 +1276,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         ? collectRequestBodyFromFields()
         : parseJson(byId("dbscenario-editor-request-body").value || "{}", "リクエストbody", false);
     }
+    if (method === "DELETE" && byId("dbscenario-editor-engine").value === "influxdb") {
+      requestBody = parseJson(byId("dbscenario-editor-influx-delete-body").value || "{}", "リクエストbody", false);
+    }
     const seedFields = SEEDED_METHODS.has(method)
       ? parseJson(byId("dbscenario-editor-seed-fields").value || "{}", "事前データ")
       : {};
@@ -1259,6 +1303,14 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     return {
       operation,
       engine: byId("dbscenario-editor-engine").value,
+      influxAction: byId("dbscenario-editor-influx-action").value,
+      influxStatus: byId("dbscenario-editor-influx-status").value,
+      influxTime: byId("dbscenario-editor-influx-time").value,
+      influxTags: byId("dbscenario-editor-engine").value === "influxdb" && MUTATING_METHODS.has(method)
+        ? parseJson(byId("dbscenario-editor-influx-tags").value || "{}", "全タグ") : {},
+      influxFields: byId("dbscenario-editor-engine").value === "influxdb" && ["POST", "PUT", "PATCH"].includes(method)
+        ? collectWriteMappings(requestBody).columns : {},
+      influxPreserve: byId("dbscenario-editor-influx-preserve").checked,
       name: byId("dbscenario-editor-name").value,
       table: byId("dbscenario-editor-table").value,
       pathParams: collectPathParams(),

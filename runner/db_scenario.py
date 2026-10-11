@@ -136,6 +136,7 @@ class DBScenario:
     db_response_check: DBResponseCheck | None = None
     cleanup: ScenarioCleanup | None = None
     db_unchanged: list[DBUnchangedCheck] = field(default_factory=list)
+    influx_mutation: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -200,6 +201,8 @@ class DBScenario:
                 else None
             ),
         }
+        if self.influx_mutation is not None:
+            definition["influxMutation"] = self.influx_mutation
         if self.db_unchanged:
             definition["dbUnchanged"] = [
                 {"table": check.table, "columns": check.columns, "where": check.where,
@@ -323,9 +326,16 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged")):
-        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation のいずれかは必須です")
 
+    influx_mutation = raw.get("influx_mutation")
+    if "influx_mutation" in raw:
+        from src.influx_mutation import validate_mutation
+        try:
+            validate_mutation(influx_mutation)
+        except ValueError as exc:
+            raise ScenarioError(str(exc)) from exc
     db_check = None
     if "db_check" in raw:
         check_raw = raw["db_check"]
@@ -520,6 +530,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         response_check=response_check,
         db_response_check=db_response_check,
         db_unchanged=db_unchanged,
+        influx_mutation=influx_mutation,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

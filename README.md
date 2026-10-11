@@ -2,6 +2,8 @@
 
 OpenAPI 3.x 定義ファイルから **インターフェース観点のテスト仕様を自動生成**し、実際の API サーバーに対して **自動試験を実行**するツールセット。
 
+初版は、**UIでAPI仕様とDB対応を入力し、生成された試験を確認して実行するローカルブラウザー版**です。合否判定と結果・証跡保存まで自動実行します。[初版の対応範囲と使い方](docs/first-release.md)を参照してください。以前配布した旧exeは今回の機能を含まないため、下記のclone起動を利用してください。
+
 ```
 openapi.json
     │
@@ -12,7 +14,7 @@ openapi.json
 結果 Excel（実測値・判定・実行コマンドを追記）
 ```
 
-このツールセットは全体を通して Python で実装されている。
+試験生成・実行はPython、UIはJavaScriptで実装しています。
 
 ---
 
@@ -56,7 +58,7 @@ run-windows.bat
 ブラウザー版は `127.0.0.1` のみで待ち受け、設定を外部サービスへ送信しない。API試験リクエストは画面に指定したBase URLへ送信する。参照したファイルはアプリ用データフォルダーに取り込み、結果を開く操作ではファイルをダウンロードする。フォルダー選択で指定した名前の出力先は `%LOCALAPPDATA%\OpenApiTestTool\output\<フォルダー名>` に作成される。起動中はコマンド画面を閉じず、終了するときは `Ctrl+C` を押す。
 
 - 画面は「対象を登録 → 仕様を確認 → 試験を確認 → 実行 → 結果」の5工程で進める
-- 「DB確認」ではGETの返却項目とDB列、POST・PUT・PATCH・DELETEの保存先と対象行を設定できる。POSTはリクエスト項目の値か、レスポンスで返る採番IDで作成行を特定する
+- 「DB確認」ではGETの返却項目とDB列、POST・PUT・PATCH・DELETEの保存先と対象行を設定できる。PostgreSQLのPOSTはリクエスト項目の値か、レスポンスで返る採番IDで作成行を特定する。InfluxDBは固定時刻と全タグで単一ポイントを特定する
 - GETのJSONボディは「DB確認」で項目ごとに送信値・DB列・比較条件を設定できる。`OR`グループ、期間の`>=`/`<=`、文字列配列の`IN`にも対応する。レスポンス内の配列は配列パスを指定してDB行と照合する
 - GETの「条件付き必須とIN配列の正常な組み合わせを生成する」を選ぶと、人が入力した値から拠点の片方ずつ／両方、期間あり／なし、IN配列の全指定／1項目ずつを展開する（最大64件）。試験に必要な入力値は推測しない。各条件の省略を検出できるDB行、期間の端点、INの各指定値に一致するDB行がない場合は「未確認」にする
 - DB照合と同じレスポンスについて、契約試験と共通の検証処理でOpenAPIの型・必須項目・日時形式・Content-Type・レスポンスヘッダも検証する。DBとの値の比較は対応付けした項目が対象
@@ -78,7 +80,7 @@ run-windows.bat
 
 OpenAPIに `anyOf: [{"required":["site_id"]},{"required":["location_id"]}]` と書いた場合も「どちらか必須」のケースを生成する。OpenAPI 3.1の `dependentRequired: {"start":["end"],"end":["start"]}` からは「両方指定または両方省略」のケースを生成する。
 
-対応DBはPostgreSQLとInfluxDB 1.x（InfluxQL）です。InfluxDBのGET全ポイント照合・異常系のDB変更なし確認はUIで設定できます。[InfluxDBの設定・検証結果・制限](docs/influxdb-testing.md)
+対応DBはPostgreSQLとInfluxDB 1.x（InfluxQL）です。InfluxDBのGET全ポイント照合・単一ポイントの保存／更新／削除・異常系のDB変更なし確認はUIで設定できます。[InfluxDBの設定・検証結果・制限](docs/influxdb-testing.md)
 
 測定結果検索の具体的な画面設定・試験範囲・実API検証手順は [GET JSONボディの測定結果検索](docs/measure-get-testing.md) を参照。
 - 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
