@@ -42,6 +42,25 @@ function parseScalar(text, label) {
   }
 }
 
+function validateBodyValue(value, schema, label) {
+  const type = schemaType(schema);
+  const validType = type === "integer" ? Number.isInteger(value)
+    : type === "number" ? typeof value === "number" && Number.isFinite(value)
+      : type === "string" ? typeof value === "string"
+        : type === "array" ? Array.isArray(value)
+          : type === "boolean" ? typeof value === "boolean"
+            : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
+              : true;
+  if (!validType) throw new Error(`${label}は${type}型の値を入力してください`);
+  if (schema?.format === "date-time" &&
+      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value)))) {
+    throw new Error(`${label}はタイムゾーンを含む日時で入力してください`);
+  }
+  if (type === "array" && schema?.items) {
+    value.forEach((item, index) => validateBodyValue(item, schema.items, `${label}[${index}]`));
+  }
+}
+
 function sampleValue(schema = {}, propertyName = "value", depth = 0) {
   if (depth > 8) return {};
   if (Object.hasOwn(schema, "example")) return schema.example;
@@ -51,7 +70,7 @@ function sampleValue(schema = {}, propertyName = "value", depth = 0) {
   if (type === "integer" || type === "number") return schema.minimum ?? 1;
   if (type === "boolean") return false;
   if (type === "array") {
-    const minItems = Math.max(0, Number(schema.minItems) || 0);
+    const minItems = schema.maxItems === 0 ? 0 : Math.max(1, Number(schema.minItems) || 0);
     return Array.from({ length: Math.min(minItems, 3) }, () => sampleValue(schema.items || {}, "item", depth + 1));
   }
   if (type === "object" || schema.properties) {
@@ -61,7 +80,8 @@ function sampleValue(schema = {}, propertyName = "value", depth = 0) {
       .map(([key, child]) => [key, sampleValue(child, key, depth + 1)]));
   }
   if (schema.format === "email") return "test@example.com";
-  if (schema.format === "date" || schema.format === "date-time") return "2026-01-01";
+  if (schema.format === "date-time") return "2026-01-01T00:00:00Z";
+  if (schema.format === "date") return "2026-01-01";
   return propertyName;
 }
 
@@ -278,8 +298,23 @@ function addReadFilterRow(container, parameter) {
   row.dataset.parameterFormat = parameter.format || "";
   const sourceCell = make("td");
   const required = parameter.required ? "・必須" : "";
-  sourceCell.append(make("span", "db-scenario-api-field", `${parameter.name}（${parameter.source === "query" ? "Query" : "Path"}${required}）`));
+  const location = { query: "Query", path: "Path", body: "Body" }[parameter.source];
+  sourceCell.append(make("span", "db-scenario-api-field", `${parameter.name}（${location}${required}）`));
   row.append(sourceCell);
+
+  const valueCell = make("td");
+  if (parameter.source === "body") {
+    const value = make("input");
+    value.type = "text";
+    value.dataset.requestValue = "true";
+    value.placeholder = 'JSON値: 1 / "A" / ["x"]';
+    value.value = parameter.defaultValue === undefined ? "" : JSON.stringify(parameter.defaultValue);
+    value.setAttribute("aria-label", `${parameter.name}の送信値`);
+    valueCell.append(value);
+  } else {
+    valueCell.append(make("span", "field-caption", "DBから選択"));
+  }
+  row.append(valueCell);
 
   const columnCell = make("td");
   const column = make("input");
@@ -294,7 +329,7 @@ function addReadFilterRow(container, parameter) {
 
   const operatorCell = make("td");
   const operator = make("select");
-  for (const [value, label] of [["=", "と等しい"], [">=", "以上"], [">", "より大きい"], ["<=", "以下"], ["<", "より小さい"]]) {
+  for (const [value, label] of [["=", "と等しい"], [">=", "以上"], [">", "より大きい"], ["<=", "以下"], ["<", "より小さい"], ["in", "配列に含まれる"]]) {
     const option = make("option", "", label);
     option.value = value;
     operator.append(option);
@@ -306,6 +341,18 @@ function addReadFilterRow(container, parameter) {
   operator.setAttribute("aria-label", "DBとの比較条件");
   operatorCell.append(operator);
   row.append(operatorCell);
+
+  const groupCell = make("td");
+  const group = make("select");
+  for (const [value, label] of [["", "AND"], ["A", "OR A"], ["B", "OR B"]]) {
+    const option = make("option", "", label);
+    option.value = value;
+    group.append(option);
+  }
+  group.setAttribute("aria-label", `${parameter.name}のORグループ`);
+  group.dataset.orGroup = "true";
+  groupCell.append(group);
+  row.append(groupCell);
 
   container.append(row);
 }
@@ -359,7 +406,17 @@ function renderReadMappings(operation) {
 function renderReadFilters(operation) {
   const holder = byId("dbscenario-editor-read-filters");
   holder.replaceChildren();
+  const requestSchema = operation.requestSchema || {};
+  const requestRequired = new Set(requestSchema.required || []);
+  const presenceRules = requestSchema["x-otg-presence-rules"] || [];
+  const preferredPresence = new Set(presenceRules.filter((rule) => rule.kind === "atLeastOne")
+    .map((rule) => rule.fields?.[0]).filter(Boolean));
   const params = [
+    ...schemaFields(requestSchema).filter((field) => field.path !== "$" && !field.path.includes(".") && !field.path.includes("[]"))
+      .map((field) => ({ source: "body", name: field.path, format: field.schema?.format || "",
+        required: requestRequired.has(field.path),
+        defaultValue: requestRequired.has(field.path) || preferredPresence.has(field.path)
+          ? sampleValue(field.schema, field.path) : undefined })),
     ...(operation.parameters || [])
       .filter((parameter) => ["query", "path"].includes(parameter.in))
       .map((parameter) => ({
@@ -380,8 +437,8 @@ function renderReadFilters(operation) {
   }
   if (!seen.size) {
     const row = make("tr", "db-scenario-map-empty");
-    const cell = make("td", "field-caption", "OpenAPIに検索用のPath/Queryパラメータがありません。");
-    cell.colSpan = 3;
+    const cell = make("td", "field-caption", "OpenAPIに検索用のBody/Path/Queryパラメータがありません。");
+    cell.colSpan = 5;
     row.append(cell);
     holder.append(row);
   }
@@ -533,6 +590,17 @@ export function buildDbScenario(form) {
   }
 
   if (method === "GET") {
+    for (const rule of operation.requestSchema?.["x-otg-presence-rules"] || []) {
+      const [first, second] = rule.fields || [];
+      const firstSent = Object.hasOwn(form.requestBody || {}, first);
+      const secondSent = Object.hasOwn(form.requestBody || {}, second);
+      if (rule.kind === "atLeastOne" && !firstSent && !secondSent) {
+        throw new Error(`Bodyの「${first}」または「${second}」を入力してください`);
+      }
+      if (rule.kind === "together" && firstSent !== secondSent) {
+        throw new Error(`Bodyの「${first}」と「${second}」は両方入力するか、両方省略してください`);
+      }
+    }
     const mapping = form.readMappings || [];
     if (!mapping.length) throw new Error("OpenAPIに表示されたレスポンス項目のうち、DBと照合する項目のDBカラムを入力してください");
     const responseFields = {};
@@ -549,10 +617,13 @@ export function buildDbScenario(form) {
       const parameter = String(item.parameter || "").trim();
       const column = String(item.column || "").trim();
       const operator = String(item.operator || "").trim();
-      if (!["query", "path"].includes(source) || !parameter || !column) return null;
+      if (!["query", "path", "body"].includes(source) || !parameter || !column) return null;
       requireDbIdentifier(column, "検索に使うDBカラム");
-      if (!["=", ">", ">=", "<", "<="].includes(operator)) throw new Error("比較条件を選択してください");
-      return { source, parameter, column, operator, auto: true, format: item.format || null };
+      if (!["=", ">", ">=", "<", "<=", "in"].includes(operator)) throw new Error("比較条件を選択してください");
+      if (operator === "in" && source !== "body") throw new Error("IN条件はBodyの配列項目で指定してください");
+      if (item.group && source !== "body") throw new Error("ORグループはBody項目で指定してください");
+      return { source, parameter, column, operator, auto: source !== "body", format: item.format || null,
+        group: item.group || null };
     }).filter(Boolean);
     const seenFilters = new Set();
     for (const filter of filters) {
@@ -579,7 +650,7 @@ export function buildDbScenario(form) {
     }
     for (const filter of filters) {
       if (filter.source === "query") delete scenario.request.query_params[filter.parameter];
-      else delete scenario.request.path_params[filter.parameter];
+      else if (filter.source === "path") delete scenario.request.path_params[filter.parameter];
     }
     const status = Number(form.responseStatus);
     if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("期待statusは100〜599の整数で指定してください");
@@ -593,6 +664,7 @@ export function buildDbScenario(form) {
       throw new Error("選択したレスポンス形式・配列パスがOpenAPIのレスポンスschemaと一致しません");
     }
     scenario.response_check = { expect: { status } };
+    scenario.request.body = form.requestBody || {};
     scenario.db_response_check = {
       table,
       fields: responseFields,
@@ -837,7 +909,11 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-write-status").value = String(defaultStatus);
       byId("dbscenario-editor-response-status").value = String(defaultStatus);
       const responseType = schemaType(operation.responseSchema);
-      byId("dbscenario-editor-response-shape").value = responseType === "array"
+      const arrayProperties = Object.entries(operation.responseSchema?.properties || {})
+        .filter(([, schema]) => schemaType(schema) === "array");
+      const singleArrayPath = responseType === "object" && arrayProperties.length === 1 ? arrayProperties[0][0] : null;
+      if (singleArrayPath) byId("dbscenario-editor-response-array-path").value = singleArrayPath;
+      byId("dbscenario-editor-response-shape").value = responseType === "array" || singleArrayPath
         ? "array"
         : responseType === "object" ? "object" : "";
       byId("dbscenario-editor-response-array-path-field").hidden = method !== "GET" || byId("dbscenario-editor-response-shape").value !== "array";
@@ -870,6 +946,20 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     const operation = selectedOperation();
     const method = operation?.method;
     let requestBody = {};
+    if (method === "GET") {
+      for (const row of byId("dbscenario-editor-read-filters").querySelectorAll('tr[data-parameter-source="body"]')) {
+        const input = row.querySelector('input[data-request-value]');
+        if (input?.value.trim()) {
+          const name = row.dataset.parameterName;
+          const value = parseScalar(input.value, name);
+          validateBodyValue(value, operation.requestSchema?.properties?.[name] || {}, name);
+          requestBody[name] = value;
+        }
+      }
+      for (const name of operation.requestSchema?.required || []) {
+        if (!Object.hasOwn(requestBody, name)) throw new Error(`必須Body「${name}」の送信値を入力してください`);
+      }
+    }
     if (MUTATING_METHODS.has(method) && method !== "DELETE") {
       requestBody = byId("dbscenario-editor-request-body-field").hidden
         ? collectRequestBodyFromFields()
@@ -893,6 +983,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         column: columnInput?.value || "",
         operator: operatorSelect.value,
         format: row.dataset.parameterFormat || null,
+        group: row.querySelector('select[data-or-group]')?.value || null,
       };
     }).filter((item) => item.parameter && item.column.trim());
     return {

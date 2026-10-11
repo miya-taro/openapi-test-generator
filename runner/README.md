@@ -364,7 +364,32 @@ scenarios:
 ```
 
 - `fields` は「レスポンスの項目パス: DB列名」。配列要素内の `startsAt` のようなネストにも対応する。
-- `filters` の `source` は `query` または `path`。比較演算子は `=`, `>`, `>=`, `<`, `<=`。
+- `filters` の `source` は `query`、`path` または `body`。比較演算子は `=`, `>`, `>=`, `<`, `<=`, `in`。`body` の値は `request.body` から取得し、`auto: false` を指定する。
+- 同じ `group` を持つ条件はOR、異なるグループとグループなしの条件はANDで組み合わせる。`in` はAPIの配列値にDB列の値が含まれるかを調べる。例：`site_id` と `location_id` に `group: location`、`start` に `>=`、`end` に `<=`、`items` に `in` を設定する。省略した任意のbody項目の条件は適用しない。
+
+GETのJSONボディに対する設定例（両方の拠点IDを指定した場合にORで検索する仕様の場合）:
+
+```yaml
+request:
+  operationId: getMeasureResults
+  body:
+    site_id: 1
+    start: "2026-01-01T00:00:00Z"
+    end: "2026-01-02T00:00:00Z"
+    items: [temperature]
+db_response_check:
+  table: measurements
+  array_path: result
+  fields: {time: measured_at, item: item_name, value: measured_value}
+  filters:
+    - {source: body, parameter: site_id, column: site_id, operator: "=", auto: false, group: location}
+    - {source: body, parameter: location_id, column: location_id, operator: "=", auto: false, group: location}
+    - {source: body, parameter: start, column: measured_at, operator: ">=", auto: false}
+    - {source: body, parameter: end, column: measured_at, operator: "<=", auto: false}
+    - {source: body, parameter: items, column: item_name, operator: in, auto: false}
+```
+
+期間の端点を含むか、拠点IDを両方送った時の検索方法はAPI仕様で決め、UIの比較条件とORグループに反映する。単一テーブルの行照合が対象で、JOIN・集計・ページングには別の試験定義が必要。
 - `format` はOpenAPIのパラメータformat（`date` / `date-time`等）で、GUIからは自動で引き継ぐ。
   `date-time` パラメータにDBのDATE列しかない場合は、時刻やタイムゾーンを推測せず未確認にする。
 - `auto: true` の入力値は既存DBの値から自動選択する。開始・終了の両方を同じ列に設定する期間検索では、

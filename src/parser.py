@@ -98,10 +98,29 @@ def _normalize_schema(schema: dict) -> None:
     そのまま渡せる（ランナー側のレスポンスボディ検証で利用）。
     """
     _merge_all_of(schema)
+    _validate_presence_rules(schema)
     _reduce_one_of_any_of(schema)
     _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
     _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
     _normalize_nullable(schema)
+
+
+def _validate_presence_rules(schema: dict) -> None:
+    rules = schema.get("x-otg-presence-rules")
+    if rules is None:
+        return
+    properties = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+    if not isinstance(rules, list) or not isinstance(properties, dict):
+        raise OpenAPIParseError("x-otg-presence-rules はbody項目の配列として指定してください")
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("kind") not in {"atLeastOne", "together"}:
+            raise OpenAPIParseError("x-otg-presence-rules のkindが不正です")
+        fields = rule.get("fields")
+        if (not isinstance(fields, list) or len(fields) != 2 or
+                not all(isinstance(name, str) and name in properties for name in fields) or
+                fields[0] == fields[1] or any(name in required for name in fields)):
+            raise OpenAPIParseError("x-otg-presence-rules には異なる任意body項目を2つ指定してください")
 
 
 def _normalize_nullable(schema: dict) -> None:

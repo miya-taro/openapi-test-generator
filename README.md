@@ -57,6 +57,17 @@ run-windows.bat
 
 - 画面は「対象を登録 → 仕様を確認 → 試験を確認 → 実行 → 結果」の5工程で進める
 - 「DB確認」ではGETの返却項目とDB列、POST・PUT・PATCH・DELETEの保存先と対象行を設定できる。POSTはリクエスト項目の値か、レスポンスで返る採番IDで作成行を特定する
+- GETのJSONボディは「DB確認」で項目ごとに送信値・DB列・比較条件を設定できる。`OR`グループ、期間の`>=`/`<=`、文字列配列の`IN`にも対応する。レスポンス内の配列は配列パスを指定してDB行と照合する
+- リクエストbodyの「どちらか必須」「両方指定または両方省略」は契約UIで設定でき、それぞれの有効・無効な組み合わせを試験ケースとして生成する。補正後のOpenAPIには `x-otg-presence-rules` として保存する
+
+条件付き必須はリクエストbodyのschemaに次のように保存される。既存のOpenAPIに同じ拡張を書いても、UIと同じケースを生成する。
+
+```json
+"x-otg-presence-rules": [
+  {"kind": "atLeastOne", "fields": ["site_id", "location_id"]},
+  {"kind": "together", "fields": ["start", "end"]}
+]
+```
 - 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
 - 契約試験とDBシナリオ試験は同じ統一ワークフローで実行され、実行ごとのフォルダに試験仕様Excel、結果Excel、JUnit XML、JSONをまとめて出力する。DB試験は `db-scenario-evidence.json` に対応設定・期待値・実測値・判定も保存する（認証情報に該当する項目はマスクする）
 - Layer 1/Layer 2とも、最初はケースと試験仕様Excelを準備するだけでAPI・DBへ接続しない。GUIで入力・期待結果・出典を確認し、ケース単位で「レビュー済み」→「承認」にできる

@@ -455,7 +455,7 @@ def _run_scenario(
             try:
                 pg_config = get_postgres_config(db_config)
                 prepared = postgres_backend.prepare_db_response_check(
-                    scenario.db_response_check, pg_config, resolved_query_params, resolved_path_params
+                    scenario.db_response_check, pg_config, resolved_query_params, resolved_path_params, resolved_body
                 )
             except postgres_backend.DBResponseCheckUnverified as e:
                 return False, f"[UNVERIFIED] {e}", "未実行", previous_response
@@ -473,6 +473,11 @@ def _run_scenario(
                 evidence["db_response_comparison"] = {
                     "table": scenario.db_response_check.table,
                     "fields": scenario.db_response_check.fields,
+                    "filters": [
+                        {"source": item.source, "parameter": item.parameter, "column": item.column,
+                         "operator": item.operator, "group": item.group}
+                        for item in scenario.db_response_check.filters
+                    ],
                     "query_params": resolved_query_params,
                     "path_params": resolved_path_params,
                     "expected_rows": expected_db_rows,
