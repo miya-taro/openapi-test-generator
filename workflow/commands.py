@@ -39,6 +39,7 @@ def artifact_paths(config: ProjectConfig, run_id: str | None = None) -> Artifact
         junit_xml=run_dir / "contract-junit.xml",
         db_report_excel=run_dir / "db-scenario-result.xlsx",
         db_junit_xml=run_dir / "db-scenario-junit.xml",
+        db_evidence_json=run_dir / "db-scenario-evidence.json",
         html_report=run_dir / "report.html",
         failed_case_ids_json=run_dir / "failed-case-ids.json",
     )
@@ -135,6 +136,8 @@ def build_db_scenario_command(
         str(paths.db_report_excel),
         "--junit-xml",
         str(paths.db_junit_xml),
+        "--evidence-output",
+        str(paths.db_evidence_json),
         "--skip-health-check",
     ]
     if request.auth_config_path is not None:

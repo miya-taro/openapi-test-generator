@@ -51,5 +51,6 @@ class ArtifactPaths:
     junit_xml: Path
     db_report_excel: Path
     db_junit_xml: Path
+    db_evidence_json: Path
     html_report: Path
     failed_case_ids_json: Path
