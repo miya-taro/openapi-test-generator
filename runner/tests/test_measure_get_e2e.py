@@ -186,7 +186,7 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
         assert len(scenarios) == 18
         ui_scenarios = output / "ui-scenarios.yaml"
         bridge("save_db_scenario_yaml", {"path": str(ui_scenarios), "scenarios": scenarios})
-        assert yaml.safe_load(ui_scenarios.read_text())["scenarios"]["list"] == scenarios
+        assert yaml.safe_load(ui_scenarios.read_text(encoding="utf-8"))["scenarios"]["list"] == scenarios
         from workflow.case_master import build_case_master, write_case_master
         from workflow.spec_writer import write_case_spec_excel
         master = build_case_master("測定結果API", None, ui_scenarios, SPEC)

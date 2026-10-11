@@ -116,9 +116,9 @@ def test_runner_records_and_masks_value_evidence(monkeypatch, tmp_path):
                                     {"path": "id", "source": "body", "parameter": "id"},
                                 ]}}}]}
     spec, scenarios, config, evidence = [tmp_path / name for name in ("api.json", "scenarios.yaml", "db.json", "evidence.json")]
-    spec.write_text(json.dumps(api))
-    scenarios.write_text(yaml.safe_dump(scenario))
-    config.write_text("{}")
+    spec.write_text(json.dumps(api), encoding="utf-8")
+    scenarios.write_text(yaml.safe_dump(scenario), encoding="utf-8")
+    config.write_text("{}", encoding="utf-8")
     response = {"secret_note": "private-value", "id": 5}
     monkeypatch.setattr(runner, "_call_api", lambda *args, **kwargs: runner.APIResponse(
         200, response, None, json.dumps(response), {"Content-Type": "application/json"}, 0,
@@ -126,7 +126,7 @@ def test_runner_records_and_masks_value_evidence(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["runner", str(scenarios), str(spec), "--base-url", "http://x",
                                      "--config", str(config), "--skip-health-check", "--evidence-output", str(evidence)])
     assert runner.main() == 1  # A returned writeOnly field must also fail the shared contract check.
-    payload = evidence.read_text()
+    payload = evidence.read_text(encoding="utf-8")
     assert "private-value" not in payload
     checks = json.loads(payload)["cases"][0]["response_value_checks"]
     assert checks[0]["expected"] == checks[0]["actual"] == "[REDACTED]"
