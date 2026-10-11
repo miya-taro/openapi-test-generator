@@ -68,6 +68,17 @@ class DBCheck:
 
 
 @dataclass
+class DBUnchangedCheck:
+    """Explicit database scope whose selected values must remain unchanged."""
+    table: str
+    columns: list[str]
+    where: dict = field(default_factory=dict)
+    engine: str = "postgres"
+    time_start: str | None = None
+    time_end: str | None = None
+
+
+@dataclass
 class DBResponseFilter:
     """Map an API body/path/query parameter to a database comparison rule."""
     source: str
@@ -81,11 +92,12 @@ class DBResponseFilter:
 
 @dataclass
 class DBResponseCheck:
-    """Derive an API response expectation from existing PostgreSQL rows."""
+    """Derive an API response expectation from existing database rows."""
     table: str
     fields: dict[str, str] = field(default_factory=dict)  # response path -> DB column
     filters: list[DBResponseFilter] = field(default_factory=list)
     array_path: str | None = "$"
+    engine: str = "postgres"
 
 
 @dataclass
@@ -108,6 +120,7 @@ class ResponseCheck:
     expect_status: int | None = None
     expect_body: dict = field(default_factory=dict)
     expect_contains: list[dict] = field(default_factory=list)
+    expect_values: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -122,6 +135,8 @@ class DBScenario:
     case_id_override: str | None = field(default=None, repr=False, compare=False)
     db_response_check: DBResponseCheck | None = None
     cleanup: ScenarioCleanup | None = None
+    db_unchanged: list[DBUnchangedCheck] = field(default_factory=list)
+    influx_mutation: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -160,6 +175,8 @@ class DBScenario:
                 {
                     "expectedStatus": self.response_check.expect_status,
                     "expectedBody": self.response_check.expect_body,
+                    **({"expectedValues": self.response_check.expect_values}
+                       if self.response_check.expect_values else {}),
                     **(
                         {"expectedContains": self.response_check.expect_contains}
                         if self.response_check.expect_contains else {}
@@ -184,9 +201,19 @@ class DBScenario:
                 else None
             ),
         }
+        if self.influx_mutation is not None:
+            definition["influxMutation"] = self.influx_mutation
+        if self.db_unchanged:
+            definition["dbUnchanged"] = [
+                {"table": check.table, "columns": check.columns, "where": check.where,
+                 **({"engine": check.engine, "time_start": check.time_start, "time_end": check.time_end}
+                    if check.engine != "postgres" else {})}
+                for check in self.db_unchanged
+            ]
         if self.db_response_check:
             definition["dbResponseCheck"] = {
                 "table": self.db_response_check.table,
+                **({"engine": self.db_response_check.engine} if self.db_response_check.engine != "postgres" else {}),
                 "fields": self.db_response_check.fields,
                 "filters": [
                     {
@@ -299,9 +326,16 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check")):
-        raise ScenarioError("db_check、response_check、db_response_check のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation のいずれかは必須です")
 
+    influx_mutation = raw.get("influx_mutation")
+    if "influx_mutation" in raw:
+        from src.influx_mutation import validate_mutation
+        try:
+            validate_mutation(influx_mutation)
+        except ValueError as exc:
+            raise ScenarioError(str(exc)) from exc
     db_check = None
     if "db_check" in raw:
         check_raw = raw["db_check"]
@@ -310,7 +344,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError(
                 "engine が指定されていません（db_check.engine か scenarios.defaults.engine のどちらかで指定してください）"
             )
-        if engine not in SUPPORTED_ENGINES:
+        if not isinstance(engine, str) or engine not in SUPPORTED_ENGINES:
             raise ScenarioError(
                 f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"
             )
@@ -337,11 +371,36 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             expect_status=expect_raw.get("status"),
             expect_body=expect_raw.get("body") or {},
             expect_contains=expect_raw.get("contains") or [],
+            expect_values=expect_raw.get("values", []),
         )
         if not isinstance(response_check.expect_body, dict):
             raise ScenarioError("response_check.expect.body はオブジェクトである必要があります")
         if not isinstance(response_check.expect_contains, list):
             raise ScenarioError("response_check.expect.contains はリストである必要があります")
+        if not isinstance(response_check.expect_values, list):
+            raise ScenarioError("response_check.expect.values はリストである必要があります")
+        seen_value_paths = set()
+        for item in response_check.expect_values:
+            if not isinstance(item, dict):
+                raise ScenarioError("response_check.expect.values の各項目はオブジェクトにしてください")
+            path = item.get("path")
+            source = item.get("source")
+            if not isinstance(path, str) or not path.strip() or path in seen_value_paths:
+                raise ScenarioError("response_check.expect.values.path は重複のない項目パスにしてください")
+            seen_value_paths.add(path)
+            if not isinstance(source, str) or source not in {"body", "query", "path", "fixed"}:
+                raise ScenarioError("response_check.expect.values.source は body、query、path、fixed にしてください")
+            if source == "fixed":
+                if "value" not in item:
+                    raise ScenarioError("固定値の照合には value が必要です")
+            elif not isinstance(item.get("parameter"), str) or not item["parameter"].strip():
+                raise ScenarioError("送信値の照合には parameter が必要です")
+            if item.get("when_missing", "error") not in ("error", "skip", "fixed"):
+                raise ScenarioError("when_missing は error、skip、fixed のいずれかにしてください")
+            if item.get("when_missing") == "fixed" and "value" not in item:
+                raise ScenarioError("省略時の固定値には value が必要です")
+            if item.get("comparison", "exact") not in ("exact", "date-time"):
+                raise ScenarioError("comparison は exact または date-time にしてください")
         for i, expected_item in enumerate(response_check.expect_contains):
             if (
                 not isinstance(expected_item, dict)
@@ -403,8 +462,11 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
                 raise ScenarioError(f"db_response_check.filters[{i}] のAPIパラメータが重複しています: {source}.{parameter}")
             seen_params.add(param_key)
             filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format, group))
+        engine = check_raw.get("engine", "postgres")
+        if not isinstance(engine, str) or engine not in SUPPORTED_ENGINES:
+            raise ScenarioError("db_response_check.engine はpostgresまたはinfluxdbです")
         db_response_check = DBResponseCheck(
-            table=check_raw["table"], fields=fields, filters=filters, array_path=array_path,
+            table=check_raw["table"], fields=fields, filters=filters, array_path=array_path, engine=engine,
         )
 
     cleanup = None
@@ -431,6 +493,30 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError("cleanup.where の値は文字列・数値・boolean・nullで指定してください")
         cleanup = ScenarioCleanup(table=table, primary_key=primary_key, where=where)
 
+    db_unchanged = []
+    if "db_unchanged" in raw:
+        checks = raw["db_unchanged"]
+        if not isinstance(checks, list) or not checks:
+            raise ScenarioError("db_unchanged は比較範囲を1件以上指定してください")
+        for check in checks:
+            if not isinstance(check, dict):
+                raise ScenarioError("db_unchanged の比較範囲はオブジェクトにしてください")
+            table, columns, where = check.get("table"), check.get("columns"), check.get("where", {})
+            def identifier(value):
+                return isinstance(value, str) and _SAFE_DB_IDENTIFIER.fullmatch(value)
+            if not identifier(table) or not isinstance(columns, list) or not columns or not all(identifier(c) for c in columns):
+                raise ScenarioError("db_unchanged には有効なtableと1件以上のcolumnsを指定してください")
+            if len(set(columns)) != len(columns):
+                raise ScenarioError("db_unchanged.columns が重複しています")
+            if not isinstance(where, dict) or not all(identifier(k) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in where.items()):
+                raise ScenarioError("db_unchanged.where は列名と単一値のオブジェクトにしてください")
+            from src.db_scope import validate_scopes
+            try:
+                validate_scopes([check])
+            except ValueError as exc:
+                raise ScenarioError(str(exc)) from exc
+            db_unchanged.append(DBUnchangedCheck(**check))
+
     given: list[GivenItem] = []
     for i, g in enumerate(raw.get("given") or []):
         if "table" not in g or "as" not in g:
@@ -443,6 +529,8 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         db_check=db_check,
         response_check=response_check,
         db_response_check=db_response_check,
+        db_unchanged=db_unchanged,
+        influx_mutation=influx_mutation,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

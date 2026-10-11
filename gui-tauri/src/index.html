@@ -66,7 +66,7 @@
                     </div>
                   </div>
                   <p class="field-caption contract-validation-note">
-                    bodyの制約違反ケースは自動生成し、期待statusは400固定ではなく4xxです。エラーボディschemaも検証する場合は、OpenAPIの400/422 responseに定義してください。
+                    bodyの制約違反ケースは自動生成し、OpenAPIに定義した4xxのstatusを照合します。エラーボディも検証する場合は、該当するresponseにschemaを定義してください。
                   </p>
                   <div class="contract-schema-grid">
                     <div class="form-field contract-schema-panel">
@@ -81,6 +81,10 @@
                         <p class="field-caption">同じbody内の2項目を選び、「どちらか必須」または「片方を指定したらもう片方も必須」を設定します。</p>
                         <div id="contract-presence-rules"></div>
                         <button class="secondary" id="contract-add-presence-rule" type="button">＋ 条件を追加</button>
+                        <h4>項目間の大小条件（任意）</h4>
+                        <p class="field-caption">例：start ≦ end。両方指定した場合だけ比較します。小さい試験値・大きい試験値は両項目の制約を満たすJSONで入力（例：1、10、日時は "2026-01-01T00:00:00Z"）。大小・同値の3ケースを作ります。同じ項目は複数の大小条件に使えません。</p>
+                        <div id="contract-comparison-rules"></div>
+                        <button class="secondary" id="contract-add-comparison-rule" type="button">＋ 大小条件を追加</button>
                       </div>
                     </div>
                     <div class="form-field contract-schema-panel">
@@ -99,6 +103,12 @@
                     <button class="secondary" id="contract-save-button" type="button">補正したOpenAPIを別ファイルに保存</button>
                   </div>
                   <div id="contract-editor-status" class="field-caption status-message" aria-live="polite"></div>
+                  <details>
+                    <summary>自動生成する異常系でDBが変わらないことを確認</summary>
+                    <p class="field-caption">PostgreSQLまたはInfluxDB 1.xの比較範囲を設定すると、このAPIの全異常系ケースに前後比較を付けます。DB接続設定が必要です。並列実行はできません。InfluxDBは固定の比較期間も指定します。上限5,000行／ポイントです。</p>
+                    <div id="contract-error-db-scopes"></div>
+                    <button class="secondary" id="contract-add-error-db-scope" type="button">＋ 比較範囲を追加</button>
+                  </details>
                 </div>
                 <div id="case-review-panel" class="case-review-panel" hidden>
                   <div class="case-review-heading">
@@ -285,8 +295,56 @@
                       <input id="dbscenario-editor-name" type="text" placeholder="例: createUser のDB保存を確認" />
                     </div>
                     <div class="form-field">
-                      <label for="dbscenario-editor-table">確認するDBテーブル</label>
+                      <label for="dbscenario-editor-engine">確認するDB</label>
+                      <select id="dbscenario-editor-engine"><option value="postgres">PostgreSQL</option><option value="influxdb">InfluxDB 1.x（InfluxQL）</option></select>
+                      <label for="dbscenario-editor-table">確認するテーブル / measurement</label>
                       <input id="dbscenario-editor-table" type="text" placeholder="例: users" />
+                    </div>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="dbscenario-editor-mode">確認する内容</label>
+                    <select id="dbscenario-editor-mode">
+                      <option value="mapping">APIとDBの値を照合する</option>
+                      <option value="unchanged">API実行前後でDBに変更がないこと</option>
+                    </select>
+                  </div>
+                  <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。前提ポイントの自動投入は行いません。</p>
+                  <div id="dbscenario-editor-influx-mutation" hidden>
+                    <p class="field-caption">対象は時刻と全タグで特定する1ポイントです。APIが保存・更新・削除した結果をDBから読み取ります。ツールからのポイント投入・後片付けは行いません。</p>
+                    <div class="db-scenario-editor-grid">
+                      <label>期待する変更<select id="dbscenario-editor-influx-action"><option value="insert">保存：なし → 1件</option><option value="update">更新：既存1件 → 指定値</option><option value="delete">削除：既存1件 → なし</option></select></label>
+                      <label>期待するHTTP status<input id="dbscenario-editor-influx-status" type="number" min="200" max="299" value="200" /></label>
+                      <label>ポイント時刻<input id="dbscenario-editor-influx-time" type="text" placeholder="2026-01-01T00:00:00Z" /></label>
+                    </div>
+                    <label>全タグの名前と値（JSON、タグなしなら{}）<textarea id="dbscenario-editor-influx-tags" rows="3" spellcheck="false">{}</textarea></label>
+                    <label class="checkbox"><input id="dbscenario-editor-influx-preserve" type="checkbox" /> 対応付けしていない既存フィールドも変更されないことを確認</label>
+                    <div id="dbscenario-editor-influx-delete-body-field" hidden><label>送信するJSON body（不要なら{}）<textarea id="dbscenario-editor-influx-delete-body" rows="3" spellcheck="false">{}</textarea></label></div>
+                    <p class="field-caption">下のAPI項目にフィールドを対応付けると送信値から期待値を作ります。timeとタグは上の対象指定に使用し、期待フィールドとは分けます。既存値と同じ値への更新など、変更を確かめられないデータは未確認にします。</p>
+                  </div>
+                  <div id="dbscenario-editor-unchanged-panel" hidden>
+                    <div id="dbscenario-editor-influx-period" class="db-scenario-editor-grid" hidden>
+                      <label>比較期間の開始（含む）<input id="dbscenario-editor-time-start" type="text" placeholder="2026-01-01T00:00:00Z" /></label>
+                      <label>比較期間の終了（含む）<input id="dbscenario-editor-time-end" type="text" placeholder="2026-01-02T00:00:00Z" /></label>
+                    </div>
+                    <p class="field-caption">正常な参照処理や、エラー時の副作用を確認します。選択した列の値・行数を実行前後で比較します。順序は問いません。比較中に他の処理がDBを更新しない試験環境で実行してください。</p>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-body">送信するJSON body（異常値もそのまま送信）</label>
+                      <textarea id="dbscenario-editor-unchanged-body" rows="5" spellcheck="false">{}</textarea>
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-status">期待するHTTP status（仕様に従って入力）</label>
+                      <input id="dbscenario-editor-unchanged-status" type="number" min="100" max="599" />
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-columns">比較するDB列（カンマ区切り）</label>
+                      <input id="dbscenario-editor-unchanged-columns" type="text" placeholder="id, name, updated_at" />
+                      <p class="field-caption">値の入れ替わりも検出するには主キー（InfluxDBではtimeとポイントを識別する全タグ）を含めてください。指定しない列の値は比較しません。</p>
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-where">比較する行の条件（JSON、{}ならテーブル全体）</label>
+                      <textarea id="dbscenario-editor-unchanged-where" rows="3" spellcheck="false">{}</textarea>
+                      <p class="field-caption">例：{"site_id": 1}。各項目はANDで一致判定します。PostgreSQLではnullはIS NULL、InfluxDBではnull不可・タグ値は文字列です。対象は最大5,000行。超過は合格にせず未確認とします。</p>
                     </div>
                   </div>
 
@@ -371,6 +429,8 @@
 
                   <div id="dbscenario-editor-get-panel" hidden>
                     <p class="field-caption">GETのJSONボディもOpenAPIの項目から設定できます。任意項目は値を空欄にすると送信しません。</p>
+                    <label class="checkbox"><input type="checkbox" id="dbscenario-editor-expand-combinations" /> 条件付き必須とIN配列の正常な組み合わせを生成する</label>
+                    <p class="field-caption">組み合わせ生成時は、条件付き必須の各項目にDBにある試験値を入力してください。「どちらか必須」は片方ずつと両方、「同時指定」は両方あり／なし、IN配列は全指定と1項目ずつを作ります（最大64件）。期待statusは全ケース共通です。</p>
                     <div class="form-field">
                       <div class="db-scenario-editor-heading">
                         <label>APIの検索条件 → DBの列</label>
@@ -412,6 +472,16 @@
                         </table>
                       </div>
                       <p class="field-caption">レスポンス項目行はOpenAPIから表示します。DBと照合する項目のDB列を入力してください。実行時は既存DBから条件に合う行を読み、レスポンスの対応項目と件数まで照合します。順番は照合対象にしません。</p>
+                    </div>
+                    <div id="dbscenario-editor-response-values-field" class="form-field" hidden>
+                      <label>レスポンス項目の値の照合</label>
+                      <p class="field-caption">配列の外にある項目などを、送信値または固定値と照合します。入力を省略した場合の期待値も仕様に合わせて人が設定してください。「指定時のみ」は省略時の値照合を行いません。型・形式の試験は引き続き行います。日時は同じ時刻なら表記が違っても一致します。</p>
+                      <div class="db-scenario-table-wrap">
+                        <table class="db-scenario-map-table">
+                          <thead><tr><th>レスポンス項目（OpenAPI）</th><th>値の照合方法</th><th>期待値の元</th></tr></thead>
+                          <tbody id="dbscenario-editor-response-values"></tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
 

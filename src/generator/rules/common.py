@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+from jsonschema import Draft202012Validator, FormatChecker
 
 from ...samples.format_samples import FORMAT_VALID_SAMPLES
+from ...schema_contract import CONTRACT, validation_schema
+from ...schema_example import find_schema_example, NoSchemaExample
 
 # body フィールド（requestBody ルート・ネスト両方）向けの oneOf/anyOf バリアント用マーカー。
 # runner/request_builder.py の _ONE_OF_VARIANT_MARKER_PREFIX と対応させている
@@ -49,21 +52,18 @@ def generate_common_cases(schema: dict, required: bool, ctx: dict) -> list[dict]
             "notes": "ルーティング失敗により 404 の可能性あり" if is_path else "",
         })
 
-    # required かつ string → キーあり・空値（異常）
-    # minLength >= 1 の場合は string.py 側で最小長-1 として "" を生成するが、
-    # それは境界値テストであり「空値」の観点とは別なので両立させる
-    if required and opts["includeAbnormal"]:
-        # OAS 3.1 の type 配列は順不同（例: ["null", "string"]）なので、先頭要素だけを
-        # 見ると "null" が先に来る書き方で "string" を見逃す。集合として判定する。
-        if "string" in _type_set(schema) and schema.get("format") != "binary":
+    # Required means presence, not non-empty. Only declared string constraints decide validity.
+    if required and "string" in _type_set(schema) and schema.get("format") != "binary":
+        empty_valid = Draft202012Validator(schema, format_checker=FormatChecker()).is_valid("")
+        if opts["includeNormal" if empty_valid else "includeAbnormal"]:
             cases.append({
-                "summary": f"{ctx['paramName']} キーあり・空値（異常）",
+                "summary": f"{ctx['paramName']} キーあり・空値（{'正常' if empty_valid else '異常'}）",
                 "keyword": "required",
-                "perspective": "異常系_空値",
+                "perspective": "正常系_空値" if empty_valid else "異常系_空値",
                 "inputValue": "（空文字）",
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "キーは存在するが値が空文字",
+                "expectedStatus": ctx.get("successStatus") if empty_valid else "4xx",
+                "expectedResult": "正常に処理されること" if empty_valid else "バリデーションエラーが返ること",
+                "notes": "空文字の可否はminLength・pattern・enum・format等の定義に従う",
             })
 
     # type — 型不正（異常）
@@ -134,6 +134,13 @@ def generate_one_of_variant_cases(schema: dict, ctx: dict) -> list[dict]:
     is_body = ctx.get("paramIn") == "body"
     cases = []
     for i in range(1, len(variants)):
+        if CONTRACT in schema:
+            try:
+                candidate = find_schema_example(variants[i])
+            except NoSchemaExample:
+                continue
+            if not Draft202012Validator(validation_schema(schema), format_checker=FormatChecker()).is_valid(candidate):
+                continue
         if is_body:
             # バリアントごとに型が異なりうるため、実行時にスキーマを見て正しく
             # 組み立てられるよう request_builder.py 側で解決するマーカーにする。
@@ -141,7 +148,7 @@ def generate_one_of_variant_cases(schema: dict, ctx: dict) -> list[dict]:
         else:
             # path/query/header/cookie は常に文字列として送信されるため、
             # ここで直接バリアントの代表値を文字列化して埋め込む。
-            input_value = _stringify_example(_example_value(variants[i]))
+            input_value = _stringify_example(candidate if CONTRACT in schema else _example_value(variants[i]))
         cases.append({
             "summary": f"{ctx['paramName']} oneOf/anyOf バリアント{i + 1}（正常）",
             "keyword": "oneOf",

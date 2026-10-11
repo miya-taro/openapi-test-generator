@@ -1,3 +1,4 @@
+import { applyComparisonRules, comparisonRulesFromSchema, renderComparisonRules } from "./comparison-rules.js";
 import { invoke, listen, open, save, openPath } from "./runtime.js";
 import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
@@ -640,16 +641,25 @@ function contractOption(label, value) {
   return option;
 }
 
+import { addErrorDbScope, collectErrorDbScopes } from "./error-db-scopes.js";
+$("contract-add-error-db-scope").addEventListener("click", () => addErrorDbScope($("contract-error-db-scopes")));
 let contractRequestSchemaNode = null;
 let contractResponseSchemaNode = null;
 let contractPresenceRules = [];
+let contractComparisonRules = [];
 
 function refreshPresenceRules() {
+  renderComparisonRules($("contract-comparison-rules"), contractComparisonRules, contractRequestSchemaNode);
   renderPresenceRules($("contract-presence-rules"), contractPresenceRules, contractRequestSchemaNode);
 }
 
 $("contract-add-presence-rule").addEventListener("click", () => {
   contractPresenceRules.push({ kind: "atLeastOne", fields: ["", ""] });
+  refreshPresenceRules();
+});
+
+$("contract-add-comparison-rule").addEventListener("click", () => {
+  contractComparisonRules.push({ fields: ["", ""], operator: "<=" });
   refreshPresenceRules();
 });
 
@@ -660,6 +670,7 @@ function setContractSchemaBuilder(kind, schema) {
   else contractResponseSchemaNode = model;
   if (isRequest) {
     contractPresenceRules = presenceRulesFromSchema(schema);
+    contractComparisonRules = comparisonRulesFromSchema(schema);
     refreshPresenceRules();
   }
 
@@ -678,6 +689,7 @@ function setContractSchemaBuilder(kind, schema) {
 
 function resetContractEditor() {
   $("contract-operation").replaceChildren(contractOption("OpenAPIを選択してください", ""));
+  $("contract-error-db-scopes").replaceChildren();
   $("contract-operation").disabled = true;
   $("contract-load-button").disabled = true;
   $("contract-save-button").disabled = true;
@@ -737,6 +749,8 @@ async function loadOperationBodyContract() {
       args: { path, operation_id: operationId },
     });
     $("contract-request-required").checked = !!contract.requestBodyRequired;
+    $("contract-error-db-scopes").replaceChildren();
+    for (const scope of contract.errorDbUnchanged || []) addErrorDbScope($("contract-error-db-scopes"), scope);
     setContractSchemaBuilder("request", contract.requestBodySchema);
     $("contract-response-status").value = contract.responseStatus || "200";
     setContractSchemaBuilder("response", contract.responseBodySchema);
@@ -759,6 +773,7 @@ async function saveOperationBodyContract() {
   try {
     requestSchema = contractRequestSchemaNode ? builderNodeToSchema(contractRequestSchemaNode) : null;
     requestSchema = applyPresenceRules(requestSchema, contractPresenceRules);
+    requestSchema = applyComparisonRules(requestSchema, contractComparisonRules);
     responseSchema = contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
   } catch (error) {
     setContractEditorStatus(error.message, "error");
@@ -787,6 +802,7 @@ async function saveOperationBodyContract() {
         request_body_schema: requestSchema,
         response_status: responseStatus,
         response_body_schema: responseSchema,
+        error_db_unchanged: collectErrorDbScopes($("contract-error-db-scopes")),
       },
     });
     $("openapi-path").value = result.path;
@@ -1130,6 +1146,7 @@ const ARTIFACT_LABELS = {
   db_report_excel: "DB試験結果Excel",
   db_junit_xml: "DB JUnit XML",
   db_evidence_json: "DB比較エビデンスJSON",
+  contract_db_evidence_json: "異常系DB変更なしエビデンスJSON",
   html_report: "HTML結果レポート",
   failed_case_ids_json: "失敗ケースID一覧",
 };
@@ -1193,11 +1210,35 @@ function renderCaseMasterView(master, masterPath, ids, rerender) {
   const panel = $(ids.panel);
   const list = $(ids.list);
   const cases = Array.isArray(master?.cases) ? master.cases : [];
-  panel.hidden = cases.length === 0;
+  panel.hidden = cases.length === 0 && !master?.coverage?.length;
   list.replaceChildren();
   const counts = { draft: 0, reviewed: 0, approved: 0 };
   for (const testCase of cases) counts[testCase.reviewStatus] = (counts[testCase.reviewStatus] || 0) + 1;
   $(ids.summary).textContent = `${cases.length}件: 未確認 ${counts.draft} / レビュー済み ${counts.reviewed} / 承認済み ${counts.approved}`;
+
+  if (Array.isArray(master?.coverage) && master.coverage.length) {
+    const coverage = document.createElement("details");
+    coverage.className = "coverage-review";
+    const heading = document.createElement("summary");
+    const gaps = master.coverage.filter((row) => ["未生成", "未対応", "一部対応"].includes(row.status));
+    heading.textContent = `仕様の対応状況：要確認 ${gaps.length}件 / ${master.coverage.length}項目（試験の合否とは別）`;
+    coverage.open = gaps.length > 0;
+    const table = document.createElement("table");
+    const header = document.createElement("tr");
+    for (const label of ["API操作", "場所・項目", "制約", "状態", "試験ID・補足"]) {
+      const th = document.createElement("th"); th.textContent = label; header.append(th);
+    }
+    table.append(header);
+    for (const row of master.coverage) {
+      const tr = document.createElement("tr");
+      for (const text of [row.operationId, `${row.location} / ${row.field}`, row.keyword, row.status,
+        `${(row.caseIds || []).join(", ")} ${row.detail || ""}`]) {
+        const td = document.createElement("td"); td.textContent = text; tr.append(td);
+      }
+      table.append(tr);
+    }
+    coverage.append(heading, table); list.append(coverage);
+  }
 
   for (const testCase of cases) {
     const card = document.createElement("article");
@@ -1692,10 +1733,11 @@ function finishRunUi(code) {
   $("run-schemathesis-button").disabled = false;
   $("cancel-button").disabled = true;
   if (currentCaseMaster) renderCaseMaster(currentCaseMaster, currentCaseMasterPath);
-  if ((code === 0 || code === 2) && currentResultPath) {
+  if (currentResultPath) {
     $("run-progress-bar").style.width = "100%";
     $("open-result-button").disabled = false;
   }
+  $("rerun-failed-button").disabled = currentFailedCaseIds.length === 0;
 }
 
 function handleContractWorkflowEvent(event) {

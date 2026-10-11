@@ -1,3 +1,4 @@
+param([switch]$SmokeTest)
 $ErrorActionPreference = "Stop"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -27,8 +28,8 @@ function Invoke-Checked {
 }
 
 Require-Command "py.exe" "Install Python 3.10 or newer and enable the Python launcher."
-Require-Command "node.exe" "Install Node.js 22 or newer."
-Require-Command "npm.cmd" "Install Node.js 22 or newer (npm is included)."
+Require-Command "node.exe" "Install Node.js 22.12 or newer."
+Require-Command "npm.cmd" "Install Node.js 22.12 or newer (npm is included)."
 
 $pythonVersion = & py.exe -3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 if ($LASTEXITCODE -ne 0) { throw "Python 3 could not be started with 'py -3'." }
@@ -38,8 +39,8 @@ if ([version]$pythonVersion.Trim() -lt [version]"3.10") {
 
 $nodeVersionText = (& node.exe --version).Trim().TrimStart("v")
 if ($LASTEXITCODE -ne 0) { throw "Node.js could not be started." }
-if ([version]$nodeVersionText -lt [version]"22.0") {
-    throw "Node.js 22 or newer is required; found $nodeVersionText."
+if ([version]$nodeVersionText -lt [version]"22.12") {
+    throw "Node.js 22.12 or newer is required; found $nodeVersionText."
 }
 
 if (-not (Test-Path -LiteralPath $pythonExecutable)) {
@@ -79,9 +80,11 @@ try {
 
 Write-Host "[run] Starting the local browser app. Rust and Visual Studio Build Tools are not used."
 Write-Host "[run] Keep this window open while using the app. Press Ctrl+C to stop."
-Invoke-Checked $pythonExecutable @(
+$serverArguments = @(
     (Join-Path $repo "gui\web_server.py"),
     "--root", $repo,
     "--static-root", (Join-Path $frontend "dist"),
     "--port", "0"
 )
+if ($SmokeTest) { $serverArguments += "--smoke-test" }
+Invoke-Checked $pythonExecutable $serverArguments

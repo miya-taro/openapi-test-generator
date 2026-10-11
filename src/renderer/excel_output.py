@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from src.cmd_escape import quote_cmd_arg as _quote_cmd
 from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
+from src.coverage import write_coverage_sheet
 
 # ── 列定義 ─────────────────────────────────────────────────────────
 # (header, key, compute, width) — key と compute はどちらか一方のみ指定する
@@ -230,4 +231,6 @@ def write_excel_output(output: dict, excel_path: str) -> None:
     _write_data_rows(sheet, output["cases"], verdict_col_idx)
     _configure_sheet(sheet)
 
+    if "coverage" in output:
+        write_coverage_sheet(wb, output["coverage"])
     wb.save(excel_path)

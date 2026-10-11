@@ -13,10 +13,11 @@ import json
 import os
 import re
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from pathlib import Path
+from time import perf_counter
 from uuid import UUID
 
 import requests
@@ -39,12 +40,14 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
-from db_backends import postgres_backend, influx_backend
+from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
 from junit_writer import write_junit_xml_scenarios
-from models import DEFAULT_REQUEST_TIMEOUT
+from models import DEFAULT_REQUEST_TIMEOUT, RunCase, RunResult
+from response_schema import from_run_case
+from verifier import verify
 from src.parser import parse_openapi, OpenAPIParseError
 
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
@@ -55,9 +58,38 @@ _SENSITIVE_KEYS = (
 )
 
 
+@dataclass
+class APIResponse:
+    """HTTP evidence while retaining the existing three-value unpacking interface."""
+    status: int
+    body: object
+    error: str | None
+    raw_body: str = ""
+    headers: dict = field(default_factory=dict)
+    elapsed_ms: float = 0
+
+    def __iter__(self):
+        return iter((self.status, self.body, self.error))
+
+
+def _verify_response_contract(scenario, openapi, path, method, response):
+    status, body, _error = response
+    expected = scenario.response_check.expect_status if scenario.response_check else status
+    case = RunCase(scenario.case_id, scenario.request.operation_id, path, method,
+                   "body", "requestBody", "", str(expected if expected is not None else status),
+                   "", "", "", "")
+    schema = from_run_case(case, openapi)
+    # Timing is a separate, explicitly configured test; do not invent an SLA here.
+    schema.expected_response_time_ms = float("inf")
+    result = RunResult(case, status, getattr(response, "raw_body", json.dumps(body)),
+                       getattr(response, "headers", None) or {}, getattr(response, "elapsed_ms", 0), 0)
+    verdict, detail = verify(result, schema)
+    return verdict, detail, result.report_body
+
+
 def _safe_evidence(value, key: str = ""):
     """Make comparison evidence JSON-compatible while hiding common credential fields."""
-    if any(marker in key.lower() for marker in _SENSITIVE_KEYS):
+    if any(marker in key.lower().replace("-", "_") for marker in _SENSITIVE_KEYS):
         return "[REDACTED]"
     if key == "detail" and isinstance(value, str):
         return re.sub(
@@ -453,9 +485,10 @@ def _run_scenario(
         expected_db_rows = None
         if scenario.db_response_check is not None:
             try:
-                pg_config = get_postgres_config(db_config)
-                prepared = postgres_backend.prepare_db_response_check(
-                    scenario.db_response_check, pg_config, resolved_query_params, resolved_path_params, resolved_body
+                backend = influx_response if scenario.db_response_check.engine == "influxdb" else postgres_backend
+                response_db_config = get_influxdb_config(db_config) if scenario.db_response_check.engine == "influxdb" else get_postgres_config(db_config)
+                prepared = backend.prepare_db_response_check(
+                    scenario.db_response_check, response_db_config, resolved_query_params, resolved_path_params, resolved_body
                 )
             except postgres_backend.DBResponseCheckUnverified as e:
                 return False, f"[UNVERIFIED] {e}", "未実行", previous_response
@@ -472,6 +505,7 @@ def _run_scenario(
             if evidence is not None:
                 evidence["db_response_comparison"] = {
                     "table": scenario.db_response_check.table,
+                    "engine": scenario.db_response_check.engine,
                     "fields": scenario.db_response_check.fields,
                     "filters": [
                         {"source": item.source, "parameter": item.parameter, "column": item.column,
@@ -481,16 +515,50 @@ def _run_scenario(
                     "query_params": resolved_query_params,
                     "path_params": resolved_path_params,
                     "expected_rows": expected_db_rows,
+                    "filter_coverage": prepared.filter_coverage,
                 }
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
+
+        mutation_evidence = None
+        if scenario.influx_mutation is not None:
+            if method not in {"POST", "PUT", "PATCH", "DELETE"}:
+                return False, "InfluxDB変更確認はPOST/PUT/PATCH/DELETEで指定してください", "ERR", previous_response
+            try:
+                mutation_evidence = influx_mutation.prepare(scenario.influx_mutation, get_influxdb_config(db_config))
+            except postgres_backend.DBResponseCheckUnverified as exc:
+                return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
+            except Exception:
+                return False, "InfluxDB変更確認の事前取得に失敗しました。接続・ポイント時刻・全タグを確認してください", "ERR", previous_response
+            if evidence is not None:
+                evidence["influx_mutation"] = mutation_evidence
+
+        snapshots = []
+        if scenario.db_unchanged:
+            try:
+                for scope in scenario.db_unchanged:
+                    resolved_scope = replace(scope, where=resolve_placeholders(scope.where, previous_response, given_data))
+                    backend = influx_response if scope.engine == "influxdb" else postgres_backend
+                    scope_config = get_influxdb_config(db_config) if scope.engine == "influxdb" else get_postgres_config(db_config)
+                    before = backend.snapshot_rows(scope_config, resolved_scope)
+                    record = {"table": scope.table, "engine": scope.engine, "columns": scope.columns, "where": resolved_scope.where,
+                              "time_start": scope.time_start, "time_end": scope.time_end,
+                              "before_rows": before, "before_count": len(before), "verdict": "未確認"}
+                    snapshots.append((resolved_scope, before, record))
+                if evidence is not None:
+                    evidence["db_unchanged"] = [record for _, _, record in snapshots]
+            except postgres_backend.DBResponseCheckUnverified as e:
+                return False, f"[UNVERIFIED] {e}", "未実行", previous_response
+            except Exception as e:
+                return False, f"DB変更なし確認の準備に失敗しました: {e}", "ERR", previous_response
 
         call_args = (base_url, path, method, resolved_path_params, resolved_body, session, persist_cookies)
         call_kwargs = {"auth_header": auth_header} if auth_header is not None else {}
         if resolved_query_params:
             call_kwargs["query_params"] = resolved_query_params
         api_call_started = True
-        status, response_json, error = _call_api(*call_args, **call_kwargs)
+        api_response = _call_api(*call_args, **call_kwargs)
+        status, response_json, error = api_response
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
         if evidence is not None:
@@ -499,6 +567,41 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        if mutation_evidence is not None:
+            try:
+                ok, detail = influx_mutation.verify(scenario.influx_mutation, get_influxdb_config(db_config), mutation_evidence)
+                if not ok:
+                    failures.append("InfluxDB変更確認: " + detail)
+            except Exception:
+                mutation_evidence["verdict"] = "未確認"
+                failures.append("InfluxDB変更確認の事後取得に失敗・未確認")
+        unchanged_unverified = []
+        for scope, before, record in snapshots:
+            try:
+                backend = influx_response if scope.engine == "influxdb" else postgres_backend
+                scope_config = get_influxdb_config(db_config) if scope.engine == "influxdb" else get_postgres_config(db_config)
+                after = backend.snapshot_rows(scope_config, scope)
+                unchanged = postgres_backend.unchanged_rows(before, after)
+                record.update(after_rows=after, after_count=len(after), verdict="OK" if unchanged else "NG")
+                if not unchanged:
+                    failures.append(f"DB変更なし確認: {scope.table} の対象行または列の値が変化しました")
+            except postgres_backend.DBResponseCheckUnverified as e:
+                record.update(verdict="未確認", detail=str(e))
+                unchanged_unverified.append(str(e))
+            except Exception as e:
+                record.update(verdict="未確認", detail=str(e))
+                failures.append(f"DB変更なし確認を完了できません: {e}")
+
+        contract_verdict, contract_detail, report_body = _verify_response_contract(scenario, openapi, path, method, api_response)
+        if evidence is not None:
+            evidence["response_contract"] = {"verdict": contract_verdict, "detail": contract_detail}
+            evidence["response"]["headers"] = getattr(api_response, "headers", None) or {}
+            try:
+                evidence["response"]["body"] = json.loads(report_body)
+            except (TypeError, ValueError):
+                evidence["response"]["body"] = report_body
+        if contract_verdict != "OK":
+            failures.append(f"レスポンス契約: {contract_detail}")
 
         if scenario.response_check is not None:
             try:
@@ -519,7 +622,24 @@ def _run_scenario(
                 )
             except ScenarioError as e:
                 return False, f"response_checkの値解決に失敗しました: {e}", str(status), response_json
-            ok, detail = response_check_module.check(resolved_response_check, status, response_json)
+            value_evidence = [] if evidence is not None else None
+            ok, detail = response_check_module.check(
+                resolved_response_check, status, response_json,
+                request={"body": resolved_body, "query": resolved_query_params, "path": resolved_path_params},
+                evidence=value_evidence,
+            )
+            if evidence is not None and scenario.response_check.expect_values:
+                try:
+                    masked_response = json.loads(report_body)
+                except (TypeError, ValueError):
+                    masked_response = {}
+                for item in value_evidence:
+                    if response_check_module._get_nested(masked_response, item["path"]) == "[REDACTED]":
+                        item["expected"] = item["actual"] = "[REDACTED]"
+                    else:
+                        item["expected"] = _safe_evidence(item["expected"], item["parameter"] or item["path"])
+                        item["actual"] = _safe_evidence(item["actual"], item["path"])
+                evidence["response_value_checks"] = value_evidence
             if not ok:
                 failures.append(detail)
 
@@ -572,7 +692,9 @@ def _run_scenario(
             if not ok:
                 failures.append(detail)
 
-        return not failures, "; ".join(failures), str(status), response_json
+        if unchanged_unverified and not failures:
+            return False, "[UNVERIFIED] " + "; ".join(unchanged_unverified), str(status), response_json
+        return not failures, "; ".join(failures + unchanged_unverified), str(status), response_json
 
     try:
         result = _execute()
@@ -628,7 +750,7 @@ def _call_api(
     base_url: str, path: str, method: str, path_params: dict, body: dict,
     session: requests.Session | None = None, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None, query_params: dict | None = None,
-) -> tuple[int, dict, str | None]:
+) -> APIResponse:
     """requests でAPIを呼び出す。戻り値: (status, response_json, error)"""
     url_path = path
     for name, value in path_params.items():
@@ -651,10 +773,11 @@ def _call_api(
         kwargs["json"] = body
 
     sender = session if session is not None else requests
+    started = perf_counter()
     try:
         response = sender.request(method, url, **kwargs)
     except requests.exceptions.RequestException as e:
-        return 0, {}, str(e)
+        return APIResponse(0, {}, str(e))
     finally:
         if session is not None and not persist_cookies:
             session.cookies.clear()
@@ -666,7 +789,8 @@ def _call_api(
         except ValueError:
             response_json = {}
 
-    return response.status_code, response_json, None
+    return APIResponse(response.status_code, response_json, None, response.text,
+                       dict(getattr(response, "headers", {}) or {}), (perf_counter() - started) * 1000)
 
 
 if __name__ == "__main__":

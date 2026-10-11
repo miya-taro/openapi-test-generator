@@ -9,6 +9,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from openapi_editor import load_operation_body_contract, save_operation_body_contract
 
 
+def test_error_db_scopes_round_trip_and_validate(tmp_path):
+    source, output = tmp_path / "source.json", tmp_path / "edited.json"
+    source.write_text(json.dumps(_document()), encoding="utf-8")
+    scopes = [{"table": "t_data", "columns": ["id", "value"], "where": {"site_id": 1}}]
+    save_operation_body_contract(str(source), str(output), "createUser", True,
+                                 {"type": "object"}, "201", {"type": "object"}, scopes)
+    assert load_operation_body_contract(str(output), "createUser")["errorDbUnchanged"] == scopes
+    assert load_operation_body_contract(str(source), "createUser")["errorDbUnchanged"] == []
+    with pytest.raises(ValueError):
+        save_operation_body_contract(str(source), str(output), "createUser", True,
+                                     {"type": "object"}, "201", {}, [{"table": "t_data", "columns": []}])
+    assert load_operation_body_contract(str(output), "createUser")["errorDbUnchanged"] == scopes
+
+
 def _document():
     return {
         "openapi": "3.0.3",
@@ -59,6 +73,7 @@ def test_load_operation_contract_reads_json_body_schemas_and_resolves_body_objec
         "requestBodySchema": {"$ref": "#/components/schemas/CreateUser"},
         "responseStatus": "201",
         "responseBodySchema": {"$ref": "#/components/schemas/User"},
+        "errorDbUnchanged": [],
     }
 
 
@@ -179,3 +194,19 @@ def test_new_editor_module_is_included_in_tauri_bundle_resources():
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
     assert config["bundle"]["resources"]["../../gui/openapi_editor.py"] == "gui/openapi_editor.py"
+
+
+def test_save_comparison_rules_validates_values_and_preserves_previous_file(tmp_path):
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps(_document()), encoding="utf-8")
+    destination = tmp_path / "edited.json"
+    schema = {"type": "object", "properties": {k: {"type": "integer", "minimum": 0} for k in ["start", "end"]},
+              "x-otg-comparison-rules": [{"fields": ["start", "end"], "operator": "<=", "lower": 1, "upper": 2}]}
+    save_operation_body_contract(str(source), str(destination), "createUser", True, schema, "201", None)
+    loaded = load_operation_body_contract(str(destination), "createUser")
+    assert loaded["requestBodySchema"]["x-otg-comparison-rules"] == schema["x-otg-comparison-rules"]
+    previous = destination.read_bytes()
+    schema["x-otg-comparison-rules"][0]["lower"] = -1
+    with pytest.raises(ValueError, match="試験値"):
+        save_operation_body_contract(str(source), str(destination), "createUser", True, schema, "201", None)
+    assert destination.read_bytes() == previous

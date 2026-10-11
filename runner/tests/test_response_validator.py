@@ -2,8 +2,22 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from response_validator import resolve_response_schema, validate_body
+
+
+@pytest.mark.parametrize("value", ["not-a-date", "2026-02-30T00:00:00Z", "2026-01-01 00:00:00", "2026-01-01T00:00:00"])
+def test_response_datetime_format_is_checked(value):
+    schema = {"type": "object", "properties": {"time": {"type": "string", "format": "date-time"}}}
+    assert validate_body(json.dumps({"time": value}), schema)
+
+
+@pytest.mark.parametrize("value", ["2026-01-01T00:00:00Z", "2026-01-01T09:00:00+09:00", "2026-01-01T00:00:00.123Z"])
+def test_response_datetime_allows_timezone_and_fractional_seconds(value):
+    schema = {"type": "string", "format": "date-time"}
+    assert validate_body(json.dumps(value), schema) == []
 
 
 OPENAPI = {

@@ -136,6 +136,7 @@ def _contract_case(raw: object, source_path: Path, source_hash: str) -> dict:
             "perspective": raw.get("perspective", ""),
             "keyword": raw.get("keyword", ""),
             "notes": raw.get("notes", ""),
+            **({"dbUnchanged": raw["dbUnchanged"]} if raw.get("dbUnchanged") else {}),
         },
         "expected": {
             "status": raw.get("expectedStatus", ""),
@@ -184,12 +185,16 @@ def _scenario_case(
                     "status": definition["responseCheck"]["expectedStatus"],
                     "body": definition["responseCheck"]["expectedBody"],
                     "contains": definition["responseCheck"].get("expectedContains", []),
+                    **({"values": definition["responseCheck"]["expectedValues"]}
+                       if definition["responseCheck"].get("expectedValues") else {}),
                 }
                 if definition["responseCheck"]
                 else None
             ),
             "database": definition["dbCheck"],
             "databaseResponse": definition.get("dbResponseCheck"),
+            **({"influxMutation": definition["influxMutation"]} if definition.get("influxMutation") else {}),
+            **({"databaseUnchanged": definition["dbUnchanged"]} if definition.get("dbUnchanged") else {}),
         },
         "reviewStatus": "draft",
     }
@@ -225,7 +230,7 @@ def build_case_master(
         cases.extend(_scenario_case(item, scenario_path, scenario_hash, operations) for item in scenarios)
         source_files["dbScenarios"] = str(scenario_path)
 
-    if not cases:
+    if not cases and not (contract_output or {}).get("coverage"):
         raise CaseMasterError("試験ケースがありません。OpenAPIケースまたはDBシナリオを用意してください")
 
     seen: set[str] = set()
@@ -242,6 +247,7 @@ def build_case_master(
         "project": {"name": project_name, "sources": source_files},
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cases": cases,
+        "coverage": (contract_output or {}).get("coverage", []),
     }
 
 

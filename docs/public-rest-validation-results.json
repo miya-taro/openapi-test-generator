@@ -1,0 +1,321 @@
+{
+  "mode": "executed",
+  "time": "2026-10-11T14:42:29.620989+00:00",
+  "prepared": 18,
+  "executed": 18,
+  "passed": 18,
+  "offline_response_controls": [
+    {
+      "case_id": "PUBLIC-jsonplaceholder-01",
+      "mutation": "wrong_id",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): {'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'} was expected"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "reordered",
+      "expected": "OK",
+      "verdict": "OK",
+      "detail": ""
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "empty",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): [] is too short"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "missing_row",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem occaecati omnis eligendi aut ad\\nvoluptatem doloribus vel accusantium quis pariatur\\nmolestiae porro eius odio et labore et velit aut'}, {'userId': 1, 'id': 4, 'title': 'eum et est occaecati', 'body': 'ullam et saepe reiciendis voluptatem adipisci\\nsit amet autem assumenda provident rerum c"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "duplicate_row",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem occaecati omnis eligendi aut ad\\nvoluptatem doloribus vel accusantium quis pariatur\\nmolestiae porro eius odio et labore et velit aut'}, {'userId': 1, 'id': 4, 'title': 'eum et est occaecati', 'body': 'ullam et saepe reiciendis voluptatem adipisci\\nsit amet autem assumenda provident rerum c"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "extra_row",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem occaecati omnis eligendi aut ad\\nvoluptatem doloribus vel accusantium quis pariatur\\nmolestiae porro eius odio et labore et velit aut'}, {'userId': 1, 'id': 4, 'title': 'eum et est occaecati', 'body': 'ullam et saepe reiciendis voluptatem adipisci\\nsit amet autem assumenda provident rerum c"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "wrong_id",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: 0: {'userId': 1, 'id': 999, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'} is not one of [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptat"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "wrong_owner",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: 0: {'userId': 2, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'} is not one of [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "wrong_content",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: 0: {'userId': 1, 'id': 1, 'title': 'unexpected', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'} is not one of [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem occaecati omnis eligendi aut ad\\nvoluptatem doloribus vel accus"
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-02",
+      "mutation": "duplicate_id_different_content",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: 9: {'userId': 1, 'id': 1, 'title': 'optio molestias id quia eum', 'body': 'quo et expedita modi cum officia vel magni\\ndoloribus qui repudiandae\\nvero nisi sit\\nquos veniam quod sed accusamus veritatis error'} is not one of [{'userId': 1, 'id': 1, 'title': 'sunt aut facere repellat provident occaecati excepturi optio reprehenderit', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'}, {'userId': 1, 'id': 2, 'title': 'qui est esse', 'body': 'est rerum tempore vitae\\nsequi sint nihil reprehenderit dolor beatae ea dolores neque\\nfugiat blanditiis voluptate porro vel nihil molestiae ut reiciendis\\nqui aperiam non debitis possimus qui neque nisi nulla'}, {'userId': 1, 'id': 3, 'title': 'ea molestias quasi exercitationem repellat qui ipsa sit aut', 'body': 'et iusto sed quo iure\\nvoluptatem occaecati omnis eligendi aut ad\\nvoluptatem doloribus vel accusantium quis "
+    },
+    {
+      "case_id": "PUBLIC-jsonplaceholder-06",
+      "mutation": "unrelated_field_changed",
+      "expected": "NG",
+      "verdict": "NG",
+      "detail": "ボディ不適合: (root): {'userId': 1, 'id': 1, 'title': 'otg-patched', 'body': 'quia et suscipit\\nsuscipit recusandae consequuntur expedita et cum\\nreprehenderit molestiae ut ut quas totam\\nnostrum rerum est autem sunt rem eveniet architecto'} was expected"
+    }
+  ],
+  "tested_base_commit": "2dc173a",
+  "tested_files_sha256": {
+    "docs/run_public_rest_checks.py": "9f49124173741a0a6b39117498608dd435b4db2df6729c12b348b46aca8cb073",
+    "docs/fixtures/jsonplaceholder-posts.json": "81ec924b67c38a26a89971373c6eb4732c111ec768cf8a8b965445439ca7595f"
+  },
+  "cases": [
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-01",
+      "name": "readPost",
+      "method": "GET",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-02",
+      "name": "filterPosts",
+      "method": "GET",
+      "url": "https://jsonplaceholder.typicode.com/posts?userId=1",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-03",
+      "name": "missingPost",
+      "method": "GET",
+      "url": "https://jsonplaceholder.typicode.com/posts/999999999",
+      "expected_status": "404",
+      "status": 404,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-04",
+      "name": "createPost",
+      "method": "POST",
+      "url": "https://jsonplaceholder.typicode.com/posts",
+      "expected_status": "201",
+      "status": 201,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-05",
+      "name": "replacePost",
+      "method": "PUT",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-06",
+      "name": "patchPost",
+      "method": "PATCH",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "jsonplaceholder",
+      "id": "PUBLIC-jsonplaceholder-07",
+      "name": "deletePost",
+      "method": "DELETE",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-01",
+      "name": "echoPOST",
+      "method": "POST",
+      "url": "https://httpbin.org/post",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-02",
+      "name": "echoPUT",
+      "method": "PUT",
+      "url": "https://httpbin.org/put",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-03",
+      "name": "echoPATCH",
+      "method": "PATCH",
+      "url": "https://httpbin.org/patch",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-04",
+      "name": "echoDELETE",
+      "method": "DELETE",
+      "url": "https://httpbin.org/delete",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-05",
+      "name": "getJsonBody",
+      "method": "GET",
+      "url": "https://httpbin.org/anything",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-06",
+      "name": "requestHeader",
+      "method": "GET",
+      "url": "https://httpbin.org/headers",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-07",
+      "name": "requestCookie",
+      "method": "GET",
+      "url": "https://httpbin.org/cookies",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-08",
+      "name": "emptyResponse",
+      "method": "GET",
+      "url": "https://httpbin.org/status/204",
+      "expected_status": "204",
+      "status": 204,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-09",
+      "name": "bearerPresent",
+      "method": "GET",
+      "url": "https://httpbin.org/bearer",
+      "expected_status": "200",
+      "status": 200,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-10",
+      "name": "bearerMissing",
+      "method": "GET",
+      "url": "https://httpbin.org/bearer",
+      "expected_status": "401",
+      "status": 401,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    },
+    {
+      "provider": "httpbin",
+      "id": "PUBLIC-httpbin-11",
+      "name": "documentedError",
+      "method": "GET",
+      "url": "https://httpbin.org/status/400",
+      "expected_status": "4xx",
+      "status": 400,
+      "verdict": "OK",
+      "detail": "",
+      "error": null
+    }
+  ],
+  "artifact_sha256": {
+    "httpbin-junit.xml": "0e7985e23e2c3fe8f43a3450b5e2373ad3075542e6c2694bdf1fb3944e5ac23f",
+    "httpbin-openapi.json": "00dbd6175af8d85ba6c72746d732b8d91d84a20199c9f02cc0fd722942f1e537",
+    "httpbin-result.xlsx": "752f79c27ceaf64b6281b342c3b3398597c5c7a06d6ed2a4628d4e3018fe4f53",
+    "httpbin-spec.xlsx": "6c6919b966fd7b10569dd7e1cdee143ad070f09f7f938f9e73ea47c431b3bdc1",
+    "jsonplaceholder-junit.xml": "5d7b05a18d7a6172a9f23158c466a848a4e1fb40339549320105446d8e4765cc",
+    "jsonplaceholder-openapi.json": "60cc848bf13244aff60efafa62e8c562cd7c7f21ebed202586f02d0e62b0a803",
+    "jsonplaceholder-result.xlsx": "51e2463d0016492f3fd6ba081c723f982a1fdfa15dc2dba1dc085eba267bc98c",
+    "jsonplaceholder-spec.xlsx": "652fbb614c42d21feed687065e61d4f98baea89819894aef89cdec73e1b06dca",
+    "prepared-cases.json": "a4e6e0fe267bd2a0471bae825ff2ac3bcd3ffb8df657efe1dc7da694167c7ae7",
+    "summary.json": "2606d91ef9143aec031dae3870cbf6363bff750df325f4861e6579a5f7bdf8b0"
+  }
+}

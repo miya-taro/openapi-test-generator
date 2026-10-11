@@ -1,3 +1,4 @@
+import { validateComparisonBody } from "./comparison-rules.js";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const SEEDED_METHODS = new Set(["PUT", "PATCH", "DELETE"]);
 
@@ -52,13 +53,25 @@ function validateBodyValue(value, schema, label) {
             : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
               : true;
   if (!validType) throw new Error(`${label}は${type}型の値を入力してください`);
-  if (schema?.format === "date-time" &&
-      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value)))) {
+  if (schema?.format === "date-time" && !isDateTime(value)) {
     throw new Error(`${label}はタイムゾーンを含む日時で入力してください`);
   }
   if (type === "array" && schema?.items) {
     value.forEach((item, index) => validateBodyValue(item, schema.items, `${label}[${index}]`));
   }
+}
+
+function isDateTime(value) {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, y, m, d, h, minute, second, zone] = match;
+  const year = Number(y);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year > 0 && Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= days[Number(m) - 1]
+    && Number(h) <= 23 && Number(minute) <= 59 && Number(second) <= 59
+    && (zone.toLowerCase() === "z" || (Number(zone.slice(1, 3)) <= 23 && Number(zone.slice(4)) <= 59));
 }
 
 function sampleValue(schema = {}, propertyName = "value", depth = 0) {
@@ -403,6 +416,118 @@ function renderReadMappings(operation) {
   }
 }
 
+function responseValueFields(operation, shape, arrayPath) {
+  return schemaFields(operation.responseSchema || {}, "", 0, "response")
+    .filter((field) => !["array", "object"].includes(field.type))
+    .filter((field) => shape !== "array" || (arrayPath !== "$" && !field.path.startsWith(`${arrayPath}.`)));
+}
+
+function requestValueFields(operation) {
+  return [
+    ...schemaFields(operation.requestSchema || {}).map((field) => ({ ...field, source: "body" })),
+    ...(operation.parameters || []).filter((parameter) => ["query", "path"].includes(parameter.in))
+      .map((parameter) => ({ path: parameter.name, source: parameter.in, schema: parameter.schema || {},
+        type: schemaType(parameter.schema) })),
+  ];
+}
+
+function renderResponseValues(operation) {
+  const holder = byId("dbscenario-editor-response-values");
+  const previous = new Map([...holder.querySelectorAll("tr[data-value-path]")].map((row) => [row.dataset.valuePath, {
+    mode: row.querySelector("[data-value-mode]").value,
+    parameter: row.querySelector("[data-value-parameter]").value,
+    fixed: row.querySelector("[data-value-fixed]").value,
+  }]));
+  holder.replaceChildren();
+  const fields = responseValueFields(operation, byId("dbscenario-editor-response-shape").value,
+    byId("dbscenario-editor-response-array-path").value || "$");
+  byId("dbscenario-editor-response-values-field").hidden = !fields.length;
+  for (const field of fields) {
+    const row = make("tr");
+    row.dataset.valuePath = field.path;
+    row.append(make("td", "", schemaFieldLabel(field)));
+    const mode = make("select");
+    mode.dataset.valueMode = "true";
+    mode.setAttribute("aria-label", `${field.path}の値の照合方法`);
+    for (const [value, label] of [["none", "型・形式のみ"], ["request", "送信値と一致"],
+      ["requestWithDefault", "送信値と一致（省略時は固定値）"],
+      ["requestIfPresent", "送信値と一致（指定時のみ）"], ["fixed", "固定値と一致"]]) {
+      const option = make("option", "", label);
+      option.value = value;
+      mode.append(option);
+    }
+    mode.value = previous.get(field.path)?.mode || "none";
+    const modeCell = make("td");
+    modeCell.append(mode);
+    row.append(modeCell);
+    const parameter = make("select");
+    parameter.dataset.valueParameter = "true";
+    parameter.setAttribute("aria-label", `${field.path}の照合元の送信項目`);
+    const placeholder = make("option", "", "送信項目を選択");
+    placeholder.value = "";
+    parameter.append(placeholder);
+    for (const input of requestValueFields(operation)) {
+      const option = make("option", "", `${input.source}: ${input.path}`);
+      option.value = `${input.source}:${input.path}`;
+      parameter.append(option);
+    }
+    parameter.value = previous.get(field.path)?.parameter || "";
+    const fixed = make("input");
+    fixed.type = "text";
+    fixed.dataset.valueFixed = "true";
+    fixed.placeholder = '固定値（JSON）。例: 1 / "2026-01-01T00:00:00Z"';
+    fixed.setAttribute("aria-label", `${field.path}の期待する固定値`);
+    fixed.value = previous.get(field.path)?.fixed || "";
+    const sourceCell = make("td");
+    sourceCell.append(parameter, fixed);
+    row.append(sourceCell);
+    const sync = () => {
+      parameter.hidden = !mode.value.startsWith("request");
+      fixed.hidden = !["fixed", "requestWithDefault"].includes(mode.value);
+    };
+    mode.addEventListener("change", sync);
+    sync();
+    holder.append(row);
+  }
+}
+
+function buildResponseValues(form) {
+  const available = new Map(responseValueFields(form.operation, form.responseShape,
+    form.responseArrayPath || "$").map((field) => [field.path, field]));
+  const seen = new Set();
+  return (form.responseValues || []).filter((item) => item.mode !== "none").map((item) => {
+    const field = available.get(item.path);
+    if (!field || seen.has(item.path)) throw new Error(`レスポンス項目「${item.path}」の値照合設定を確認してください`);
+    seen.add(item.path);
+    const comparison = field.schema?.format === "date-time" ? "date-time" : "exact";
+    if (item.mode === "fixed") {
+      const value = parseJson(item.fixed, `${item.path}の期待値`, false);
+      validateBodyValue(value, field.schema, item.path);
+      return { path: item.path, source: "fixed", value, comparison };
+    }
+    if (!["request", "requestIfPresent", "requestWithDefault"].includes(item.mode)) throw new Error("値の照合方法を選択してください");
+    const input = requestValueFields(form.operation).find((candidate) => `${candidate.source}:${candidate.path}` === item.parameter);
+    if (!input) throw new Error(`${item.path}の照合元の送信項目を選択してください`);
+    if (input.type !== field.type && ![input.type, field.type].every((type) => ["integer", "number"].includes(type))) {
+      throw new Error(`${item.path}と送信項目${input.path}の型が一致しません`);
+    }
+    if (comparison === "date-time" && input.schema?.format !== "date-time") {
+      throw new Error(`${item.path}の照合元はdate-time項目を選択してください`);
+    }
+    if (input.source === "body" && item.mode === "request" && valueAtPath(form.requestBody, input.path) === undefined) {
+      throw new Error(`${item.path}の照合元${input.path}が省略されています。「指定時のみ」を選ぶか、個別ケースにしてください`);
+    }
+    let value;
+    if (item.mode === "requestWithDefault") {
+      value = parseJson(item.fixed, `${item.path}の省略時の期待値`, false);
+      validateBodyValue(value, field.schema, item.path);
+    }
+    return { path: item.path, source: input.source, parameter: input.path, comparison,
+      when_missing: item.mode === "requestIfPresent" ? "skip" : item.mode === "requestWithDefault" ? "fixed" : "error",
+      ...(item.mode === "requestWithDefault" ? { value } : {}) };
+  });
+}
+
 function renderReadFilters(operation) {
   const holder = byId("dbscenario-editor-read-filters");
   holder.replaceChildren();
@@ -563,6 +688,8 @@ function collectRequestBodyFromFields() {
 export function buildDbScenario(form) {
   const { operation } = form;
   if (!operation) throw new Error("API操作を選択してください");
+  const engine = form.engine || "postgres";
+  if (!["postgres", "influxdb"].includes(engine)) throw new Error("対応DBはPostgreSQLまたはInfluxDBです");
   const name = String(form.name || "").trim();
   const table = String(form.table || "").trim();
   if (!name) throw new Error("試験名を入力してください");
@@ -577,10 +704,62 @@ export function buildDbScenario(form) {
     name,
     request: {
       operationId: operation.operationId,
-      path_params: form.pathParams || {},
-      query_params: form.queryParams || {},
+      path_params: { ...(form.pathParams || {}) },
+      query_params: { ...(form.queryParams || {}) },
     },
   };
+  if (form.mode === "unchanged") {
+    const status = Number(form.unchangedStatus);
+    if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("期待するHTTP statusを100〜599の整数で入力してください");
+    const columns = String(form.unchangedColumns || "").split(",").map((name) => name.trim());
+    if (!columns.length || columns.some((name) => !name)) throw new Error("比較するDB列を入力してください");
+    columns.forEach((name) => requireDbIdentifier(name, "比較するDB列"));
+    if (new Set(columns).size !== columns.length) throw new Error("比較するDB列が重複しています");
+    const where = form.unchangedWhere || {};
+    if (typeof where !== "object" || Array.isArray(where)) throw new Error("比較する行の条件をJSONオブジェクトで入力してください");
+    for (const [column, value] of Object.entries(where)) {
+      requireDbIdentifier(column, "比較する行の条件");
+      if (value !== null && !["string", "number", "boolean"].includes(typeof value)) throw new Error("比較する行の条件は単一の値を入力してください");
+    }
+    scenario.request.body = form.requestBody || {};
+    scenario.response_check = { expect: { status } };
+    const influx = {};
+    if (engine === "influxdb") {
+      if (!form.timeStart || !form.timeEnd) throw new Error("InfluxDBの比較期間の開始・終了を入力してください");
+      influx.engine = engine; influx.time_start = form.timeStart; influx.time_end = form.timeEnd;
+      if (Object.values(where).some((value) => value === null)) throw new Error("InfluxDBの行条件にはnullを指定できません");
+    }
+    scenario.db_unchanged = [{ table, columns, where, ...influx }];
+    return scenario;
+  }
+  if (engine === "influxdb" && method !== "GET") {
+    const action = form.influxAction || ({ POST: "insert", PUT: "update", PATCH: "update", DELETE: "delete" })[method];
+    if (!["insert", "update", "delete"].includes(action)) throw new Error("期待する変更を選択してください");
+    const status = Number(form.influxStatus);
+    if (!Number.isInteger(status) || status < 200 || status > 299) throw new Error("変更確認の成功statusを200〜299で指定してください");
+    const time = String(form.influxTime || "").trim();
+    if (!time) throw new Error("ポイント時刻を入力してください");
+    const tags = form.influxTags || {};
+    if (typeof tags !== "object" || Array.isArray(tags)) throw new Error("全タグをJSONオブジェクトで指定してください");
+    for (const [key, value] of Object.entries(tags)) {
+      requireDbIdentifier(key, "タグ名");
+      if (key === "time" || typeof value !== "string" || !value) throw new Error("タグ値は空でない文字列にしてください");
+    }
+    const fields = {};
+    if (action !== "delete") {
+      for (const [key, value] of Object.entries(form.influxFields || {})) {
+        requireDbIdentifier(key, "フィールド名");
+        if (key === "time" || Object.hasOwn(tags, key)) continue;
+        if (value === null || !["string", "number", "boolean"].includes(typeof value)) throw new Error("InfluxDBフィールドには文字列・数値・booleanを指定してください");
+        fields[key] = value;
+      }
+      if (!Object.keys(fields).length) throw new Error("API項目に比較するInfluxDBフィールドを対応付けてください");
+    }
+    scenario.request.body = form.requestBody || {};
+    scenario.response_check = { expect: { status } };
+    scenario.influx_mutation = { measurement: table, time, tags, fields, action, preserve_unmapped: !!form.influxPreserve };
+    return scenario;
+  }
   if (MUTATING_METHODS.has(method)) {
     const writeStatus = Number(form.writeStatus);
     if (!Number.isInteger(writeStatus) || writeStatus < 100 || writeStatus > 599) {
@@ -590,6 +769,7 @@ export function buildDbScenario(form) {
   }
 
   if (method === "GET") {
+    validateComparisonBody(form.requestBody || {}, operation.requestSchema);
     for (const rule of operation.requestSchema?.["x-otg-presence-rules"] || []) {
       const [first, second] = rule.fields || [];
       const firstSent = Object.hasOwn(form.requestBody || {}, first);
@@ -648,6 +828,10 @@ export function buildDbScenario(form) {
         throw new Error(`Query「${parameter}」の値をDB検索条件に対応付けてください`);
       }
     }
+    const mappedBodyParams = new Set(filters.filter((item) => item.source === "body").map((item) => item.parameter));
+    for (const name of Object.keys(form.requestBody || {})) {
+      if (!mappedBodyParams.has(name)) throw new Error(`Body「${name}」の値をDB検索条件に対応付けてください`);
+    }
     for (const filter of filters) {
       if (filter.source === "query") delete scenario.request.query_params[filter.parameter];
       else if (filter.source === "path") delete scenario.request.path_params[filter.parameter];
@@ -663,9 +847,11 @@ export function buildDbScenario(form) {
     if (schemaType(selectedResponseSchema) !== form.responseShape) {
       throw new Error("選択したレスポンス形式・配列パスがOpenAPIのレスポンスschemaと一致しません");
     }
-    scenario.response_check = { expect: { status } };
+    const responseValues = buildResponseValues(form);
+    scenario.response_check = { expect: { status, ...(responseValues.length ? { values: responseValues } : {}) } };
     scenario.request.body = form.requestBody || {};
     scenario.db_response_check = {
+      ...(engine === "influxdb" ? { engine } : {}),
       table,
       fields: responseFields,
       filters,
@@ -750,6 +936,64 @@ export function buildDbScenario(form) {
     }
   }
   return scenario;
+}
+
+export function buildDbScenarios(form) {
+  const base = buildDbScenario(form);
+  if (form.mode === "unchanged" || form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
+  const schema = form.operation.requestSchema || {};
+  const rules = schema["x-otg-presence-rules"] || [];
+  const values = form.requestBody || {};
+  let bodies = [{ ...values }];
+  const expand = (variants) => {
+    if (bodies.length * variants.length > 64) {
+      throw new Error("組み合わせが64件を超えます。対応設定を分けるか、組み合わせ生成を外してください");
+    }
+    bodies = bodies.flatMap((body) => variants.map((mutate) => mutate({ ...body })));
+  };
+  for (const rule of rules) {
+    const [first, second] = rule.fields;
+    for (const name of rule.fields) {
+      if (!Object.hasOwn(values, name)) throw new Error(`組み合わせ用に「${name}」の値を入力してください。DBにある試験値を指定してください`);
+      validateBodyValue(values[name], schema.properties?.[name] || {}, name);
+    }
+    const choices = rule.kind === "atLeastOne" ? [[first], [second], [first, second]] : [[], [first, second]];
+    expand(choices.map((selected) => (body) => {
+      delete body[first];
+      delete body[second];
+      for (const name of selected) body[name] = values[name];
+      return body;
+    }));
+  }
+  for (const filter of base.db_response_check.filters) {
+    if (filter.source !== "body" || filter.operator !== "in") continue;
+    const name = filter.parameter;
+    const array = values[name];
+    if (!Array.isArray(array)) throw new Error(`IN条件の「${name}」には配列値を入力してください`);
+    const minimum = schema.properties?.[name]?.minItems || 0;
+    if (minimum > 1 || array.length < 2) continue;
+    const choices = [array, ...array.map((item) => [item])];
+    expand(choices.map((value) => (body) => {
+      if (Object.hasOwn(body, name)) body[name] = value;
+      return body;
+    }));
+  }
+  const seen = new Set();
+  bodies = bodies.filter((body) => {
+    const valid = rules.every((rule) => {
+      const sent = rule.fields.map((name) => Object.hasOwn(body, name));
+      return rule.kind === "atLeastOne" ? sent.some(Boolean) : sent[0] === sent[1];
+    });
+    const key = JSON.stringify(Object.keys(body).sort().map((name) => [name, body[name]]));
+    if (!valid || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!bodies.length) throw new Error("必須条件を満たす組み合わせがありません");
+  return bodies.map((body, index) => ({
+    ...buildDbScenario({ ...form, requestBody: body }),
+    name: `${base.name}（組み合わせ${index + 1}: ${Object.keys(body).join("・")}）`,
+  }));
 }
 
 export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
@@ -863,6 +1107,14 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     const method = operation?.method || "";
     const operationChanged = operation?.operationId !== renderedOperationId;
     renderedOperationId = operation?.operationId || "";
+    if (operationChanged) {
+      byId("dbscenario-editor-mode").value = "mapping";
+      byId("dbscenario-editor-unchanged-body").value = "{}";
+      byId("dbscenario-editor-unchanged-status").value = "";
+      byId("dbscenario-editor-unchanged-columns").value = "";
+      byId("dbscenario-editor-unchanged-where").value = "{}";
+    }
+    byId("dbscenario-editor-unchanged-panel").hidden = byId("dbscenario-editor-mode").value !== "unchanged";
     const isGet = method === "GET";
     const hasRequestBody = ["POST", "PUT", "PATCH"].includes(method);
     const usesSeed = SEEDED_METHODS.has(method);
@@ -888,7 +1140,15 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       DELETE: "DELETE：削除対象のDB行を用意し、API実行後に行が消えるか、削除フラグが変わるか確認します。",
     }[method] || "選択したAPI操作に合わせて、DBに確認用データを設定します。";
     byId("dbscenario-editor-guidance").textContent = guidance;
+    byId("dbscenario-editor-guidance").dataset.mappingGuidance = guidance;
     if (operationChanged) {
+      byId("dbscenario-editor-influx-action").value = ({ POST: "insert", PUT: "update", PATCH: "update", DELETE: "delete" })[method] || "insert";
+      byId("dbscenario-editor-influx-status").value = operation.successStatus || "200";
+      byId("dbscenario-editor-influx-time").value = "";
+      byId("dbscenario-editor-influx-tags").value = "{}";
+      byId("dbscenario-editor-influx-delete-body").value = "{}";
+      byId("dbscenario-editor-influx-preserve").checked = false;
+      byId("dbscenario-editor-expand-combinations").checked = false;
       byId("dbscenario-editor-name").value = `${operation.operationId} のDB検証`;
       byId("dbscenario-editor-table").value = "";
       byId("dbscenario-editor-request-body").value = "";
@@ -896,6 +1156,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-write-mappings").replaceChildren();
       byId("dbscenario-editor-read-mappings").replaceChildren();
       byId("dbscenario-editor-read-filters").replaceChildren();
+      byId("dbscenario-editor-response-values").replaceChildren();
       byId("dbscenario-editor-primary-key").value = "";
       byId("dbscenario-editor-post-cleanup-enabled").checked = false;
       byId("dbscenario-editor-post-cleanup-primary-key").value = "";
@@ -937,12 +1198,62 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     if (isGet) {
       renderReadFilters(operation);
       renderReadMappings(operation);
+      renderResponseValues(operation);
     }
     syncMappedQueryParams();
+    updateMode();
     if (!byId("dbscenario-editor-status").classList.contains("ok")) setStatus("");
   }
 
+  function updateMode() {
+    const unchanged = byId("dbscenario-editor-mode").value === "unchanged";
+    const influx = byId("dbscenario-editor-engine").value === "influxdb";
+    byId("dbscenario-editor-influx-help").hidden = !influx;
+    byId("dbscenario-editor-influx-period").hidden = !influx || !unchanged;
+    const method = selectedOperation()?.method;
+    byId("dbscenario-editor-unchanged-panel").hidden = !unchanged;
+    byId("dbscenario-editor-write-panel").hidden = unchanged || !["POST", "PUT", "PATCH"].includes(method);
+    byId("dbscenario-editor-seed-panel").hidden = influx || unchanged || !SEEDED_METHODS.has(method);
+    byId("dbscenario-editor-get-panel").hidden = unchanged || method !== "GET";
+    const mutation = influx && !unchanged && MUTATING_METHODS.has(method);
+    byId("dbscenario-editor-influx-mutation").hidden = !mutation;
+    byId("dbscenario-editor-influx-delete-body-field").hidden = !mutation || method !== "DELETE";
+    byId("dbscenario-editor-add-scenario").disabled = false;
+    byId("dbscenario-editor-post-cleanup").hidden = influx || method !== "POST";
+    byId("dbscenario-editor-post-row-id").hidden = influx || method !== "POST";
+    byId("dbscenario-editor-write-status").closest(".form-field").hidden = influx;
+    for (const input of byId("dbscenario-editor-write-mappings").querySelectorAll('input[aria-label="保存後の照合に使う"]')) {
+      input.disabled = influx;
+      input.title = influx ? "InfluxDBは上のポイント時刻と全タグで対象を指定します" : "";
+    }
+    // Seed references are not available in the no-change mode.
+    for (const checkbox of byId("dbscenario-editor-path-param-rows").querySelectorAll("input[data-auto-path-param]")) {
+      if ((unchanged || influx) && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
+      checkbox.disabled = unchanged || influx;
+    }
+    if (unchanged) {
+      for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input")) input.disabled = false;
+      byId("dbscenario-editor-guidance").textContent = "実行前後のDBを比較します。送る値と期待statusを仕様に従って入力してください。DB列やエラー条件は推測しません。";
+    } else {
+      byId("dbscenario-editor-guidance").textContent = byId("dbscenario-editor-guidance").dataset.mappingGuidance || "API操作を選択してください";
+      syncMappedQueryParams();
+    }
+    if (mutation) byId("dbscenario-editor-guidance").textContent = "InfluxDBの対象時刻・全タグ・期待する変更を指定してください。保存は事前なし、更新・削除は既存ポイントが必要です。";
+  }
+
   function currentForm() {
+    if (byId("dbscenario-editor-mode").value === "unchanged") {
+      return {
+        mode: "unchanged", engine: byId("dbscenario-editor-engine").value,
+        timeStart: byId("dbscenario-editor-time-start").value.trim(), timeEnd: byId("dbscenario-editor-time-end").value.trim(),
+        operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
+        table: byId("dbscenario-editor-table").value, pathParams: collectPathParams(), queryParams: collectQueryParams(),
+        requestBody: parseJson(byId("dbscenario-editor-unchanged-body").value || "{}", "送信するJSON body"),
+        unchangedStatus: byId("dbscenario-editor-unchanged-status").value,
+        unchangedColumns: byId("dbscenario-editor-unchanged-columns").value,
+        unchangedWhere: parseJson(byId("dbscenario-editor-unchanged-where").value || "{}", "比較する行の条件"),
+      };
+    }
     const operation = selectedOperation();
     const method = operation?.method;
     let requestBody = {};
@@ -965,6 +1276,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         ? collectRequestBodyFromFields()
         : parseJson(byId("dbscenario-editor-request-body").value || "{}", "リクエストbody", false);
     }
+    if (method === "DELETE" && byId("dbscenario-editor-engine").value === "influxdb") {
+      requestBody = parseJson(byId("dbscenario-editor-influx-delete-body").value || "{}", "リクエストbody", false);
+    }
     const seedFields = SEEDED_METHODS.has(method)
       ? parseJson(byId("dbscenario-editor-seed-fields").value || "{}", "事前データ")
       : {};
@@ -981,19 +1295,29 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         source: row.dataset.parameterSource || "",
         parameter: row.dataset.parameterName || "",
         column: columnInput?.value || "",
-        operator: operatorSelect.value,
+        operator: operatorSelect?.value || "",
         format: row.dataset.parameterFormat || null,
         group: row.querySelector('select[data-or-group]')?.value || null,
       };
     }).filter((item) => item.parameter && item.column.trim());
     return {
       operation,
+      engine: byId("dbscenario-editor-engine").value,
+      influxAction: byId("dbscenario-editor-influx-action").value,
+      influxStatus: byId("dbscenario-editor-influx-status").value,
+      influxTime: byId("dbscenario-editor-influx-time").value,
+      influxTags: byId("dbscenario-editor-engine").value === "influxdb" && MUTATING_METHODS.has(method)
+        ? parseJson(byId("dbscenario-editor-influx-tags").value || "{}", "全タグ") : {},
+      influxFields: byId("dbscenario-editor-engine").value === "influxdb" && ["POST", "PUT", "PATCH"].includes(method)
+        ? collectWriteMappings(requestBody).columns : {},
+      influxPreserve: byId("dbscenario-editor-influx-preserve").checked,
       name: byId("dbscenario-editor-name").value,
       table: byId("dbscenario-editor-table").value,
       pathParams: collectPathParams(),
       queryParams: collectQueryParams(),
       writeStatus: byId("dbscenario-editor-write-status").value,
       requestBody,
+      expandCombinations: byId("dbscenario-editor-expand-combinations").checked,
       seedFields,
       primaryKey: byId("dbscenario-editor-primary-key").value,
       responseStatus: byId("dbscenario-editor-response-status").value,
@@ -1001,6 +1325,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       responseArrayPath: byId("dbscenario-editor-response-array-path").value,
       readMappings,
       readFilters,
+      responseValues: [...byId("dbscenario-editor-response-values").querySelectorAll("tr[data-value-path]")]
+        .map((row) => ({ path: row.dataset.valuePath, mode: row.querySelector("[data-value-mode]").value,
+          parameter: row.querySelector("[data-value-parameter]").value, fixed: row.querySelector("[data-value-fixed]").value })),
       softDelete: byId("dbscenario-editor-soft-delete").checked,
       softDeleteColumn: byId("dbscenario-editor-soft-delete-column").value,
       softDeleteValue: byId("dbscenario-editor-soft-delete-value").value,
@@ -1039,6 +1366,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   byId("dbscenario-editor-operation").addEventListener("change", renderForOperation);
+  byId("dbscenario-editor-mode").addEventListener("change", updateMode);
+  byId("dbscenario-editor-engine").addEventListener("change", updateMode);
   byId("dbscenario-editor-primary-key").addEventListener("change", () => {
     const operation = selectedOperation();
     if (operation) renderPathParams(operation);
@@ -1052,19 +1381,21 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   byId("dbscenario-editor-response-shape").addEventListener("change", () => {
     byId("dbscenario-editor-response-array-path-field").hidden = byId("dbscenario-editor-response-shape").value !== "array";
     const operation = selectedOperation();
-    if (operation) renderReadMappings(operation);
+    if (operation) { renderReadMappings(operation); renderResponseValues(operation); }
   });
   byId("dbscenario-editor-response-array-path").addEventListener("change", () => {
     const operation = selectedOperation();
-    if (operation) renderReadMappings(operation);
+    if (operation) { renderReadMappings(operation); renderResponseValues(operation); }
   });
   byId("dbscenario-editor-add-scenario").addEventListener("click", () => {
     try {
-      const scenario = buildDbScenario(currentForm());
-      if (scenarios.some((item) => item.name === scenario.name)) throw new Error(`試験名「${scenario.name}」はすでに登録されています`);
-      scenarios.push(scenario);
+      const generated = buildDbScenarios(currentForm());
+      for (const scenario of generated) {
+        if (scenarios.some((item) => item.name === scenario.name)) throw new Error(`試験名「${scenario.name}」はすでに登録されています`);
+      }
+      scenarios.push(...generated);
       renderScenarioList();
-      setStatus(`「${scenario.name}」の対応を追加しました。保存すると、この設定から実行内容を自動で作ります。`, "ok");
+      setStatus(`${generated.length}件の対応を追加しました。保存すると、この設定から実行内容を自動で作ります。`, "ok");
     } catch (error) {
       setStatus(error.message || String(error), "error");
     }

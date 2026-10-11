@@ -13,7 +13,8 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
     content_type = _parse_content_type(case.expected_response_header)
     expected_headers = _parse_expected_headers(case.expected_response_header)
     response_time_ms = _parse_time_ms(case.expected_response_time)
-    expected_statuses: frozenset[int] = frozenset()
+    expected_statuses: frozenset[int] = (frozenset(int(value) for value in case.expected_status.split("/"))
+                                           if re.fullmatch(r"[1-5]\d{2}(?:/[1-5]\d{2})+", case.expected_status) else frozenset())
     has_error_status_range = False
     has_default_response = False
     require_documented_status = False

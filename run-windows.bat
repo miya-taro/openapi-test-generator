@@ -2,7 +2,7 @@
 setlocal
 
 set "REPO_ROOT=%~dp0"
-call powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\run-windows-web.ps1"
+call powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\run-windows-web.ps1" %*
 set "EXIT_CODE=%ERRORLEVEL%"
-if not "%EXIT_CODE%"=="0" pause
+if not "%EXIT_CODE%"=="0" if /I not "%~1"=="-SmokeTest" pause
 exit /b %EXIT_CODE%

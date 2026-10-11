@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import openpyxl
+from src.coverage import write_coverage_sheet
 from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.utils import get_column_letter
 
@@ -100,4 +101,5 @@ def write_case_spec_excel(master: dict, output_path: str | Path) -> None:
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    write_coverage_sheet(workbook, master.get("coverage", []))
     workbook.save(path)

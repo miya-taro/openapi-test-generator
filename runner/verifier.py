@@ -185,7 +185,7 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
 
     # Level 4: レスポンスボディの JSON Schema 適合
     body_schema = response_body_schema
-    if body_schema:
+    if body_schema is not None:
         body_errors = validate_body(result.actual_body, body_schema)
         if body_errors:
             fail_details.append("ボディ不適合: " + " / ".join(body_errors))

@@ -2,6 +2,8 @@
 """openapi-test-gen CLI: OpenAPI 3.x からインターフェース観点テスト仕様を生成する。"""
 from __future__ import annotations
 import argparse
+import json
+from types import SimpleNamespace
 import sys
 from pathlib import Path
 
@@ -24,6 +26,8 @@ from src.generator import generate_test_cases
 from src.id_assigner import assign_ids
 from src.renderer.json_output import build_output, write_output
 from src.renderer.excel_output import write_excel_output
+from src.coverage import build_coverage
+from src.db_scope import scopes_for_case
 
 
 def main() -> int:
@@ -99,6 +103,11 @@ def main() -> int:
         # Phase 4: ID Assign
         log.info("Phase 4: ID 採番開始")
         cases = assign_ids(raw_cases)
+        for case in cases:
+            scopes = scopes_for_case(api, SimpleNamespace(path=case["path"], method=case["method"], expected_status=case["expectedStatus"]))
+            if scopes:
+                case["dbUnchanged"] = scopes
+                case["notes"] += " / DB変更なし: " + json.dumps(scopes, ensure_ascii=False)
 
         # dry-run
         if args.dry_run:
@@ -110,6 +119,7 @@ def main() -> int:
         # Phase 5: Render
         log.info("Phase 5: JSON 出力開始")
         output = build_output(cases, str(input_path))
+        output["coverage"] = build_coverage(api, cases, filter_ops, exclude_ops)
         write_output(output, str(output_path))
         log.info({"output": str(output_path), "total": len(cases)}, "出力完了")
         print(f"✓ {len(cases)} 件のテストケースを {output_path} に出力しました")

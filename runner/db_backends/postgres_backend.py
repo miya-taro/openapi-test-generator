@@ -1,8 +1,8 @@
 """DBシナリオの db_check（engine: postgres）を実行・検証する。"""
 from __future__ import annotations
 import re
-from collections import defaultdict
-from dataclasses import dataclass
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -30,6 +30,7 @@ class PreparedDBResponse:
     query_params: dict
     path_params: dict
     expected_rows: list[dict]
+    filter_coverage: list[dict] = field(default_factory=list)
 
 
 def prepare_db_response_check(
@@ -161,31 +162,13 @@ def prepare_db_response_check(
                 raise DBResponseCheckUnverified(
                     f"照合対象が{_MAX_RESPONSE_ROWS}件を超えるため、自動照合できません"
                 )
-            advanced_filters = any(item.source == "body" or item.group or item.operator == "in" for item in filters)
-            if advanced_filters and not _has_more_rows(cur, table, [], len(rows)):
-                raise DBResponseCheckUnverified("既存データでは検索条件が結果を絞り込むことを確かめられません")
-            # Prove every configured condition changes the result and has a row exactly at its
-            # boundary. Without these, a passing response could be an unfiltered/static result.
-            for index, item in enumerate(filters):
-                if advanced_filters:
-                    continue
-                without_one = [spec for position, spec in enumerate(specs) if position != index]
-                if _has_more_rows(cur, table, without_one, len(rows)):
-                    boundary_specs = [*without_one, (item.column, "=", filter_values[index])]
-                    if not _has_any_row(cur, table, boundary_specs):
-                        raise DBResponseCheckUnverified(
-                            f"DB列「{item.column}」にAPI条件「{item.parameter}」の境界値と一致する行がありません"
-                        )
-                else:
-                    raise DBResponseCheckUnverified(
-                        f"既存データではAPI条件「{item.parameter}」が結果を絞り込むことを確かめられません"
-                    )
+            coverage = _prove_filter_coverage(cur, table, filters, specs, len(rows))
 
             expected_rows = [
                 {response_path: row[column] for response_path, column in db_response_check.fields.items()}
                 for row in rows
             ]
-            return PreparedDBResponse(effective_query, effective_path, expected_rows)
+            return PreparedDBResponse(effective_query, effective_path, expected_rows, coverage)
     finally:
         conn.rollback()
         conn.close()
@@ -319,6 +302,64 @@ def _has_any_row(cur, table: str, specs: list[tuple]) -> bool:
     return cur.fetchone() is not None
 
 
+def _prove_filter_coverage(cur, table: str, filters: list, specs: list[tuple], count: int) -> list[dict]:
+    """Prove missing conditions, OR branches, IN members and wrong range ends are observable.
+
+    All witnesses satisfy the other AND conditions. OR branches are checked as a
+    group, then for an exclusive witness per branch; removing one OR branch must
+    not be confused with removing an AND constraint.
+    """
+    coverage = []
+    checked_groups = set()
+    for index, item in enumerate(filters):
+        member_indexes = [position for position, candidate in enumerate(filters)
+                          if item.group and candidate.group == item.group] if item.group else [index]
+        others = [spec for position, spec in enumerate(specs) if position not in member_indexes]
+        label = f"{item.source}.{item.parameter}"
+        unit = item.group or f"__{index}"
+        if unit not in checked_groups:
+            if not _has_more_rows(cur, table, others, count):
+                raise DBResponseCheckUnverified(
+                    f"既存データではAPI条件「{label}」{('のORグループ' if item.group else '')}の省略を検出できません"
+                )
+            checked_groups.add(unit)
+        single = (item.column, item.operator, specs[index][2])
+        branches = [(filters[position].column, filters[position].operator, specs[position][2])
+                    for position in member_indexes if position != index]
+        if branches and not _has_exclusive_witness(cur, table, others, single, branches):
+            raise DBResponseCheckUnverified(f"API条件「{label}」だけで一致するOR分岐の試験データがありません")
+        boundary = False
+        if item.operator in {">", ">=", "<", "<="}:
+            boundary_spec = (item.column, "=", specs[index][2])
+            if not _has_exclusive_witness(cur, table, others, boundary_spec, branches):
+                raise DBResponseCheckUnverified(
+                    f"DB列「{item.column}」にAPI条件「{label}」の境界値と一致する行がありません"
+                )
+            boundary = True
+        members = []
+        if item.operator == "in":
+            for value in specs[index][2]:
+                if value in members:
+                    continue
+                if not _has_exclusive_witness(cur, table, others, (item.column, "=", value), branches):
+                    raise DBResponseCheckUnverified(f"API条件「{label}」のIN指定値「{value}」に一致する試験データがありません")
+                members.append(value)
+        coverage.append({"parameter": label, "omission_detectable": True,
+                         "or_branch_detectable": bool(branches), "boundary_present": boundary,
+                         "in_members_present": members})
+    return coverage
+
+
+def _has_exclusive_witness(cur, table: str, others: list[tuple], required: tuple, excluded: list[tuple]) -> bool:
+    where, params = _where_sql([*others, required])
+    for spec in excluded:
+        clause, excluded_params = _where_sql([spec])
+        where += f" AND ({clause}) IS NOT TRUE"
+        params.extend(excluded_params)
+    cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", params)
+    return cur.fetchone() is not None
+
+
 def _request_value(value, parameter_format: str | None = None):
     if parameter_format == "date" and isinstance(value, datetime):
         return value.date().isoformat()
@@ -449,3 +490,49 @@ def _compare(rows: list[dict], expect: dict, invariants: list[str] | None = None
     if mismatches:
         return False, "; ".join(mismatches)
     return True, ""
+
+
+def snapshot_rows(db_config: dict, scope) -> list[dict]:
+    """Read an explicit scope; never truncate a comparison or modify the database."""
+    table = _quote_ident(scope.table)
+    columns = ", ".join(_quote_ident(column) for column in scope.columns)
+    if not columns:
+        raise ValueError("比較するDB列が必要です")
+    clauses, params = [], []
+    for column, value in scope.where.items():
+        if value is None:
+            clauses.append(f"{_quote_ident(column)} IS NULL")
+        else:
+            clauses.append(f"{_quote_ident(column)} = %s")
+            params.append(value)
+    query = f"SELECT {columns} FROM {table}"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += f" LIMIT {_MAX_RESPONSE_ROWS + 1}"
+    conn = psycopg2.connect(**db_config)
+    try:
+        conn.set_session(isolation_level=ISOLATION_LEVEL_REPEATABLE_READ, readonly=True)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            rows = [dict(row) for row in cursor.fetchall()]
+        if len(rows) > _MAX_RESPONSE_ROWS:
+            raise DBResponseCheckUnverified(f"DB変更なし確認の対象が{_MAX_RESPONSE_ROWS}件を超えています。whereで範囲を限定してください")
+        return rows
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def unchanged_rows(before: list[dict], after: list[dict]) -> bool:
+    """Compare row multiplicities and typed values, ignoring database row order."""
+    def frozen(value):
+        if isinstance(value, dict):
+            return ("object", tuple(sorted((key, frozen(item)) for key, item in value.items())))
+        if isinstance(value, (list, tuple)):
+            return ("array", tuple(frozen(item) for item in value))
+        if isinstance(value, Decimal) and value.is_nan():
+            return ("Decimal", str(value))
+        if isinstance(value, float) and (value != value):
+            return ("float", "NaN")
+        return (type(value).__name__, value)
+    return Counter(frozen(row) for row in before) == Counter(frozen(row) for row in after)

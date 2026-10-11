@@ -24,6 +24,8 @@ def _invalid_auth_value() -> str:
 
 def _security_failure_status(spec: dict) -> str:
     responses = spec.get("responsesInfo") or {}
+    if "401" in responses and "403" in responses:
+        return "401/403"
     if "401" in responses:
         return "401"
     if "403" in responses:

@@ -1,10 +1,16 @@
 """ParamSpec / BodyFieldSpec / AuthSpec から TestCase を生成するメインロジック。"""
 from __future__ import annotations
+import json
+from jsonschema import Draft202012Validator, FormatChecker
+from src.schema_contract import CONTRACT, validation_schema
+
+from src.comparison_rules import KEY as COMPARISON_KEY, OPERATORS
 
 from .rules.common import generate_common_cases, generate_one_of_variant_cases
 from .rules.integer import generate_integer_cases
 from .rules.string import generate_string_cases
 from .rules.array import generate_array_cases
+from .rules.boolean import generate_boolean_cases
 from .rules.object import generate_object_cases
 from .rules.auth import generate_auth_cases
 from .rules.file import generate_file_cases
@@ -221,6 +227,8 @@ def generate_test_cases(
                     [("first", False), ("second", False), ("neither", True), ("both", True)]
                 )
                 for variant, valid in variants:
+                    if valid and spec["successStatus"] is None:
+                        continue
                     if not opts["includeNormal" if valid else "includeAbnormal"]:
                         continue
                     expected_status = spec["successStatus"] if valid else "4xx"
@@ -234,6 +242,31 @@ def generate_test_cases(
                         "expectedStatus": expected_status,
                         "expectedResult": "条件付き必須の指定に従うこと",
                         "notes": "UIで指定した項目間の必須条件",
+                        "expectedResponseBody": _derive_expected_response_body(expected_status, responses_info),
+                        "expectedResponseHeader": _derive_expected_response_header(expected_status, responses_info),
+                        "expectedResponseTime": "3秒以内",
+                    })
+
+        if is_root_body:
+            for index, rule in enumerate(spec["schema"].get(COMPARISON_KEY, [])):
+                for variant, ordering in (("less", -1), ("equal", 0), ("greater", 1)):
+                    valid = OPERATORS[rule["operator"]](ordering, 0)
+                    if valid and spec["successStatus"] is None:
+                        continue
+                    if not opts["includeNormal" if valid else "includeAbnormal"]:
+                        continue
+                    expected_status = spec["successStatus"] if valid else "4xx"
+                    responses_info = _response_info_for_status(expected_status, spec["responsesInfo"])
+                    left, right = rule["fields"]
+                    results.append({
+                        "operationId": spec["operationId"], "path": spec["path"], "method": spec["method"],
+                        "in": "body", "paramName": "requestBody", "verdict": "",
+                        "summary": f"{left} {rule['operator']} {right}（{variant}）",
+                        "keyword": "fieldComparison", "perspective": "正常系_項目間比較" if valid else "異常系_項目間比較",
+                        "inputValue": f"__COMPARISON_RULE__{index}:{variant}",
+                        "expectedStatus": expected_status,
+                        "expectedResult": "設定した項目間の大小条件に従うこと",
+                        "notes": "両項目の指定時に比較。小さい値・等しい値・大きい値を確認",
                         "expectedResponseBody": _derive_expected_response_body(expected_status, responses_info),
                         "expectedResponseHeader": _derive_expected_response_header(expected_status, responses_info),
                         "expectedResponseTime": "3秒以内",
@@ -266,11 +299,13 @@ def _generate_from_schema(
     param_in: str,
     param_name: str,
     opts: dict,
-    success_status: str,
+    success_status: str | None,
     is_root_body: bool = False,
     skip_presence: bool = False,
 ) -> list[dict]:
     cases: list[dict] = []
+    if success_status is None:
+        opts = {**opts, "includeNormal": False}
     ctx = {
         "paramIn": param_in, "paramName": param_name, "opts": opts,
         "successStatus": success_status, "isRootBody": is_root_body,
@@ -303,6 +338,10 @@ def _generate_from_schema(
         cases.extend(generate_integer_cases(schema, ctx))
     elif type_ == "string":
         cases.extend(generate_string_cases(schema, ctx))
+    elif type_ == "boolean":
+        cases.extend(generate_boolean_cases(schema, ctx))
+        if schema.get("enum"):
+            cases.extend(generate_string_cases(schema, ctx))
     elif type_ == "array":
         cases.extend(generate_array_cases(schema, ctx))
     elif type_ == "object":
@@ -318,4 +357,19 @@ def _generate_from_schema(
         ):
             cases.extend(generate_string_cases(schema, ctx))
 
+    if CONTRACT in schema:
+        validator = Draft202012Validator(validation_schema(schema), format_checker=FormatChecker())
+        filtered = []
+        for case in cases:
+            raw = case["inputValue"]
+            if raw.startswith(("（", "__")) and raw != "（空文字）":
+                filtered.append(case)
+                continue
+            try:
+                value = "" if raw == "（空文字）" else json.loads(raw)
+            except (ValueError, TypeError):
+                value = raw
+            if validator.is_valid(value) == case["perspective"].startswith("正常"):
+                filtered.append(case)
+        return filtered
     return cases

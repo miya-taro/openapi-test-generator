@@ -2,6 +2,7 @@
 """Automated API test runner."""
 from __future__ import annotations
 import argparse
+import json
 import os
 import sys
 import threading
@@ -25,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
-from config_loader import load_config, get_postgres_config
+from config_loader import load_config, get_postgres_config, get_influxdb_config
 from excel_reader import read_excel
 from excel_writer import write_results
 from hook_runner import run_hook
@@ -35,6 +36,9 @@ from models import RunResult
 from response_schema import from_run_case
 from verifier import verify, WARN, FAIL
 from src.parser import parse_openapi, OpenAPIParseError
+from src.db_scope import scopes_for_case
+from contract_db_guard import execute_guarded
+from sensitive_data import redact_sensitive_text
 
 
 def _print_case_result(case, result: RunResult, verdict: str, detail: str) -> None:
@@ -53,8 +57,14 @@ def _run_all_sequential(
 
     for case in cases:
         schema = from_run_case(case, openapi)
-        result = execute_with_openapi(case, args.base_url, openapi, session, args.cookie_jar)
+        result, db_failures = execute_guarded(
+            case, openapi, getattr(args, "guard_config", getattr(args, "db_config", None)),
+            lambda current=case: execute_with_openapi(current, args.base_url, openapi, session, args.cookie_jar),
+            getattr(args, "db_evidence", []),
+        )
         verdict, detail = verify(result, schema)
+        if db_failures:
+            verdict, detail = FAIL, "; ".join(filter(None, [detail, *db_failures]))
         _print_case_result(case, result, verdict, detail)
 
         if verdict == FAIL:
@@ -194,7 +204,8 @@ def main() -> int:
             # openapi ドキュメントを取得する（openapi-test-gen と同じパーサーを再利用）。
             openapi = parse_openapi(str(openapi_path))
         except OpenAPIParseError as e:
-            print(f"[WARN] openapi.json の読み込みに失敗しました: {e}", file=sys.stderr)
+            print(f"[ERROR] openapi.json の読み込みに失敗しました: {e}", file=sys.stderr)
+            return 3
     else:
         print(f"[WARN] openapi.json が見つかりません: {openapi_path}", file=sys.stderr)
 
@@ -219,6 +230,12 @@ def main() -> int:
 
     print(f"[INFO] 試験ケース数: {len(cases)} 件")
 
+    guarded = any(scopes_for_case(openapi, case) for case in cases)
+    if guarded and (args.parallel > 1 or not args.config):
+        print("[ERROR] 異常系のDB変更なし確認にはDB接続設定と逐次実行（parallel=1）が必要です", file=sys.stderr)
+        return 4
+    args.db_evidence = []
+
     if args.dry_run:
         print("[DRY-RUN] HTTP リクエストを送信せずに終了します")
         return 0
@@ -228,10 +245,19 @@ def main() -> int:
     db_config: dict | None = None
     if args.config:
         try:
-            db_config = get_postgres_config(load_config(args.config))
+            raw_config = load_config(args.config)
+            args.guard_config = raw_config
+            if guarded:
+                for case in cases:
+                    for scope in scopes_for_case(openapi, case):
+                        getter = get_influxdb_config if scope.get("engine") == "influxdb" else get_postgres_config
+                        getter(raw_config)
+            if args.setup or args.teardown or (not guarded and "postgres" in raw_config):
+                db_config = get_postgres_config(raw_config)
         except (FileNotFoundError, ValueError) as e:
             print(f"[ERROR] config.json の読み込みに失敗しました: {e}", file=sys.stderr)
             return 3
+    args.db_config = db_config
 
     # 2. ヘルスチェック（--skip-health-check指定時は行わない）
     if not args.skip_health_check and not health_check(args.base_url, args.health_path):
@@ -297,6 +323,9 @@ def main() -> int:
 
     try:
         write_results(excel_path, results, output_path, full_body=args.full_body)
+        if guarded:
+            evidence_path = output_path.with_name(output_path.stem + "-db-evidence.json")
+            evidence_path.write_text(redact_sensitive_text(json.dumps(args.db_evidence, ensure_ascii=False, default=str, indent=2)), encoding="utf-8")
         print(f"[INFO] 結果を出力しました: {output_path}")
     except Exception as e:
         print(f"[ERROR] 結果 Excel の書き込みに失敗しました: {e}", file=sys.stderr)

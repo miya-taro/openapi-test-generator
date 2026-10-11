@@ -223,3 +223,20 @@ def test_full_report_redacts_openapi_write_only_fields_with_custom_names(output_
 
     assert secret not in body_value
     assert "[REDACTED]" in body_value
+
+
+@pytest.mark.parametrize("verdict", ["OK", "NG", "WARN", "ERROR"])
+def test_result_verdict_is_written_without_changing_spec(tmp_path, verdict):
+    source = tmp_path / "spec.xlsx"
+    shutil.copy(FIXTURE, source)
+    before = source.read_bytes()
+    output = tmp_path / "result.xlsx"
+    write_results(source, [(make_result(make_case()), verdict, "detail")], output)
+    with output.open("rb") as stream:
+        workbook = openpyxl.load_workbook(stream)
+        sheet = workbook["test_spec"]
+        headers = [cell.value for cell in sheet[4]]
+        assert headers.count("判定") == 1
+        assert sheet.cell(5, headers.index("判定") + 1).value == verdict
+        workbook.close()
+    assert source.read_bytes() == before

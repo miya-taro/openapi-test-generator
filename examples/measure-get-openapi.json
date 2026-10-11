@@ -1,0 +1,59 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "GET JSONボディの測定結果検索（検証用）", "version": "1.0.0"},
+  "components": {"securitySchemes": {"token": {"type": "http", "scheme": "bearer"}}},
+  "security": [{"token": []}],
+  "paths": {
+    "/v1/result/measure/get": {
+      "get": {
+        "operationId": "getMeasureResults",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "required": ["items"],
+            "properties": {
+              "site_id": {"type": "integer"},
+              "location_id": {"type": "string"},
+              "start": {"type": "string", "format": "date-time"},
+              "end": {"type": "string", "format": "date-time"},
+              "items": {"type": "array", "items": {"type": "string"}}
+            },
+            "x-otg-presence-rules": [
+              {"kind": "atLeastOne", "fields": ["site_id", "location_id"]},
+              {"kind": "together", "fields": ["start", "end"]}
+            ]
+          }}}
+        },
+        "responses": {
+          "200": {
+            "description": "検索結果。検証用APIでは0件も200で返す。両拠点IDはOR、期間は両端を含む。",
+            "headers": {"X-Result-Count": {"required": true, "schema": {"type": "integer", "minimum": 0}}},
+            "content": {"application/json": {"schema": {
+              "type": "object", "required": ["site_id", "start", "end", "result"],
+              "properties": {
+                "site_id": {"type": "integer"},
+                "start": {"type": "string", "format": "date-time"},
+                "end": {"type": "string", "format": "date-time"},
+                "result": {"type": "array", "items": {
+                  "type": "object", "required": ["time", "item", "value"],
+                  "properties": {
+                    "time": {"type": "string", "format": "date-time"},
+                    "item": {"type": "string"},
+                    "value": {"type": "number", "format": "double"}
+                  }
+                }}
+              }
+            }}}
+          },
+          "400": {"description": "入力不正", "content": {"application/json": {"schema": {
+            "type": "object", "required": ["error"], "properties": {"error": {"type": "string"}}
+          }}}},
+          "401": {"description": "認証不正", "content": {"application/json": {"schema": {
+            "type": "object", "required": ["error"], "properties": {"error": {"type": "string"}}
+          }}}}
+        }
+      }
+    }
+  }
+}

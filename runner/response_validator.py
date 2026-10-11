@@ -4,9 +4,10 @@ import math
 import re
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 from sensitive_data import WRITE_ONLY_SCHEMA_MARKER
+from src.schema_contract import validation_schema, map_children
 
 MAX_ERRORS = 10
 
@@ -76,9 +77,11 @@ def resolve_response_schema(
         return None
 
     schema = selected_content.get("schema")
+    if isinstance(schema, bool):
+        return schema
     if not isinstance(schema, dict) or not schema:
         return None
-    return _strip_write_only(schema)
+    return _strip_write_only(validation_schema(schema))
 
 
 def _media_type_matches(actual: str, expected: str) -> bool:
@@ -99,7 +102,7 @@ def _strip_write_only(schema: dict) -> dict:
     元のスキーマ（openapiドキュメント内で共有されている可能性がある）は変更せず、
     新しい辞書を組み立てて返す。
     """
-    result = dict(schema)
+    result = map_children(schema, lambda child: _strip_write_only(child) if isinstance(child, dict) else child)
 
     properties = result.get("properties")
     if isinstance(properties, dict):
@@ -110,23 +113,11 @@ def _strip_write_only(schema: dict) -> dict:
                 new_props[name] = {"not": {}, WRITE_ONLY_SCHEMA_MARKER: True}
                 write_only_names.add(name)
                 continue
-            new_props[name] = _strip_write_only(prop_schema) if isinstance(prop_schema, dict) else prop_schema
+            new_props[name] = prop_schema
         result["properties"] = new_props
         required = result.get("required")
         if isinstance(required, list):
             result["required"] = [r for r in required if r in new_props and r not in write_only_names]
-
-    items = result.get("items")
-    if isinstance(items, dict):
-        result["items"] = _strip_write_only(items)
-
-    # additionalProperties がスキーマ（動的キーの値の形を定義）の場合も再帰する。
-    # bool（true/false）はスキーマではないのでそのまま。ここを見落とすと、動的キーの値側に
-    # ネストした writeOnly な必須プロパティが required に残ったままになり、
-    # 実際には正しく省略されているレスポンスを誤ってNG判定してしまう。
-    additional_props = result.get("additionalProperties")
-    if isinstance(additional_props, dict):
-        result["additionalProperties"] = _strip_write_only(additional_props)
 
     variants = result.get("_oneOfVariants")
     if isinstance(variants, list):
@@ -149,7 +140,8 @@ def validate_body(actual_body: str, schema: dict | None) -> list[str]:
     違反があれば人間可読なメッセージのリストを返す（適合していれば空リスト）。
     schema が None（該当ステータスにレスポンスボディ定義がない）の場合は検証対象外として空リストを返す。
     """
-    if not schema:
+    schema = validation_schema(schema)
+    if schema is None or schema == {}:
         return []
 
     if not actual_body or not actual_body.strip():
@@ -165,11 +157,11 @@ def validate_body(actual_body: str, schema: dict | None) -> list[str]:
     # では、サーバーが正当に2番目以降のバリアント形状でレスポンスを返した場合でも
     # スキーマ不適合として誤NG判定してしまう。schema["_oneOfVariants"]（全バリアントの
     # 正規化済みスキーマ）が残っていれば、いずれか1つに適合すれば OK とする。
-    variants = schema.get("_oneOfVariants")
-    if variants:
+    variants = schema.get("_oneOfVariants") if isinstance(schema, dict) else None
+    if variants and not any(key in schema for key in ("oneOf", "anyOf", "allOf")):
         return _validate_against_any_variant(parsed, variants)
 
-    return _validate_against_schema(parsed, schema)
+    return _validate_against_schema(parsed, validation_schema(schema))
 
 
 def validate_header_value(actual_value: str, header_definition: dict) -> list[str]:
@@ -187,7 +179,7 @@ def validate_header_value(actual_value: str, header_definition: dict) -> list[st
     except ValueError:
         return ["ヘッダ値をOpenAPIの型として読み取れません"]
     try:
-        validator = Draft202012Validator(schema)
+        validator = Draft202012Validator(validation_schema(schema), format_checker=FormatChecker())
     except SchemaError:
         return ["OpenAPIヘッダschemaが不正です"]
     errors = sorted(validator.iter_errors(value), key=lambda error: list(map(str, error.path)))
@@ -319,7 +311,7 @@ def _validate_against_any_variant(parsed: Any, variants: list[dict]) -> list[str
 
 def _validate_against_schema(parsed: Any, schema: dict) -> list[str]:
     try:
-        validator = Draft202012Validator(schema)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
     except SchemaError as e:
         return [f"スキーマが不正です（検証をスキップ）: {e}"]
 

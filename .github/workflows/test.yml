@@ -75,6 +75,21 @@ jobs:
       - name: Run GUI logic tests
         run: python -m pytest gui/tests/ -v
 
+      - name: Run workflow tests
+        run: python -m pytest workflow/tests/ -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Windows clone startup and repeat startup
+        shell: cmd
+        run: |
+          call run-windows.bat -SmokeTest
+          if errorlevel 1 exit /b 1
+          call run-windows.bat -SmokeTest
+          if errorlevel 1 exit /b 1
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -89,7 +104,7 @@ jobs:
 
   e2e:
     # docs/ のサンプルAPIとPostgreSQLを使い、契約試験とDBシナリオを検証する。
-    name: E2E (docs/ sample against mock API + PostgreSQL)
+    name: E2E (HTTP / PostgreSQL / InfluxDB / browser)
     runs-on: ubuntu-latest
 
     services:
@@ -106,6 +121,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+
+      influxdb:
+        image: influxdb:1.8.10
+        ports:
+          - 8086:8086
+        options: >-
+          --health-cmd "curl -f http://localhost:8086/ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +151,55 @@ jobs:
 
       - name: Run E2E (generate -> execute -> DB scenario verification)
         run: python docs/run_e2e.py --reset-db-between-layers
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify GET JSON body mappings against real HTTP and PostgreSQL
+        env:
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
+          OTG_MEASURE_EVIDENCE_DIR: docs/_ci_measure_evidence
+          OTG_SIDE_EFFECT_EVIDENCE_DIR: docs/_ci_measure_evidence/side-effects
+          OTG_CONTRACT_DB_EVIDENCE_DIR: docs/_ci_measure_evidence/contract-errors
+        run: python -m pytest runner/tests/test_measure_get_e2e.py runner/tests/test_db_scenario_e2e.py runner/tests/test_comparison_unchanged_e2e.py runner/tests/test_contract_db_guard_e2e.py -q -s
+
+      - name: Verify InfluxDB UI mappings and generated error guards
+        env:
+          OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
+          OTG_INFLUX_EVIDENCE_DIR: docs/_ci_measure_evidence/influxdb
+        run: python -m pytest runner/tests/test_influx_response_e2e.py runner/tests/test_influx_mutation_e2e.py -q
+
+      - name: Upload GET JSON body comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-get-evidence
+          path: docs/_ci_measure_evidence/
+          if-no-files-found: error
+
+      - name: Build browser UI and install browser test driver
+        run: |
+          npm ci --prefix gui-tauri
+          npm run build --prefix gui-tauri
+          pip install -r requirements-browser-test.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Verify independent API matrix and actual browser workflow
+        env:
+          OTG_BROWSER_TEST: "1"
+          OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
+          OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
+          OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py -q
+
+      - name: Upload first release qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-release-evidence
+          path: docs/_ci_release_evidence/
+          if-no-files-found: error
 
       - name: Run schemathesis (契約層の探索的ファジング。決定論的スイートとは別レーン、失敗してもブロックしない)
         run: python docs/run_schemathesis.py

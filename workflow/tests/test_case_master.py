@@ -162,6 +162,31 @@ scenarios:
     assert "secret" not in encoded.lower()
 
 
+def test_request_response_value_rules_are_visible_in_review_and_excel(tmp_path):
+    openapi = tmp_path / "openapi.json"
+    scenarios = tmp_path / "scenarios.yaml"
+    _write_openapi(openapi)
+    _write_scenarios(scenarios, """
+scenarios:
+  - name: 応答IDが送信IDに一致する
+    request: {operationId: getUser, path_params: {id: 4}}
+    response_check:
+      expect:
+        status: 200
+        values:
+          - {path: id, source: path, parameter: id}
+""")
+    master = build_case_master("sample", None, scenarios, openapi)
+    rule = {"path": "id", "source": "path", "parameter": "id"}
+    assert master["cases"][0]["expected"]["response"]["values"] == [rule]
+    assert master["cases"][0]["definition"]["responseCheck"]["expectedValues"] == [rule]
+    output = tmp_path / "cases.xlsx"
+    write_case_spec_excel(master, output)
+    workbook = load_workbook(output)
+    values = [str(cell.value) for row in workbook.active for cell in row]
+    assert any('"parameter": "id"' in value for value in values)
+
+
 def test_runner_and_master_share_the_same_db_case_id(tmp_path):
     import sys
     from pathlib import Path as LocalPath
@@ -391,3 +416,33 @@ def test_openapi_source_change_invalidates_case_approval(tmp_path):
     second = build_case_master("sample", _contract_output(), None, openapi)
 
     assert second["cases"][0]["definitionHash"] != original_hash
+
+
+def test_no_change_scope_is_visible_in_master_and_excel(tmp_path):
+    openapi = tmp_path / "openapi.json"
+    _write_openapi(openapi)
+    scenarios = tmp_path / "unchanged.yaml"
+    scopes = [{"table": "users", "columns": ["id", "name"], "where": {"id": 1}}]
+    scenarios.write_text(json.dumps({"scenarios": [{"name": "readonly", "request": {"operationId": "getUser", "path_params": {"id": 1}},
+                                                    "response_check": {"expect": {"status": 200}}, "db_unchanged": scopes}]}), encoding="utf-8")
+    master = build_case_master("sample", None, scenarios, openapi)
+    assert master["cases"][0]["expected"]["databaseUnchanged"] == scopes
+    assert master["cases"][0]["definition"]["dbUnchanged"] == scopes
+    excel = tmp_path / "case-spec.xlsx"
+    write_case_spec_excel(master, excel)
+    workbook = load_workbook(excel)
+    values = [str(cell.value) for sheet in workbook for row in sheet for cell in row]
+    assert any("databaseUnchanged" in value and "users" in value for value in values)
+
+
+def test_influx_mutation_is_visible_in_review_and_spec(tmp_path):
+    import yaml
+    spec = tmp_path / 'api.json'
+    spec.write_text(json.dumps({'openapi': '3.1.0', 'paths': {'/m': {'post': {'operationId': 'write', 'responses': {'200': {'description': 'ok'}}}}}}))
+    check = {'action': 'insert', 'measurement': 'measure', 'time': '2026-01-01T00:00:00Z', 'tags': {'item': 'a'}, 'fields': {'value': 2}}
+    source = tmp_path / 'db.yaml'
+    source.write_text(yaml.safe_dump({'scenarios': {'list': [{'name': 'write', 'request': {'operationId': 'write'}, 'influx_mutation': check}]}}))
+    master = build_case_master('influx', None, source, spec)
+    case = master['cases'][0]
+    assert case['definition']['influxMutation'] == check
+    assert case['expected']['influxMutation'] == check
