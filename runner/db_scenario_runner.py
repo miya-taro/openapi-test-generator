@@ -564,7 +564,24 @@ def _run_scenario(
                 )
             except ScenarioError as e:
                 return False, f"response_checkの値解決に失敗しました: {e}", str(status), response_json
-            ok, detail = response_check_module.check(resolved_response_check, status, response_json)
+            value_evidence = [] if evidence is not None else None
+            ok, detail = response_check_module.check(
+                resolved_response_check, status, response_json,
+                request={"body": resolved_body, "query": resolved_query_params, "path": resolved_path_params},
+                evidence=value_evidence,
+            )
+            if evidence is not None and scenario.response_check.expect_values:
+                try:
+                    masked_response = json.loads(report_body)
+                except (TypeError, ValueError):
+                    masked_response = {}
+                for item in value_evidence:
+                    if response_check_module._get_nested(masked_response, item["path"]) == "[REDACTED]":
+                        item["expected"] = item["actual"] = "[REDACTED]"
+                    else:
+                        item["expected"] = _safe_evidence(item["expected"], item["parameter"] or item["path"])
+                        item["actual"] = _safe_evidence(item["actual"], item["path"])
+                evidence["response_value_checks"] = value_evidence
             if not ok:
                 failures.append(detail)
 

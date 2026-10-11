@@ -7,14 +7,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
+import re
 from uuid import UUID
+
+from rfc3339_validator import validate_rfc3339
 
 from db_scenario import ResponseCheck
 
 _MISSING = object()
 
 
-def check(response_check: ResponseCheck, status: int, response_json) -> tuple[bool, str]:
+def check(response_check: ResponseCheck, status: int, response_json,
+          request: dict | None = None, evidence: list | None = None) -> tuple[bool, str]:
     """response_check を実行し (適合したか, 詳細メッセージ) を返す。"""
     mismatches: list[str] = []
 
@@ -27,6 +31,38 @@ def check(response_check: ResponseCheck, status: int, response_json) -> tuple[bo
             mismatches.append(f"{path}: レスポンスにフィールドが存在しません")
         elif actual_val != expected_val:
             mismatches.append(f"{path}: 期待={expected_val!r} 実測={actual_val!r}")
+
+    for rule in response_check.expect_values:
+        path = rule["path"]
+        source = rule["source"]
+        actual = _get_nested(response_json, path)
+        expected = rule["value"] if source == "fixed" else _get_nested(
+            (request or {}).get(source, {}), rule["parameter"]
+        )
+        if expected is _MISSING and rule.get("when_missing") == "fixed":
+            expected = rule["value"]
+        detail = ""
+        verdict = "OK"
+        if expected is _MISSING:
+            if rule.get("when_missing", "error") == "skip":
+                verdict = "対象外"
+                detail = "設定に従い、送信項目の省略時は値の照合を行いません"
+            else:
+                verdict = "NG"
+                detail = "期待値に使う送信項目がありません"
+        elif actual is _MISSING:
+            verdict = "NG"
+            detail = "レスポンスに項目がありません"
+        elif not _value_matches(actual, expected, rule.get("comparison", "exact")):
+            verdict = "NG"
+            detail = "期待値と一致しません"
+        if evidence is not None:
+            evidence.append({"path": path, "source": source, "parameter": rule.get("parameter"),
+                             "comparison": rule.get("comparison", "exact"), "verdict": verdict,
+                             "expected": "[MISSING]" if expected is _MISSING else expected,
+                             "actual": "[MISSING]" if actual is _MISSING else actual, "detail": detail})
+        if verdict == "NG":
+            mismatches.append(f"{path}: {detail}")
 
     for i, expected_item in enumerate(response_check.expect_contains):
         path = expected_item.get("path", "$")
@@ -48,6 +84,34 @@ def check(response_check: ResponseCheck, status: int, response_json) -> tuple[bo
     if mismatches:
         return False, "; ".join(mismatches)
     return True, ""
+
+
+def _value_matches(actual, expected, comparison):
+    if comparison == "date-time":
+        if not all(isinstance(value, str) and validate_rfc3339(value.upper()) for value in (actual, expected)):
+            return False
+        return _datetime_instant(actual) == _datetime_instant(expected)
+    # JSON booleans must not equal numeric 0/1; integer/number are both JSON numbers.
+    if isinstance(actual, bool) != isinstance(expected, bool):
+        return False
+    if type(actual) is not type(expected) and not (
+        isinstance(actual, (int, float)) and isinstance(expected, (int, float))
+    ):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(_value_matches(actual[k], v, "exact") for k, v in expected.items())
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(_value_matches(a, e, "exact") for a, e in zip(actual, expected, strict=True))
+    return actual == expected
+
+
+def _datetime_instant(value):
+    fraction = re.search(r"\.(\d+)", value)
+    parsed = datetime.fromisoformat(re.sub(r"\.\d+", "", value.upper()).replace("Z", "+00:00"))
+    seconds = parsed.toordinal() * 86400 + parsed.hour * 3600 + parsed.minute * 60 + parsed.second
+    seconds -= int(parsed.utcoffset().total_seconds())
+    # Keep arbitrary RFC 3339 fractional precision instead of truncating to microseconds.
+    return seconds, Decimal("0." + fraction[1]) if fraction else Decimal(0)
 
 
 def check_db_rows(

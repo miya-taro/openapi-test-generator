@@ -108,6 +108,7 @@ class ResponseCheck:
     expect_status: int | None = None
     expect_body: dict = field(default_factory=dict)
     expect_contains: list[dict] = field(default_factory=list)
+    expect_values: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -160,6 +161,8 @@ class DBScenario:
                 {
                     "expectedStatus": self.response_check.expect_status,
                     "expectedBody": self.response_check.expect_body,
+                    **({"expectedValues": self.response_check.expect_values}
+                       if self.response_check.expect_values else {}),
                     **(
                         {"expectedContains": self.response_check.expect_contains}
                         if self.response_check.expect_contains else {}
@@ -337,11 +340,36 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             expect_status=expect_raw.get("status"),
             expect_body=expect_raw.get("body") or {},
             expect_contains=expect_raw.get("contains") or [],
+            expect_values=expect_raw.get("values", []),
         )
         if not isinstance(response_check.expect_body, dict):
             raise ScenarioError("response_check.expect.body はオブジェクトである必要があります")
         if not isinstance(response_check.expect_contains, list):
             raise ScenarioError("response_check.expect.contains はリストである必要があります")
+        if not isinstance(response_check.expect_values, list):
+            raise ScenarioError("response_check.expect.values はリストである必要があります")
+        seen_value_paths = set()
+        for item in response_check.expect_values:
+            if not isinstance(item, dict):
+                raise ScenarioError("response_check.expect.values の各項目はオブジェクトにしてください")
+            path = item.get("path")
+            source = item.get("source")
+            if not isinstance(path, str) or not path.strip() or path in seen_value_paths:
+                raise ScenarioError("response_check.expect.values.path は重複のない項目パスにしてください")
+            seen_value_paths.add(path)
+            if not isinstance(source, str) or source not in {"body", "query", "path", "fixed"}:
+                raise ScenarioError("response_check.expect.values.source は body、query、path、fixed にしてください")
+            if source == "fixed":
+                if "value" not in item:
+                    raise ScenarioError("固定値の照合には value が必要です")
+            elif not isinstance(item.get("parameter"), str) or not item["parameter"].strip():
+                raise ScenarioError("送信値の照合には parameter が必要です")
+            if item.get("when_missing", "error") not in ("error", "skip", "fixed"):
+                raise ScenarioError("when_missing は error、skip、fixed のいずれかにしてください")
+            if item.get("when_missing") == "fixed" and "value" not in item:
+                raise ScenarioError("省略時の固定値には value が必要です")
+            if item.get("comparison", "exact") not in ("exact", "date-time"):
+                raise ScenarioError("comparison は exact または date-time にしてください")
         for i, expected_item in enumerate(response_check.expect_contains):
             if (
                 not isinstance(expected_item, dict)

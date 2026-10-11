@@ -415,6 +415,16 @@
                       </div>
                       <p class="field-caption">レスポンス項目行はOpenAPIから表示します。DBと照合する項目のDB列を入力してください。実行時は既存DBから条件に合う行を読み、レスポンスの対応項目と件数まで照合します。順番は照合対象にしません。</p>
                     </div>
+                    <div id="dbscenario-editor-response-values-field" class="form-field" hidden>
+                      <label>レスポンス項目の値の照合</label>
+                      <p class="field-caption">配列の外にある項目などを、送信値または固定値と照合します。入力を省略した場合の期待値も仕様に合わせて人が設定してください。「指定時のみ」は省略時の値照合を行いません。型・形式の試験は引き続き行います。日時は同じ時刻なら表記が違っても一致します。</p>
+                      <div class="db-scenario-table-wrap">
+                        <table class="db-scenario-map-table">
+                          <thead><tr><th>レスポンス項目（OpenAPI）</th><th>値の照合方法</th><th>期待値の元</th></tr></thead>
+                          <tbody id="dbscenario-editor-response-values"></tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
 
                   <div id="dbscenario-editor-status" class="field-caption status-message" aria-live="polite"></div>

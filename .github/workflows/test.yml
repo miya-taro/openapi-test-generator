@@ -75,6 +75,9 @@ jobs:
       - name: Run GUI logic tests
         run: python -m pytest gui/tests/ -v
 
+      - name: Run workflow tests
+        run: python -m pytest workflow/tests/ -v
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

@@ -162,6 +162,31 @@ scenarios:
     assert "secret" not in encoded.lower()
 
 
+def test_request_response_value_rules_are_visible_in_review_and_excel(tmp_path):
+    openapi = tmp_path / "openapi.json"
+    scenarios = tmp_path / "scenarios.yaml"
+    _write_openapi(openapi)
+    _write_scenarios(scenarios, """
+scenarios:
+  - name: 応答IDが送信IDに一致する
+    request: {operationId: getUser, path_params: {id: 4}}
+    response_check:
+      expect:
+        status: 200
+        values:
+          - {path: id, source: path, parameter: id}
+""")
+    master = build_case_master("sample", None, scenarios, openapi)
+    rule = {"path": "id", "source": "path", "parameter": "id"}
+    assert master["cases"][0]["expected"]["response"]["values"] == [rule]
+    assert master["cases"][0]["definition"]["responseCheck"]["expectedValues"] == [rule]
+    output = tmp_path / "cases.xlsx"
+    write_case_spec_excel(master, output)
+    workbook = load_workbook(output)
+    values = [str(cell.value) for row in workbook.active for cell in row]
+    assert any('"parameter": "id"' in value for value in values)
+
+
 def test_runner_and_master_share_the_same_db_case_id(tmp_path):
     import sys
     from pathlib import Path as LocalPath

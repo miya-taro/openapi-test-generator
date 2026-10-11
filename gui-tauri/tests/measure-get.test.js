@@ -48,6 +48,57 @@ describe("測定結果APIのDB試験組み合わせ", () => {
     expect(buildDbScenarios(input)).toHaveLength(1);
   });
 
+  test("ルート項目の期待値を各ケースの送信値へ対応付ける", () => {
+    const input = form();
+    input.responseValues = ["site_id", "start", "end"].map((path) => ({
+      path, mode: "requestIfPresent", parameter: `body:${path}`,
+    }));
+    const cases = buildDbScenarios(input);
+    expect(cases).toHaveLength(18);
+    expect(cases[0].response_check.expect.values).toEqual([
+      { path: "site_id", source: "body", parameter: "site_id", comparison: "exact", when_missing: "skip" },
+      { path: "start", source: "body", parameter: "start", comparison: "date-time", when_missing: "skip" },
+      { path: "end", source: "body", parameter: "end", comparison: "date-time", when_missing: "skip" },
+    ]);
+  });
+
+  test("照合元を省略する組み合わせを黙って作らない", () => {
+    const input = form();
+    input.responseValues = [{ path: "start", mode: "request", parameter: "body:start" }];
+    expect(() => buildDbScenarios(input)).toThrow("指定時のみ");
+  });
+
+  test("省略時の期待値は人が指定した固定値を使う", () => {
+    const input = form();
+    input.responseValues = [{ path: "site_id", mode: "requestWithDefault", parameter: "body:site_id", fixed: "2" }];
+    const cases = buildDbScenarios(input);
+    expect(cases[0].response_check.expect.values[0]).toEqual({
+      path: "site_id", source: "body", parameter: "site_id", comparison: "exact", when_missing: "fixed", value: 2,
+    });
+    input.responseValues[0].fixed = "";
+    expect(() => buildDbScenarios(input)).toThrow("省略時の期待値");
+  });
+
+  test("固定値は型・日時形式を確認して保存する", () => {
+    const input = form();
+    input.responseValues = [{ path: "site_id", mode: "fixed", fixed: "2" }];
+    expect(buildDbScenarios(input)[0].response_check.expect.values[0].value).toBe(2);
+    input.responseValues[0].fixed = '"wrong"';
+    expect(() => buildDbScenarios(input)).toThrow("integer");
+    input.responseValues = [{ path: "start", mode: "fixed", fixed: '"2026-02-30T00:00:00Z"' }];
+    expect(() => buildDbScenarios(input)).toThrow("日時");
+  });
+
+  test("照合元の型違い・未選択・重複を拒否する", () => {
+    const input = form();
+    input.responseValues = [{ path: "site_id", mode: "requestIfPresent", parameter: "body:location_id" }];
+    expect(() => buildDbScenarios(input)).toThrow("型が一致しません");
+    input.responseValues[0].parameter = "";
+    expect(() => buildDbScenarios(input)).toThrow("選択してください");
+    input.responseValues = [{ path: "site_id", mode: "fixed", fixed: "1" }, { path: "site_id", mode: "fixed", fixed: "2" }];
+    expect(() => buildDbScenarios(input)).toThrow("値照合設定");
+  });
+
   test("組み合わせに必要なDB値を推測しない", () => {
     const input = form();
     delete input.requestBody.location_id;
@@ -113,7 +164,17 @@ describe("測定結果APIのDB試験組み合わせ", () => {
     for (const row of document.querySelectorAll("#dbscenario-editor-read-mappings tr[data-response-path]")) {
       row.querySelector("input[data-db-column]").value = input.readMappings.find((item) => item.target === row.dataset.responsePath).source;
     }
+    const valueRows = [...document.querySelectorAll("#dbscenario-editor-response-values tr[data-value-path]")];
+    expect(valueRows.map((row) => row.dataset.valuePath)).toEqual(["site_id", "start", "end"]);
+    for (const row of valueRows) {
+      row.querySelector("[data-value-mode]").value = "requestIfPresent";
+      row.querySelector("[data-value-mode]").dispatchEvent(new window.Event("change"));
+      row.querySelector("[data-value-parameter]").value = `body:${row.dataset.valuePath}`;
+      expect(row.querySelector("[data-value-parameter]").hidden).toBe(false);
+      expect(row.querySelector("[data-value-fixed]").hidden).toBe(true);
+    }
     document.getElementById("dbscenario-editor-add-scenario").click();
     expect(document.querySelectorAll("#dbscenario-editor-scenario-list pre")).toHaveLength(18);
+    expect(document.querySelector("#dbscenario-editor-scenario-list pre").textContent).toContain('"when_missing": "skip"');
   });
 });

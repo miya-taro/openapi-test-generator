@@ -184,6 +184,8 @@ def _scenario_case(
                     "status": definition["responseCheck"]["expectedStatus"],
                     "body": definition["responseCheck"]["expectedBody"],
                     "contains": definition["responseCheck"].get("expectedContains", []),
+                    **({"values": definition["responseCheck"]["expectedValues"]}
+                       if definition["responseCheck"].get("expectedValues") else {}),
                 }
                 if definition["responseCheck"]
                 else None

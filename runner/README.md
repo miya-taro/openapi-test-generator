@@ -331,6 +331,34 @@ scenarios:
 
 ### db_response_check（既存DBからGETの期待レスポンスを作る）
 
+GETの配列外のレスポンス値は `response_check.expect.values` で別途明示できる。
+UIの「レスポンス項目の値の照合」もこの形式を保存する。
+
+```yaml
+response_check:
+  expect:
+    status: 200
+    values:
+      - path: site_id
+        source: body
+        parameter: site_id
+        when_missing: fixed
+        value: 2  # この例の仕様でのみ有効。省略時の期待値を人が指定する
+      - path: start
+        source: body
+        parameter: start
+        comparison: date-time
+        when_missing: fixed
+        value: "2026-01-01T00:00:00Z"
+```
+
+`source` は `body` / `query` / `path` / `fixed`。照合元はDBからの自動値選択後に実際に送信したリクエストで、
+直前のレスポンスから期待値を作らない。`fixed` は `value` と比較する。
+`when_missing` は既定の `error`（照合元省略をNG）、`fixed`（指定した省略時の期待値）、
+`skip`（省略時の値照合は対象外）。`comparison` は既定の `exact` または `date-time`。
+日時はRFC 3339の同じ時刻を比較し、タイムゾーン表記の違いを許容する。
+比較証跡の `response_value_checks` に期待値・実測値・判定を保存する。
+
 GETで期間検索を行う場合、試験用の行を画面やYAMLに手で用意する必要はない。APIパラメータとDB列の比較条件、
 レスポンス項目とDB列の対応を一度定義すると、実行時にPostgreSQLを読み取り専用で参照してAPI入力と期待結果を作る。
 

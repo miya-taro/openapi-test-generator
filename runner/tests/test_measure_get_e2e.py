@@ -106,6 +106,17 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
                 del response["start"]
             if mode == "wrong_root_datetime":
                 response["start"] = "2026-02-30T00:00:00Z"
+            if mode == "wrong_root_site_value":
+                response["site_id"] += 100
+            if mode == "wrong_root_start_value":
+                response["start"] = "2026-01-01T00:00:01Z"
+            if mode == "wrong_root_end_value":
+                response["end"] = "2026-01-03T00:00:01Z"
+            if mode == "equivalent_timezones":
+                for key in ("start", "end"):
+                    response[key] = datetime.fromisoformat(response[key].replace("Z", "+00:00")).astimezone(
+                        timezone(timedelta(hours=9))
+                    ).isoformat()
             self.respond(200, response, mode)
 
     sql(f'CREATE TABLE "{table}" (site_id integer, location_id text, measured_at timestamptz, '
@@ -119,8 +130,15 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
     config_path = tmp_path / "db.json"
     config_path.write_text(json.dumps({"postgres": config}), encoding="utf-8")
 
-    def command(args):
-        return subprocess.run(args, cwd=ROOT, env=environment, capture_output=True, text=True, timeout=60)
+    def command(args, input_text=None):
+        return subprocess.run(args, cwd=ROOT, env=environment, input=input_text, capture_output=True, text=True, timeout=60)
+
+    def bridge(name, args):
+        process = command([sys.executable, "gui/tauri_bridge.py"], json.dumps({"command": name, "args": args}))
+        assert process.returncode == 0, process.stdout + process.stderr
+        response = json.loads(process.stdout)
+        assert response["ok"], response
+        return response["result"]
 
     def db_run(scenarios, mode="", evidence_name=None):
         spec = copy.deepcopy(api)
@@ -146,41 +164,58 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
 
         # Use the actual UI logic, with explicit human-supplied DB values and mappings.
         js = """
-          import {readFileSync} from 'node:fs';
           import {buildDbScenarios} from './gui-tauri/src/db-scenario-editor.js';
-          const api = JSON.parse(readFileSync(process.argv[1], 'utf8'));
-          const op = api.paths['/v1/result/measure/get'].get;
-          const operation = {operationId: op.operationId, method: 'GET', path: '/v1/result/measure/get',
-            requestSchema: op.requestBody.content['application/json'].schema,
-            responseSchema: op.responses['200'].content['application/json'].schema};
+          const operation = JSON.parse(process.argv[1]);
           const filter = (parameter, column, operator, group = null) => ({source: 'body', parameter, column, operator, group});
           const result = buildDbScenarios({operation, name: '測定結果', table: process.argv[2], expandCombinations: true,
             requestBody: {site_id: 1, location_id: 'B', start: '2026-01-01T00:00:00Z', end: '2026-01-03T00:00:00Z',
               items: ['temperature', 'humidity']}, responseStatus: 200, responseShape: 'array', responseArrayPath: 'result',
             readMappings: [{source: 'measured_at', target: 'time'}, {source: 'item_name', target: 'item'}, {source: 'measured_value', target: 'value'}],
+            responseValues: [
+              {path: 'site_id', mode: 'requestWithDefault', parameter: 'body:site_id', fixed: '2'},
+              {path: 'start', mode: 'requestWithDefault', parameter: 'body:start', fixed: '"2026-01-01T00:00:00Z"'},
+              {path: 'end', mode: 'requestWithDefault', parameter: 'body:end', fixed: '"2026-01-03T00:00:00Z"'}],
             readFilters: [filter('site_id', 'site_id', '=', 'A'), filter('location_id', 'location_id', '=', 'A'),
               filter('start', 'measured_at', '>='), filter('end', 'measured_at', '<='), filter('items', 'item_name', 'in')]});
           process.stdout.write(JSON.stringify(result));
         """
-        generated = command(["node", "--input-type=module", "-e", js, str(SPEC), table])
+        operation = bridge("list_db_scenario_operations", {"path": str(SPEC)})[0]
+        generated = command(["node", "--input-type=module", "-e", js, json.dumps(operation), table])
         assert generated.returncode == 0, generated.stderr
         scenarios = json.loads(generated.stdout)
         assert len(scenarios) == 18
-        (output / "ui-scenarios.yaml").write_text(yaml.safe_dump({"scenarios": {"list": scenarios}}, allow_unicode=True), encoding="utf-8")
+        ui_scenarios = output / "ui-scenarios.yaml"
+        bridge("save_db_scenario_yaml", {"path": str(ui_scenarios), "scenarios": scenarios})
+        assert yaml.safe_load(ui_scenarios.read_text())["scenarios"]["list"] == scenarios
+        from workflow.case_master import build_case_master, write_case_master
+        from workflow.spec_writer import write_case_spec_excel
+        master = build_case_master("測定結果API", None, ui_scenarios, SPEC)
+        assert len(master["cases"]) == 18
+        assert all(len(case["expected"]["response"]["values"]) == 3 for case in master["cases"])
+        write_case_master(master, output / "db-case-master.json")
+        write_case_spec_excel(master, output / "db-case-spec.xlsx")
         process, evidence = db_run(scenarios)
         assert process.returncode == 0, process.stdout + process.stderr
         assert len(evidence) == 18 and all(case["verdict"] == "OK" for case in evidence)
         assert all(case["response_contract"]["verdict"] == "OK" for case in evidence)
+        assert all(len(case["response_value_checks"]) == 3 and
+                   all(value["verdict"] == "OK" for value in case["response_value_checks"]) for case in evidence)
         assert any(item["boundary_present"] for case in evidence for item in case["db_response_comparison"]["filter_coverage"])
+        process, evidence = db_run(scenarios, "equivalent_timezones")
+        assert process.returncode == 0, process.stdout + process.stderr
 
         modes = ["ignore_site", "ignore_location", "ignore_start", "ignore_end", "ignore_items", "first_item_only",
                  "wrong_or", "exclude_start_boundary", "exclude_end_boundary", "wrong_value", "wrong_root_type",
-                 "missing_root_field", "wrong_root_datetime", "missing_header", "wrong_header", "wrong_content_type", "invalid_json"]
+                 "missing_root_field", "wrong_root_datetime", "missing_header", "wrong_header", "wrong_content_type", "invalid_json",
+                 "wrong_root_site_value", "wrong_root_start_value", "wrong_root_end_value"]
         mutation_results = {}
         for mode in modes:
             process, evidence = db_run(scenarios, mode)
             assert process.returncode == 1, mode + "\n" + process.stdout + process.stderr
             assert any(case["verdict"] == "NG" for case in evidence), mode
+            if mode in {"wrong_root_site_value", "wrong_root_start_value", "wrong_root_end_value"}:
+                assert all(case["response_contract"]["verdict"] == "OK" for case in evidence), mode
+                assert all(any(value["verdict"] == "NG" for value in case["response_value_checks"]) for case in evidence), mode
             mutation_results[mode] = sum(case["verdict"] == "NG" for case in evidence)
 
         # The human-configured operators, including exclusive endpoints, are the oracle.
@@ -216,6 +251,7 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
         contract_count = len(json.loads((output / "cases.json").read_text(encoding="utf-8"))["cases"])
         summary = {"db_cases_passed": len(scenarios), "exclusive_boundary_cases_passed": len(strict),
                    "contract_cases_passed": contract_count, "faults_detected": mutation_results,
+                   "response_value_checks_per_case": 3, "equivalent_timezone_cases_passed": len(scenarios),
                    "missing_boundary": "unverified without HTTP requests"}
         (output / "verification-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"18 UI-generated DB cases passed; {len(modes)} faulty API implementations detected; missing boundary unverified; contract cases passed.")

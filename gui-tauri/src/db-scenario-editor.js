@@ -415,6 +415,118 @@ function renderReadMappings(operation) {
   }
 }
 
+function responseValueFields(operation, shape, arrayPath) {
+  return schemaFields(operation.responseSchema || {}, "", 0, "response")
+    .filter((field) => !["array", "object"].includes(field.type))
+    .filter((field) => shape !== "array" || (arrayPath !== "$" && !field.path.startsWith(`${arrayPath}.`)));
+}
+
+function requestValueFields(operation) {
+  return [
+    ...schemaFields(operation.requestSchema || {}).map((field) => ({ ...field, source: "body" })),
+    ...(operation.parameters || []).filter((parameter) => ["query", "path"].includes(parameter.in))
+      .map((parameter) => ({ path: parameter.name, source: parameter.in, schema: parameter.schema || {},
+        type: schemaType(parameter.schema) })),
+  ];
+}
+
+function renderResponseValues(operation) {
+  const holder = byId("dbscenario-editor-response-values");
+  const previous = new Map([...holder.querySelectorAll("tr[data-value-path]")].map((row) => [row.dataset.valuePath, {
+    mode: row.querySelector("[data-value-mode]").value,
+    parameter: row.querySelector("[data-value-parameter]").value,
+    fixed: row.querySelector("[data-value-fixed]").value,
+  }]));
+  holder.replaceChildren();
+  const fields = responseValueFields(operation, byId("dbscenario-editor-response-shape").value,
+    byId("dbscenario-editor-response-array-path").value || "$");
+  byId("dbscenario-editor-response-values-field").hidden = !fields.length;
+  for (const field of fields) {
+    const row = make("tr");
+    row.dataset.valuePath = field.path;
+    row.append(make("td", "", schemaFieldLabel(field)));
+    const mode = make("select");
+    mode.dataset.valueMode = "true";
+    mode.setAttribute("aria-label", `${field.path}の値の照合方法`);
+    for (const [value, label] of [["none", "型・形式のみ"], ["request", "送信値と一致"],
+      ["requestWithDefault", "送信値と一致（省略時は固定値）"],
+      ["requestIfPresent", "送信値と一致（指定時のみ）"], ["fixed", "固定値と一致"]]) {
+      const option = make("option", "", label);
+      option.value = value;
+      mode.append(option);
+    }
+    mode.value = previous.get(field.path)?.mode || "none";
+    const modeCell = make("td");
+    modeCell.append(mode);
+    row.append(modeCell);
+    const parameter = make("select");
+    parameter.dataset.valueParameter = "true";
+    parameter.setAttribute("aria-label", `${field.path}の照合元の送信項目`);
+    const placeholder = make("option", "", "送信項目を選択");
+    placeholder.value = "";
+    parameter.append(placeholder);
+    for (const input of requestValueFields(operation)) {
+      const option = make("option", "", `${input.source}: ${input.path}`);
+      option.value = `${input.source}:${input.path}`;
+      parameter.append(option);
+    }
+    parameter.value = previous.get(field.path)?.parameter || "";
+    const fixed = make("input");
+    fixed.type = "text";
+    fixed.dataset.valueFixed = "true";
+    fixed.placeholder = '固定値（JSON）。例: 1 / "2026-01-01T00:00:00Z"';
+    fixed.setAttribute("aria-label", `${field.path}の期待する固定値`);
+    fixed.value = previous.get(field.path)?.fixed || "";
+    const sourceCell = make("td");
+    sourceCell.append(parameter, fixed);
+    row.append(sourceCell);
+    const sync = () => {
+      parameter.hidden = !mode.value.startsWith("request");
+      fixed.hidden = !["fixed", "requestWithDefault"].includes(mode.value);
+    };
+    mode.addEventListener("change", sync);
+    sync();
+    holder.append(row);
+  }
+}
+
+function buildResponseValues(form) {
+  const available = new Map(responseValueFields(form.operation, form.responseShape,
+    form.responseArrayPath || "$").map((field) => [field.path, field]));
+  const seen = new Set();
+  return (form.responseValues || []).filter((item) => item.mode !== "none").map((item) => {
+    const field = available.get(item.path);
+    if (!field || seen.has(item.path)) throw new Error(`レスポンス項目「${item.path}」の値照合設定を確認してください`);
+    seen.add(item.path);
+    const comparison = field.schema?.format === "date-time" ? "date-time" : "exact";
+    if (item.mode === "fixed") {
+      const value = parseJson(item.fixed, `${item.path}の期待値`, false);
+      validateBodyValue(value, field.schema, item.path);
+      return { path: item.path, source: "fixed", value, comparison };
+    }
+    if (!["request", "requestIfPresent", "requestWithDefault"].includes(item.mode)) throw new Error("値の照合方法を選択してください");
+    const input = requestValueFields(form.operation).find((candidate) => `${candidate.source}:${candidate.path}` === item.parameter);
+    if (!input) throw new Error(`${item.path}の照合元の送信項目を選択してください`);
+    if (input.type !== field.type && ![input.type, field.type].every((type) => ["integer", "number"].includes(type))) {
+      throw new Error(`${item.path}と送信項目${input.path}の型が一致しません`);
+    }
+    if (comparison === "date-time" && input.schema?.format !== "date-time") {
+      throw new Error(`${item.path}の照合元はdate-time項目を選択してください`);
+    }
+    if (input.source === "body" && item.mode === "request" && valueAtPath(form.requestBody, input.path) === undefined) {
+      throw new Error(`${item.path}の照合元${input.path}が省略されています。「指定時のみ」を選ぶか、個別ケースにしてください`);
+    }
+    let value;
+    if (item.mode === "requestWithDefault") {
+      value = parseJson(item.fixed, `${item.path}の省略時の期待値`, false);
+      validateBodyValue(value, field.schema, item.path);
+    }
+    return { path: item.path, source: input.source, parameter: input.path, comparison,
+      when_missing: item.mode === "requestIfPresent" ? "skip" : item.mode === "requestWithDefault" ? "fixed" : "error",
+      ...(item.mode === "requestWithDefault" ? { value } : {}) };
+  });
+}
+
 function renderReadFilters(operation) {
   const holder = byId("dbscenario-editor-read-filters");
   holder.replaceChildren();
@@ -589,8 +701,8 @@ export function buildDbScenario(form) {
     name,
     request: {
       operationId: operation.operationId,
-      path_params: form.pathParams || {},
-      query_params: form.queryParams || {},
+      path_params: { ...(form.pathParams || {}) },
+      query_params: { ...(form.queryParams || {}) },
     },
   };
   if (MUTATING_METHODS.has(method)) {
@@ -679,7 +791,8 @@ export function buildDbScenario(form) {
     if (schemaType(selectedResponseSchema) !== form.responseShape) {
       throw new Error("選択したレスポンス形式・配列パスがOpenAPIのレスポンスschemaと一致しません");
     }
-    scenario.response_check = { expect: { status } };
+    const responseValues = buildResponseValues(form);
+    scenario.response_check = { expect: { status, ...(responseValues.length ? { values: responseValues } : {}) } };
     scenario.request.body = form.requestBody || {};
     scenario.db_response_check = {
       table,
@@ -821,9 +934,8 @@ export function buildDbScenarios(form) {
   });
   if (!bodies.length) throw new Error("必須条件を満たす組み合わせがありません");
   return bodies.map((body, index) => ({
-    ...base,
+    ...buildDbScenario({ ...form, requestBody: body }),
     name: `${base.name}（組み合わせ${index + 1}: ${Object.keys(body).join("・")}）`,
-    request: { ...base.request, body },
   }));
 }
 
@@ -972,6 +1084,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-write-mappings").replaceChildren();
       byId("dbscenario-editor-read-mappings").replaceChildren();
       byId("dbscenario-editor-read-filters").replaceChildren();
+      byId("dbscenario-editor-response-values").replaceChildren();
       byId("dbscenario-editor-primary-key").value = "";
       byId("dbscenario-editor-post-cleanup-enabled").checked = false;
       byId("dbscenario-editor-post-cleanup-primary-key").value = "";
@@ -1013,6 +1126,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     if (isGet) {
       renderReadFilters(operation);
       renderReadMappings(operation);
+      renderResponseValues(operation);
     }
     syncMappedQueryParams();
     if (!byId("dbscenario-editor-status").classList.contains("ok")) setStatus("");
@@ -1078,6 +1192,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       responseArrayPath: byId("dbscenario-editor-response-array-path").value,
       readMappings,
       readFilters,
+      responseValues: [...byId("dbscenario-editor-response-values").querySelectorAll("tr[data-value-path]")]
+        .map((row) => ({ path: row.dataset.valuePath, mode: row.querySelector("[data-value-mode]").value,
+          parameter: row.querySelector("[data-value-parameter]").value, fixed: row.querySelector("[data-value-fixed]").value })),
       softDelete: byId("dbscenario-editor-soft-delete").checked,
       softDeleteColumn: byId("dbscenario-editor-soft-delete-column").value,
       softDeleteValue: byId("dbscenario-editor-soft-delete-value").value,
@@ -1129,11 +1246,11 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   byId("dbscenario-editor-response-shape").addEventListener("change", () => {
     byId("dbscenario-editor-response-array-path-field").hidden = byId("dbscenario-editor-response-shape").value !== "array";
     const operation = selectedOperation();
-    if (operation) renderReadMappings(operation);
+    if (operation) { renderReadMappings(operation); renderResponseValues(operation); }
   });
   byId("dbscenario-editor-response-array-path").addEventListener("change", () => {
     const operation = selectedOperation();
-    if (operation) renderReadMappings(operation);
+    if (operation) { renderReadMappings(operation); renderResponseValues(operation); }
   });
   byId("dbscenario-editor-add-scenario").addEventListener("click", () => {
     try {
