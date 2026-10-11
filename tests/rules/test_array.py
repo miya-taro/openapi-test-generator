@@ -176,3 +176,17 @@ def test_object_array_nested_object_property_recurses():
     parsed = json.loads(normal["inputValue"])
     assert len(parsed) == 1
     assert Draft202012Validator(schema["items"]).is_valid(parsed[0])
+
+
+def test_array_boundaries_preserve_uniqueness_and_numeric_item_constraints():
+    schema = {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True,
+              "items": {"type": "number", "minimum": 0, "maximum": 100, "multipleOf": 0.5}}
+    cases = generate_array_cases(schema, {"paramName": "numbers", "opts": ALL_OPTS})
+    validator = Draft202012Validator(schema)
+    for case in cases:
+        errors = list(validator.iter_errors(json.loads(case["inputValue"])))
+        if case["perspective"].startswith("正常系"):
+            assert not errors
+        else:
+            assert [error.validator for error in errors] == [case["keyword"]]
+    assert any(case["keyword"] == "maxItems" and case["perspective"].startswith("異常系") for case in cases)

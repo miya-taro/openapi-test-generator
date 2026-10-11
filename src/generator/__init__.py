@@ -7,6 +7,7 @@ from .rules.common import generate_common_cases, generate_one_of_variant_cases
 from .rules.integer import generate_integer_cases
 from .rules.string import generate_string_cases
 from .rules.array import generate_array_cases
+from .rules.boolean import generate_boolean_cases
 from .rules.object import generate_object_cases
 from .rules.auth import generate_auth_cases
 from .rules.file import generate_file_cases
@@ -223,6 +224,8 @@ def generate_test_cases(
                     [("first", False), ("second", False), ("neither", True), ("both", True)]
                 )
                 for variant, valid in variants:
+                    if valid and spec["successStatus"] is None:
+                        continue
                     if not opts["includeNormal" if valid else "includeAbnormal"]:
                         continue
                     expected_status = spec["successStatus"] if valid else "4xx"
@@ -245,6 +248,8 @@ def generate_test_cases(
             for index, rule in enumerate(spec["schema"].get(COMPARISON_KEY, [])):
                 for variant, ordering in (("less", -1), ("equal", 0), ("greater", 1)):
                     valid = OPERATORS[rule["operator"]](ordering, 0)
+                    if valid and spec["successStatus"] is None:
+                        continue
                     if not opts["includeNormal" if valid else "includeAbnormal"]:
                         continue
                     expected_status = spec["successStatus"] if valid else "4xx"
@@ -291,11 +296,13 @@ def _generate_from_schema(
     param_in: str,
     param_name: str,
     opts: dict,
-    success_status: str,
+    success_status: str | None,
     is_root_body: bool = False,
     skip_presence: bool = False,
 ) -> list[dict]:
     cases: list[dict] = []
+    if success_status is None:
+        opts = {**opts, "includeNormal": False}
     ctx = {
         "paramIn": param_in, "paramName": param_name, "opts": opts,
         "successStatus": success_status, "isRootBody": is_root_body,
@@ -328,6 +335,10 @@ def _generate_from_schema(
         cases.extend(generate_integer_cases(schema, ctx))
     elif type_ == "string":
         cases.extend(generate_string_cases(schema, ctx))
+    elif type_ == "boolean":
+        cases.extend(generate_boolean_cases(schema, ctx))
+        if schema.get("enum"):
+            cases.extend(generate_string_cases(schema, ctx))
     elif type_ == "array":
         cases.extend(generate_array_cases(schema, ctx))
     elif type_ == "object":

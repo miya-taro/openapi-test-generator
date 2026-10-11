@@ -10,9 +10,9 @@ OpenAPI に記述された operation、path/query/header/cookie parameter、JSON
 
 response headerのschemaは、標準のsimple形式で受け取った値を型に変換して検証します。Content-Typeは実測statusに定義されたmedia typeのいずれかと照合します。レスポンス本文のschema検証対象は `application/json` と `+json` media typeです。
 
-`format`（email/date/date-time など）は正常値の例を生成できます。不正値ケースも生成しますが、OpenAPI の format はサーバーが必ず拒否するという保証ではありません。現在の生成ケースは 4xx を期待するため、API が format を検証する契約かを確認してから承認してください。レスポンスschema検証もJSON Schemaのformat assertionを有効にしていないため、formatの意味的な妥当性までは自動判定しません。
+`format`（email/date/date-time など）は正常値の例を生成できます。不正値ケースも生成しますが、OpenAPI の format はサーバーが必ず拒否するという保証ではありません。現在の生成ケースは 4xx を期待するため、API が format を検証する契約かを確認してから承認してください。レスポンスschema検証ではFormatCheckerを有効にし、対応するdate-time・date・email等の形式を検証します。未知の独自formatは検証できません。
 
-スキーマ違反のケースは、OpenAPI が違反ごとのエラーコードを割り当てていないため、特定の `400` ではなく `4xx` を期待します。これにより `400` と `422` のどちらを返すかを仕様が決めていない API でも、「不正なリクエストをクライアントエラーとして拒否したか」を自動判定できます。個々の入力エラーに対する正確な status やエラー内容は、OpenAPI に対応関係がある場合か、人がシナリオに指定した場合に検証します。
+スキーマ違反のケースは、OpenAPI が違反ごとのエラーコードを割り当てていないため、特定の `400` ではなく `4xx` を期待します。合格にするのはOpenAPIに定義した4xxです。定義外の4xxを一律に合格にはしません。認証で401と403の両方が定義されている場合、認証異常ケースはその2コードを許容し、それぞれのレスポンス契約も検証します。個々の入力エラーに対する正確な status やエラー内容は、OpenAPI に対応関係がある場合か、人がシナリオに指定した場合に検証します。
 
 request body があり、operation に `415` 応答が定義されている場合は、本文を付けたまま未対応 Content-Type を送るケースを生成します。標準の `Content-Type` parameter としての型試験は行わず、この専用ケースで未対応 media type の応答を確認します。認証試験は OpenAPI の security scheme が定義された operation が対象です。
 
@@ -22,7 +22,7 @@ request body があり、operation に `415` 応答が定義されている場�
 
 `scenarios.yaml` にリクエスト、前提データ、API 応答の期待値、API 実行後の DB 期待状態を記述すれば、Layer 2 が API 呼び出しと DB 照合を実行します。PostgreSQL / InfluxDB の検証や setup / teardown も利用できます。
 
-OpenAPI、実 DB schema、PHP の SQL 根拠から mapping や scenario の候補を作れます。テーブル対応や「この入力ならこの業務状態が正しい」という期待値は候補を人が確認して決めます。重複メール、存在しない ID、状態遷移なども、テストデータと期待結果をシナリオに書けば自動実行できます。
+初版ではUIでAPI項目とDBテーブル・カラム・抽出条件を人が設定します。関係性や「この入力ならこの業務状態が正しい」という期待値をコードから推測しません。重複メール、存在しない ID、状態遷移なども、テストデータと期待結果をシナリオに書けば自動実行できます。
 
 ## 運用上必要な準備
 
@@ -32,4 +32,8 @@ OpenAPI、実 DB schema、PHP の SQL 根拠から mapping や scenario の候�
 
 したがって、完全自動化できるのは「確認済みの仕様と期待値を繰り返し実行すること」です。最初に OpenAPI が実装を正しく表しているか、DB mapping と業務上の期待値が正しいか、接続先が専用テスト環境かを決める作業は残ります。
 
-素の PHP から OpenAPI を作る Copilot の下書きは、実装からの抽出結果です。ルーティングや入力・レスポンスの解釈を確認してから、テスト入力として使ってください。
+初版の入力は、人が用意したOpenAPIまたはUIで編集した契約です。PHPからの自動抽出、大量データ・負荷試験、任意の業務ロジックの推定は初版の対象外です。
+
+## 初版の検証記録
+
+独立したAPI実装・故障注入・実ブラウザー・Windows起動経路の確認は [first-release-validation.md](first-release-validation.md) を参照してください。

@@ -208,7 +208,9 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
             # to synthesize all required path/query/header/cookie parameters and the required body
             # together, so a valid response contract can be exercised even when no individual
             # property has a boundary keyword such as minLength or enum.
-            if baseline_supported:
+            if success_status is None:
+                log.warn({"operationId": operation_id}, "成功レスポンスが未定義のため正常系を生成しません。期待statusはシナリオで指定してください")
+            elif baseline_supported:
                 param_specs.append({
                     "operationBaseline": True,
                     "operationId": operation_id,
@@ -281,14 +283,14 @@ def _request_body_has_example(schema: dict, content_type: str) -> bool:
     return True
 
 
-def _resolve_success_status(responses: dict | None) -> str:
+def _resolve_success_status(responses: dict | None) -> str | None:
     if not responses:
         return "200"
     success_codes = [
         code for code in responses
         if re.fullmatch(r"2\d\d", str(code)) or str(code).upper() == "2XX"
     ]
-    return "2xx" if success_codes else "200"
+    return "2xx" if success_codes else None
 
 
 def _build_responses_info(responses: dict | None) -> dict:
@@ -333,7 +335,7 @@ def _flatten_body_schema(
     operation_id: str,
     path: str,
     method: str,
-    success_status: str,
+    success_status: str | None,
     responses_info: dict,
     content_type: str = "application/json",
     request_body_required: bool = False,

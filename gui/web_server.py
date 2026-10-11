@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import urllib.parse
+import urllib.request
 import webbrowser
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -209,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt: str, *args) -> None:
-        print("[http] " + (fmt % args))
+        print("[http] " + re.sub(r"([?&]token=)[^&\s]+", r"\1[redacted]", fmt % args))
 
     @property
     def state(self) -> WebState:
@@ -395,6 +396,7 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--static-root", type=Path, default=ROOT / "gui-tauri/dist")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--smoke-test", action="store_true", help="Verify HTTP startup and Python bridge, then exit")
     args = parser.parse_args()
     root = args.root.resolve()
     if root != ROOT:
@@ -408,6 +410,35 @@ def main() -> int:
     state = WebState(static_root)
     server = WebServer(("127.0.0.1", args.port), state)
     url = f"http://127.0.0.1:{server.server_port}/"
+    if args.smoke_test:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                if response.status != 200 or b"<html" not in response.read().lower():
+                    raise RuntimeError("Browser UI did not load")
+            payload = json.dumps({"command": "diagnose_runtime", "args": {}}).encode()
+            request = urllib.request.Request(url + "api/invoke", data=payload, headers={
+                "Content-Type": "application/json", "X-OpenApi-Token": state.token,
+            })
+            with urllib.request.urlopen(request, timeout=10) as response:
+                runtime = json.load(response)["result"]
+            if not all(runtime.get(key) for key in ("pythonAvailable", "workflowAvailable", "generatorAvailable", "runnerAvailable")):
+                raise RuntimeError(f"Runtime is incomplete: {runtime}")
+            print("[smoke] Browser UI and runtime HTTP endpoint started successfully")
+            print(json.dumps(runtime))
+            # Exercise the same separate Python bridge process used by the UI.
+            result = state.invoke("bridge_call", {"command": "list_operations", "args": {
+                "path": str(ROOT / "docs/release_candidate_openapi.json"),
+            }})
+            if not result:
+                raise RuntimeError("Python bridge returned no operations")
+            print("[smoke] OpenAPI imported through Python bridge")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        return 0
     print(f"[web] Local-only API tester: {url}")
     print("[web] Browser mode avoids building or launching a Tauri exe. Press Ctrl+C to stop.")
     threading.Timer(0.4, lambda: webbrowser.open(url)).start()

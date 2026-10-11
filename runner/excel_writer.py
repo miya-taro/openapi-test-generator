@@ -50,11 +50,16 @@ def write_results(
             id_to_row[str(cell_val)] = row_idx
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    verdict_col = next((cell.column for cell in ws[header_row_idx] if cell.value == "判定"), None)
+    if verdict_col is None:
+        verdict_col = start_col + len(RESULT_HEADERS)
+        ws.cell(row=header_row_idx, column=verdict_col, value="判定")
 
-    for result, _verdict, detail in results:
+    for result, verdict, detail in results:
         row_idx = id_to_row.get(result.case.id)
         if row_idx is None:
             continue
+        ws.cell(row=row_idx, column=verdict_col, value=verdict)
         source_body = result.report_body if result.report_body is not None else result.actual_body
         safe_body = redact_sensitive_text(source_body)
         body_preview = safe_body if full_body else _truncate(safe_body, BODY_MAX_LEN)

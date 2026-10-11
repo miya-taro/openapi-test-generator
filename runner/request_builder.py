@@ -1,4 +1,5 @@
 from __future__ import annotations
+from copy import deepcopy
 import json
 import re
 from dataclasses import dataclass, field
@@ -532,6 +533,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
         field_path = field_path[len("requestBody"):]
     if case.input_value in OMIT_MARKERS:
         _delete_nested(body, field_path, schema)
+        if str(case.expected_status).startswith("2"):
+            _complete_omission_count(body, field_path, schema)
     elif case.input_value == NULL_VALUE_MARKER:
         _set_nested(body, field_path, None, schema)
     elif case.input_value.startswith("{ ...validBody,"):
@@ -749,6 +752,22 @@ def _delete_nested(body: object, dotted_path: str, root_schema: dict | None) -> 
     container, key = _navigate_to_parent(body, dotted_path, root_schema)
     if isinstance(container, dict):
         container.pop(key, None)
+
+
+def _complete_omission_count(body: object, dotted_path: str, root_schema: dict | None) -> None:
+    """An optional-field omission must not accidentally violate its parent's minProperties."""
+    container, key = _navigate_to_parent(body, dotted_path, root_schema)
+    parent_path = dotted_path.rsplit(".", 1)[0] if "." in dotted_path else ""
+    parent_schema = _resolve_nested_schema(root_schema, parent_path) if parent_path else root_schema or {}
+    if not isinstance(container, dict) or len(container) >= parent_schema.get("minProperties", 0):
+        return
+    template = deepcopy(parent_schema)
+    template.setdefault("properties", {}).pop(key, None)
+    template["required"] = list(set(template.get("required", [])) | set(container))
+    for name, value in container.items():
+        template["properties"][name] = {"const": value}
+    template.setdefault("allOf", []).append({"not": {"required": [key]}})
+    container.update(find_schema_example(template))
 
 
 def _resolve_nested_schema(root_schema: dict | None, dotted_path: str) -> dict:

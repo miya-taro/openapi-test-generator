@@ -229,3 +229,13 @@ def test_4xx_expectation_collects_documented_error_body_schemas():
     assert schema.expected_status_class == 4
     assert schema.expected_statuses == frozenset({400, 422})
     assert set(schema.expected_body_schemas_by_status) == {400, 422}
+
+
+def test_explicit_status_set_preserves_per_status_body_contracts():
+    api = {"paths": {"/": {"get": {"responses": {
+        code: {"description": code, "content": {"application/json": {"schema": {"type": "object", "required": ["error"]}}}}
+        for code in ("401", "403", "422")
+    }}}}}
+    schema = from_run_case(make_case(expected_status="401/403"), api)
+    assert schema.expected_statuses == frozenset({401, 403})
+    assert set(schema.expected_body_schemas_by_status) == {401, 403}

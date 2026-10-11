@@ -1702,10 +1702,11 @@ function finishRunUi(code) {
   $("run-schemathesis-button").disabled = false;
   $("cancel-button").disabled = true;
   if (currentCaseMaster) renderCaseMaster(currentCaseMaster, currentCaseMasterPath);
-  if ((code === 0 || code === 2) && currentResultPath) {
+  if (currentResultPath) {
     $("run-progress-bar").style.width = "100%";
     $("open-result-button").disabled = false;
   }
+  $("rerun-failed-button").disabled = currentFailedCaseIds.length === 0;
 }
 
 function handleContractWorkflowEvent(event) {

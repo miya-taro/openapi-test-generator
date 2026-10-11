@@ -203,6 +203,9 @@ def _array_candidates(schema: dict) -> list[list[object]]:
         return []
     item_schema = schema.get("items") or {}
     item_candidates = _candidate_values(item_schema) if isinstance(item_schema, dict) else []
+    if isinstance(item_schema, dict):
+        validator = Draft202012Validator(_request_schema(item_schema), format_checker=FormatChecker())
+        item_candidates = [candidate for candidate in item_candidates if validator.is_valid(candidate)]
     if not item_candidates:
         return []
     values: list[object] = []
@@ -271,6 +274,17 @@ def _object_candidates(schema: dict) -> list[dict]:
     min_properties = schema.get("minProperties", 0)
     additional = schema.get("additionalProperties", True)
     if isinstance(min_properties, int) and len(result) < min_properties:
+        for name, property_schema in properties.items():
+            if len(result) >= min_properties:
+                break
+            if name in result or property_schema.get("readOnly"):
+                continue
+            try:
+                result[name] = find_schema_example(property_schema)
+            except NoSchemaExample:
+                continue
+        if len(result) >= min_properties:
+            return [result]
         if additional is False:
             return []
         for index in range(min_properties - len(result)):

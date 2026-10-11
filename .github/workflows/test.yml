@@ -78,6 +78,18 @@ jobs:
       - name: Run workflow tests
         run: python -m pytest workflow/tests/ -v
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Windows clone startup and repeat startup
+        shell: cmd
+        run: |
+          call run-windows.bat -SmokeTest
+          if errorlevel 1 exit /b 1
+          call run-windows.bat -SmokeTest
+          if errorlevel 1 exit /b 1
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -147,6 +159,28 @@ jobs:
         with:
           name: measure-get-evidence
           path: docs/_ci_measure_evidence/
+          if-no-files-found: error
+
+      - name: Build browser UI and install browser test driver
+        run: |
+          npm ci --prefix gui-tauri
+          npm run build --prefix gui-tauri
+          pip install -r requirements-browser-test.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Verify independent API matrix and actual browser workflow
+        env:
+          OTG_BROWSER_TEST: "1"
+          OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
+          OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py -q
+
+      - name: Upload first release qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-release-evidence
+          path: docs/_ci_release_evidence/
           if-no-files-found: error
 
       - name: Run schemathesis (契約層の探索的ファジング。決定論的スイートとは別レーン、失敗してもブロックしない)

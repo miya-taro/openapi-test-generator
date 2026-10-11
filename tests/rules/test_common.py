@@ -124,7 +124,7 @@ def test_empty_value_case_generated_when_type_array_has_string_first():
         {"type": ["string", "null"]}, True,
         {"paramIn": "body", "paramName": "name", "opts": ALL_OPTS},
     )
-    assert any(c["perspective"] == "異常系_空値" for c in cases)
+    assert any(c["perspective"] == "正常系_空値" for c in cases)
 
 
 def test_empty_value_case_generated_when_type_array_has_null_first():
@@ -134,7 +134,7 @@ def test_empty_value_case_generated_when_type_array_has_null_first():
         {"type": ["null", "string"]}, True,
         {"paramIn": "body", "paramName": "name", "opts": ALL_OPTS},
     )
-    assert any(c["perspective"] == "異常系_空値" for c in cases)
+    assert any(c["perspective"] == "正常系_空値" for c in cases)
 
 
 def test_type_integer_invalid_value_is_abc():

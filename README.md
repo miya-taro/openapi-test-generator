@@ -45,7 +45,7 @@ GUIは `gui-tauri/` に一本化している。Tauriデスクトップ版に加�
 
 リポジトリをcloneし、直下の `run-windows.bat` を実行する。Windows版はローカルのPythonサーバーとブラウザーで動作するため、Tauriのexeを生成・実行しない。
 
-初回起動前に必要なのはPython 3.10以降とNode.js 22以降。起動スクリプトがPython仮想環境とnpm依存を準備し、GUIをビルドして既定のブラウザーで開く。RustとVisual Studio C++ Build Toolsは不要。初回は依存のダウンロードと画面のビルドに数分かかることがある。以降は変更がない依存の再インストールを省略する。
+初回起動前に必要なのはPython 3.10以降とNode.js 22.12以降。起動スクリプトがPython仮想環境とnpm依存を準備し、GUIをビルドして既定のブラウザーで開く。RustとVisual Studio C++ Build Toolsは不要。初回は依存のダウンロードと画面のビルドに数分かかることがある。以降は変更がない依存の再インストールを省略する。
 
 ```text
 git clone https://github.com/miya-taro/openapi-test-generator.git

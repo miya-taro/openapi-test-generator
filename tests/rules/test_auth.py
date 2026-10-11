@@ -78,3 +78,9 @@ def test_auth_failure_expectation_uses_documented_403_when_401_is_absent():
     cases = generate_auth_cases(spec)
 
     assert [case["expectedStatus"] for case in cases] == ["403", "403"]
+
+
+def test_auth_accepts_only_declared_auth_error_statuses():
+    spec = _spec("bearer")
+    spec["responsesInfo"] = {"200": {}, "401": {}, "403": {}, "422": {}}
+    assert {case["expectedStatus"] for case in generate_auth_cases(spec)} == {"401/403"}

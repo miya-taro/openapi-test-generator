@@ -1,0 +1,1133 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Independent first-release API matrix",
+    "version": "1.0"
+  },
+  "paths": {
+    "/catalog": {
+      "get": {
+        "operationId": "catalog",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            }
+          },
+          {
+            "name": "active",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "blue"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 2
+            },
+            "style": "form",
+            "explode": true
+          }
+        ]
+      }
+    },
+    "/catalog/{code}": {
+      "get": {
+        "operationId": "catalogItem",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "A 1",
+                "日本語"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/profiles": {
+      "post": {
+        "operationId": "createProfile",
+        "responses": {
+          "201": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 8
+                        },
+                        "address": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 8
+                            },
+                            "zip": {
+                              "type": "string",
+                              "pattern": "^[0-9]{5}$"
+                            }
+                          },
+                          "required": [
+                            "city",
+                            "zip"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "labels": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4
+                          },
+                          "minItems": 1,
+                          "maxItems": 3,
+                          "uniqueItems": true
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "address",
+                        "labels"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8
+                  },
+                  "address": {
+                    "type": "object",
+                    "properties": {
+                      "city": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8
+                      },
+                      "zip": {
+                        "type": "string",
+                        "pattern": "^[0-9]{5}$"
+                      }
+                    },
+                    "required": [
+                      "city",
+                      "zip"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4
+                    },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "address",
+                  "labels"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/numbers": {
+      "post": {
+        "operationId": "numbers",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "multipleOf": 0.5
+                  },
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "uniqueItems": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "multipleOf": 0.5
+                },
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings": {
+      "put": {
+        "operationId": "replaceSettings",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 4
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "threshold",
+                    "note"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "threshold",
+                  "note"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchSettings",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 4
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "threshold",
+                    "note"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4
+                  }
+                },
+                "required": [],
+                "additionalProperties": false,
+                "minProperties": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles/{id}": {
+      "delete": {
+        "operationId": "deleteProfile",
+        "responses": {
+          "204": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9
+            }
+          }
+        ]
+      }
+    },
+    "/session": {
+      "get": {
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "north"
+              ]
+            }
+          },
+          {
+            "name": "session",
+            "in": "cookie",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "session-a"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/secure": {
+      "get": {
+        "operationId": "secure",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/empty-ok": {
+      "get": {
+        "operationId": "emptyOk",
+        "responses": {
+          "200": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "time",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/empty-error": {
+      "get": {
+        "operationId": "emptyError",
+        "responses": {
+          "400": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/problem": {
+      "get": {
+        "operationId": "problem",
+        "responses": {
+          "422": {
+            "description": "Response",
+            "headers": {
+              "X-Quota": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

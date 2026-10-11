@@ -1,6 +1,8 @@
 """array 型のルール（minItems / maxItems / uniqueItems）。"""
 from __future__ import annotations
 import json
+from copy import deepcopy
+from ... import logger as log
 
 from ...schema_example import NoSchemaExample, find_schema_example
 
@@ -75,7 +77,30 @@ def generate_array_cases(schema: dict, ctx: dict) -> list[dict]:
             "notes": "",
         })
 
-    return cases
+    isolated = []
+    for case in cases:
+        value = json.loads(case["inputValue"])
+        count = len(value)
+        test_schema = deepcopy(schema)
+        if case["keyword"] == "uniqueItems":
+            count = max(count, schema.get("minItems", 0))
+            test_schema.pop("uniqueItems", None)
+            if schema.get("maxItems", count) < count:
+                log.warn({"paramName": ctx["paramName"]}, "uniqueItemsだけを破る配列を生成できないため省略")
+                continue
+        elif case["perspective"].startswith("異常系"):
+            test_schema.pop(case["keyword"], None)
+        test_schema.update(minItems=count, maxItems=count)
+        try:
+            value = find_schema_example(test_schema)
+            if case["keyword"] == "uniqueItems":
+                value[1] = value[0]
+        except NoSchemaExample:
+            log.warn({"paramName": ctx["paramName"], "keyword": case["keyword"]}, "他の制約を満たす配列境界値を生成できないため省略")
+            continue
+        case["inputValue"] = json.dumps(value, ensure_ascii=False)
+        isolated.append(case)
+    return isolated
 
 
 def _get_sample_item(item_type: str, item_schema: dict) -> str:
