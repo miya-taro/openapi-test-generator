@@ -196,7 +196,7 @@ class DBScenario:
                         "operator": item.operator,
                         "auto": item.auto,
                         "format": item.parameter_format,
-                        "group": item.group,
+                        **({"group": item.group} if item.group else {}),
                     }
                     for item in self.db_response_check.filters
                 ],

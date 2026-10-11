@@ -623,7 +623,7 @@ export function buildDbScenario(form) {
       if (operator === "in" && source !== "body") throw new Error("IN条件はBodyの配列項目で指定してください");
       if (item.group && source !== "body") throw new Error("ORグループはBody項目で指定してください");
       return { source, parameter, column, operator, auto: source !== "body", format: item.format || null,
-        group: item.group || null };
+        ...(item.group ? { group: item.group } : {}) };
     }).filter(Boolean);
     const seenFilters = new Set();
     for (const filter of filters) {
