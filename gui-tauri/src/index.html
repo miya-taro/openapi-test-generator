@@ -76,6 +76,12 @@
                       </div>
                       <div id="contract-request-schema-builder" class="schema-builder"></div>
                       <p class="field-caption">項目名、型、必須、最小・最大を入力します。objectの中にも項目を追加できます。</p>
+                      <div class="form-field">
+                        <label>項目間の必須条件</label>
+                        <p class="field-caption">同じbody内の2項目を選び、「どちらか必須」または「片方を指定したらもう片方も必須」を設定します。</p>
+                        <div id="contract-presence-rules"></div>
+                        <button class="secondary" id="contract-add-presence-rule" type="button">＋ 条件を追加</button>
+                      </div>
                     </div>
                     <div class="form-field contract-schema-panel">
                       <div class="contract-panel-heading">
@@ -364,17 +370,18 @@
                   </div>
 
                   <div id="dbscenario-editor-get-panel" hidden>
+                    <p class="field-caption">GETのJSONボディもOpenAPIの項目から設定できます。任意項目は値を空欄にすると送信しません。</p>
                     <div class="form-field">
                       <div class="db-scenario-editor-heading">
                         <label>APIの検索条件 → DBの列</label>
                       </div>
                       <div class="db-scenario-table-wrap">
                         <table class="db-scenario-map-table">
-                          <thead><tr><th>APIパラメータ（OpenAPI）</th><th>DBの列（人が入力）</th><th>比較条件</th></tr></thead>
+                          <thead><tr><th>API項目（OpenAPI）</th><th>送信値（JSON）</th><th>DBの列</th><th>比較条件</th><th>ORグループ</th></tr></thead>
                           <tbody id="dbscenario-editor-read-filters"></tbody>
                         </table>
                       </div>
-                      <p class="field-caption">検索パラメータの行はOpenAPIから表示します。DB列と比較条件を人が指定します。値はDBから自動で選び、境界と範囲外のデータがあるか確かめます。データ不足時は「未確認」になります。ページングや集計を含むAPIは、この自動照合の対象外です。</p>
+                      <p class="field-caption">Bodyは送信値を入力し、Query/PathはDBから値を選びます。同じORグループの条件は「いずれか」、それ以外は「すべて」を満たすDB行と照合します。INは文字列配列などに使います。</p>
                     </div>
                     <div class="db-scenario-editor-grid">
                       <div class="form-field">

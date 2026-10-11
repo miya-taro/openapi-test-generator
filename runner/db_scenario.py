@@ -69,13 +69,14 @@ class DBCheck:
 
 @dataclass
 class DBResponseFilter:
-    """Map an API path/query parameter to a database comparison rule."""
+    """Map an API body/path/query parameter to a database comparison rule."""
     source: str
     parameter: str
     column: str
     operator: str
     auto: bool = True
     parameter_format: str | None = None
+    group: str | None = None
 
 
 @dataclass
@@ -194,7 +195,8 @@ class DBScenario:
                         "column": item.column,
                         "operator": item.operator,
                         "auto": item.auto,
-                            "format": item.parameter_format,
+                        "format": item.parameter_format,
+                        **({"group": item.group} if item.group else {}),
                     }
                     for item in self.db_response_check.filters
                 ],
@@ -379,21 +381,28 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             operator = filter_raw.get("operator")
             auto = filter_raw.get("auto", True)
             parameter_format = filter_raw.get("format")
-            if not isinstance(source, str) or source not in {"query", "path"}:
-                raise ScenarioError(f"db_response_check.filters[{i}].source は query または path にしてください")
+            group = filter_raw.get("group")
+            if not isinstance(source, str) or source not in {"query", "path", "body"}:
+                raise ScenarioError(f"db_response_check.filters[{i}].source は query、path、body のいずれかにしてください")
             if not all(isinstance(value, str) and value for value in (parameter, column)):
                 raise ScenarioError(f"db_response_check.filters[{i}] に parameter と column が必要です")
-            if not isinstance(operator, str) or operator not in {"=", ">", ">=", "<", "<="}:
-                raise ScenarioError(f"db_response_check.filters[{i}].operator は =, >, >=, <, <= のいずれかにしてください")
+            if not isinstance(operator, str) or operator not in {"=", ">", ">=", "<", "<=", "in"}:
+                raise ScenarioError(f"db_response_check.filters[{i}].operator は =, >, >=, <, <=, in のいずれかにしてください")
             if not isinstance(auto, bool):
                 raise ScenarioError(f"db_response_check.filters[{i}].auto は真偽値にしてください")
             if parameter_format is not None and not isinstance(parameter_format, str):
                 raise ScenarioError(f"db_response_check.filters[{i}].format は文字列にしてください")
+            if group is not None and (not isinstance(group, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", group)):
+                raise ScenarioError(f"db_response_check.filters[{i}].group は英数字のグループ名にしてください")
+            if source == "body" and auto:
+                raise ScenarioError(f"db_response_check.filters[{i}].body は自動値生成に対応していません")
+            if operator == "in" and auto:
+                raise ScenarioError(f"db_response_check.filters[{i}].in は固定の配列値が必要です")
             param_key = (source, parameter)
             if param_key in seen_params:
                 raise ScenarioError(f"db_response_check.filters[{i}] のAPIパラメータが重複しています: {source}.{parameter}")
             seen_params.add(param_key)
-            filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format))
+            filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format, group))
         db_response_check = DBResponseCheck(
             table=check_raw["table"], fields=fields, filters=filters, array_path=array_path,
         )

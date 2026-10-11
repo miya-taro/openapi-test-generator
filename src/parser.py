@@ -98,10 +98,76 @@ def _normalize_schema(schema: dict) -> None:
     そのまま渡せる（ランナー側のレスポンスボディ検証で利用）。
     """
     _merge_all_of(schema)
+    _extract_presence_rules(schema)
+    _validate_presence_rules(schema)
     _reduce_one_of_any_of(schema)
     _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
     _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
     _normalize_nullable(schema)
+
+
+def _extract_presence_rules(schema: dict) -> None:
+    """Preserve simple cross-field requirements before anyOf normalization chooses a variant."""
+    rules = list(schema.get("x-otg-presence-rules") or [])
+    fields = _simple_presence_anyof(schema.get("anyOf"))
+    if (fields and set(fields).issubset(schema.get("properties") or {}) and
+            not set(fields).intersection(schema.get("required") or [])):
+        rule = {"kind": "atLeastOne", "fields": fields}
+        if not any(isinstance(item, dict) and item.get("kind") == "atLeastOne" and
+                   isinstance(item.get("fields"), list) and
+                   all(isinstance(name, str) for name in item["fields"]) and
+                   set(item["fields"]) == set(fields) for item in rules):
+            rules.append(rule)
+
+    dependencies = schema.get("dependentRequired")
+    if isinstance(dependencies, dict):
+        seen: set[frozenset[str]] = set()
+        for first, others in dependencies.items():
+            if not isinstance(others, list) or len(others) != 1 or not isinstance(others[0], str):
+                continue
+            second = others[0]
+            pair = frozenset({first, second})
+            if (len(pair) != 2 or pair in seen or not pair.issubset(schema.get("properties") or {}) or
+                    dependencies.get(second) != [first] or
+                    pair.intersection(schema.get("required") or [])):
+                continue
+            seen.add(pair)
+            rule = {"kind": "together", "fields": [first, second]}
+            if not any(isinstance(item, dict) and item.get("kind") == "together" and
+                       isinstance(item.get("fields"), list) and
+                       all(isinstance(name, str) for name in item["fields"]) and
+                       set(item["fields"]) == pair for item in rules):
+                rules.append(rule)
+    if rules:
+        schema["x-otg-presence-rules"] = rules
+
+
+def _simple_presence_anyof(variants: object) -> list[str] | None:
+    if (not isinstance(variants, list) or len(variants) != 2 or
+            not all(isinstance(part, dict) and set(part) == {"required"} and
+                isinstance(part["required"], list) and len(part["required"]) == 1 and
+                isinstance(part["required"][0], str) for part in variants)):
+        return None
+    fields = [part["required"][0] for part in variants]
+    return fields if fields[0] != fields[1] else None
+
+
+def _validate_presence_rules(schema: dict) -> None:
+    rules = schema.get("x-otg-presence-rules")
+    if rules is None:
+        return
+    properties = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+    if not isinstance(rules, list) or not isinstance(properties, dict):
+        raise OpenAPIParseError("x-otg-presence-rules はbody項目の配列として指定してください")
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("kind") not in {"atLeastOne", "together"}:
+            raise OpenAPIParseError("x-otg-presence-rules のkindが不正です")
+        fields = rule.get("fields")
+        if (not isinstance(fields, list) or len(fields) != 2 or
+                not all(isinstance(name, str) and name in properties for name in fields) or
+                fields[0] == fields[1] or any(name in required for name in fields)):
+            raise OpenAPIParseError("x-otg-presence-rules には異なる任意body項目を2つ指定してください")
 
 
 def _normalize_nullable(schema: dict) -> None:
@@ -206,6 +272,8 @@ def _reduce_one_of_any_of(schema: dict) -> None:
     for key in ("oneOf", "anyOf"):
         variants = schema.get(key)
         if not isinstance(variants, list) or not variants:
+            continue
+        if key == "anyOf" and _simple_presence_anyof(variants):
             continue
         discriminator = schema.pop("discriminator", None)
         del schema[key]

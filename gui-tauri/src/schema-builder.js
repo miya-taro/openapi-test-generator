@@ -228,6 +228,7 @@ function renderNode(node, context, refresh, notify) {
   typeField.appendChild(makeTypeSelect(node, (type) => {
     node.type = type;
     node.typeChanged = true;
+    if (node.extra) delete node.extra.format;
     node.min = "";
     node.max = "";
     if (type === "array" && !node.items) node.items = createSchemaNode("object");
@@ -235,6 +236,29 @@ function renderNode(node, context, refresh, notify) {
     refresh();
   }));
   card.appendChild(typeField);
+
+  if (node.type === "string" || node.type === "number") {
+    const formatField = makeElement("label", "schema-type-field");
+    formatField.appendChild(makeElement("span", "", "形式"));
+    const format = makeElement("select");
+    const formats = node.type === "number"
+      ? [["", "指定なし"], ["float", "float"], ["double", "double"]]
+      : [["", "指定なし"], ["date-time", "日時（date-time）"], ["date", "日付（date）"], ["email", "メール"], ["uuid", "UUID"]];
+    for (const [value, label] of formats) {
+      const option = makeElement("option", "", label);
+      option.value = value;
+      format.appendChild(option);
+    }
+    format.value = node.extra?.format || "";
+    format.addEventListener("change", () => {
+      node.extra ||= {};
+      if (format.value) node.extra.format = format.value;
+      else delete node.extra.format;
+      notify();
+    });
+    formatField.appendChild(format);
+    card.appendChild(formatField);
+  }
 
   const constraints = CONSTRAINTS_BY_TYPE[node.type] || [];
   if (constraints.length) {

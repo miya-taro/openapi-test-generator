@@ -3,6 +3,7 @@ import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
 import { createWorkflowClient } from "./workflow-client.js";
 import { builderNodeToSchema, renderSchemaBuilder, schemaToBuilderNode } from "./schema-builder.js";
+import { applyPresenceRules, presenceRulesFromSchema, renderPresenceRules } from "./presence-rules.js";
 import { initDbScenarioEditor } from "./db-scenario-editor.js";
 
 const workflowClient = createWorkflowClient({ invoke, listen });
@@ -641,18 +642,35 @@ function contractOption(label, value) {
 
 let contractRequestSchemaNode = null;
 let contractResponseSchemaNode = null;
+let contractPresenceRules = [];
+
+function refreshPresenceRules() {
+  renderPresenceRules($("contract-presence-rules"), contractPresenceRules, contractRequestSchemaNode);
+}
+
+$("contract-add-presence-rule").addEventListener("click", () => {
+  contractPresenceRules.push({ kind: "atLeastOne", fields: ["", ""] });
+  refreshPresenceRules();
+});
 
 function setContractSchemaBuilder(kind, schema) {
   const isRequest = kind === "request";
   const model = schema ? schemaToBuilderNode(schema) : null;
   if (isRequest) contractRequestSchemaNode = model;
   else contractResponseSchemaNode = model;
+  if (isRequest) {
+    contractPresenceRules = presenceRulesFromSchema(schema);
+    refreshPresenceRules();
+  }
 
   renderSchemaBuilder(
     $(isRequest ? "contract-request-schema-builder" : "contract-response-schema-builder"),
     model,
     (updated) => {
-      if (isRequest) contractRequestSchemaNode = updated;
+      if (isRequest) {
+        contractRequestSchemaNode = updated;
+        refreshPresenceRules();
+      }
       else contractResponseSchemaNode = updated;
     },
   );
@@ -740,6 +758,7 @@ async function saveOperationBodyContract() {
   let responseSchema;
   try {
     requestSchema = contractRequestSchemaNode ? builderNodeToSchema(contractRequestSchemaNode) : null;
+    requestSchema = applyPresenceRules(requestSchema, contractPresenceRules);
     responseSchema = contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
   } catch (error) {
     setContractEditorStatus(error.message, "error");

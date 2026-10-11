@@ -13,7 +13,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_REPEATABLE_READ
 from db_backends import invariant_eval
 
 _IDENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_FILTER_OPERATORS = {"=", ">", ">=", "<", "<="}
+_FILTER_OPERATORS = {"=", ">", ">=", "<", "<=", "in"}
 _MAX_RESPONSE_ROWS = 5000
 
 
@@ -32,7 +32,9 @@ class PreparedDBResponse:
     expected_rows: list[dict]
 
 
-def prepare_db_response_check(db_response_check, db_config: dict, query_params: dict, path_params: dict) -> PreparedDBResponse:
+def prepare_db_response_check(
+    db_response_check, db_config: dict, query_params: dict, path_params: dict, body: dict | None = None,
+) -> PreparedDBResponse:
     """Choose API filter values from existing rows and derive the exact expected result.
 
     This path is deliberately read-only: it never inserts or changes rows. Automatic range
@@ -51,8 +53,12 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
     for item in db_response_check.filters:
         if item.operator not in _FILTER_OPERATORS:
             raise DBResponseCheckError(f"未対応の比較条件です: {item.operator!r}")
-        if item.source not in {"query", "path"}:
+        if item.source not in {"query", "path", "body"}:
             raise DBResponseCheckError(f"未対応のAPIパラメータ種別です: {item.source!r}")
+        if item.source == "body" and (not isinstance(body, dict) or item.parameter not in body):
+            continue
+        if item.auto and item.group:
+            raise DBResponseCheckError("ORグループの値はリクエストで指定してください")
         _quote_ident(item.column)
         name_key = (item.source, item.parameter)
         if name_key in seen_names:
@@ -69,7 +75,7 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
         if item.auto:
             auto_by_column[(item.column, item.parameter_format)].append(index)
             continue
-        source = effective_query if item.source == "query" else effective_path
+        source = effective_query if item.source == "query" else effective_path if item.source == "path" else body
         if item.parameter not in source:
             raise DBResponseCheckUnverified(
                 f"APIパラメータ「{item.parameter}」の値がありません。自動生成にするか値を指定してください"
@@ -82,7 +88,7 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             # Fixed filters narrow the rows from which automatic boundary values are selected.
             fixed_specs = [
-                (item.column, item.operator, filter_values[index])
+                (item.column, item.operator, filter_values[index], item.group)
                 for index, item in enumerate(filters) if not item.auto
             ]
             for (column, parameter_format), indexes in auto_by_column.items():
@@ -141,9 +147,12 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
                 raise DBResponseCheckError("検索条件の値を解決できませんでした")
 
             specs = [
-                (item.column, item.operator, filter_values[index])
+                (item.column, item.operator, filter_values[index], item.group)
                 for index, item in enumerate(filters)
             ]
+            for item, value in zip(filters, filter_values, strict=True):
+                if item.operator == "in" and not isinstance(value, list):
+                    raise DBResponseCheckError(f"API項目「{item.parameter}」のIN条件には配列を指定してください")
             select_sql = ", ".join(_quote_ident(column) for column in columns)
             sql, params = _build_mapped_select(table, select_sql, specs, _MAX_RESPONSE_ROWS + 1)
             cur.execute(sql, params)
@@ -152,12 +161,14 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
                 raise DBResponseCheckUnverified(
                     f"照合対象が{_MAX_RESPONSE_ROWS}件を超えるため、自動照合できません"
                 )
-            if not rows and filters:
-                raise DBResponseCheckUnverified("指定した検索条件に一致するDB行がありません")
-
+            advanced_filters = any(item.source == "body" or item.group or item.operator == "in" for item in filters)
+            if advanced_filters and not _has_more_rows(cur, table, [], len(rows)):
+                raise DBResponseCheckUnverified("既存データでは検索条件が結果を絞り込むことを確かめられません")
             # Prove every configured condition changes the result and has a row exactly at its
             # boundary. Without these, a passing response could be an unfiltered/static result.
             for index, item in enumerate(filters):
+                if advanced_filters:
+                    continue
                 without_one = [spec for position, spec in enumerate(specs) if position != index]
                 if _has_more_rows(cur, table, without_one, len(rows)):
                     boundary_specs = [*without_one, (item.column, "=", filter_values[index])]
@@ -255,8 +266,26 @@ def _distinct_edge_values(
 def _where_sql(specs: list[tuple]) -> tuple[str, list]:
     if not specs:
         return "", []
-    conditions = [f"{_quote_ident(column)} {operator} %s" for column, operator, _value in specs]
-    return " AND ".join(conditions), [value for _column, _operator, value in specs]
+    conditions: list[str] = []
+    groups: dict[str, list[tuple[str, object]]] = {}
+    params: list = []
+    for spec in specs:
+        column, operator, value = spec[:3]
+        group = spec[3] if len(spec) > 3 else None
+        if operator not in _FILTER_OPERATORS:
+            raise DBResponseCheckError(f"未対応の比較条件です: {operator!r}")
+        condition = f"{_quote_ident(column)} = ANY(%s)" if operator == "in" else f"{_quote_ident(column)} {operator} %s"
+        if operator == "in" and not isinstance(value, list):
+            raise DBResponseCheckError("IN条件には配列を指定してください")
+        if group:
+            groups.setdefault(group, []).append((condition, value))
+        else:
+            conditions.append(condition)
+            params.append(value)
+    for clauses in groups.values():
+        conditions.append("(" + " OR ".join(condition for condition, _value in clauses) + ")")
+        params.extend(value for _condition, value in clauses)
+    return " AND ".join(conditions), params
 
 
 def _build_mapped_select(table: str, select_sql: str, specs: list[tuple], limit: int | None = None) -> tuple[str, list]:

@@ -499,6 +499,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
     # ルートbody全体を対象とするケース（空body / additionalProperties / oneOfバリアント）は
     # body 全体を差し替える
     if case.param_name == "requestBody":
+        if case.input_value.startswith("__PRESENCE_RULE__"):
+            return _presence_rule_body(schema or {}, case.input_value)
         if case.input_value == NULL_VALUE_MARKER:
             return None
         if case.input_value == EMPTY_VALUE_MARKER:
@@ -542,6 +544,12 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
             return body
         _set_nested(body, field_path, _coerce_value(raw, field_schema), schema)
 
+    if isinstance(body, dict) and str(case.expected_status).startswith("2"):
+        for rule in (schema or {}).get("x-otg-presence-rules") or []:
+            if rule.get("kind") != "atLeastOne" or any(name in body for name in rule["fields"]):
+                continue
+            name = next((item for item in rule["fields"] if item != case.param_name), rule["fields"][0])
+            body[name] = _expand_value(schema["properties"][name])
     return body
 
 
@@ -797,12 +805,40 @@ def _resolve_ref(schema: dict, openapi: dict) -> dict:
 
 def _expand_value(schema: dict) -> object:
     try:
-        return find_schema_example(schema)
+        value = find_schema_example(schema)
     except NoSchemaExample:
         # Field-level negative cases predate the operation baseline. Retain the historic fallback
         # for those cases; operation-level baseline cases are only emitted after extractor-side
         # preflight confirms that every required schema can be synthesized and validated.
-        return _fallback_expand_value(schema)
+        value = _fallback_expand_value(schema)
+    if isinstance(value, dict):
+        for rule in schema.get("x-otg-presence-rules") or []:
+            if rule.get("kind") == "atLeastOne" and not any(name in value for name in rule.get("fields", [])):
+                name = rule["fields"][0]
+                value[name] = _expand_value((schema.get("properties") or {})[name])
+    return value
+
+
+def _presence_rule_body(schema: dict, marker: str) -> dict:
+    match = re.fullmatch(r"__PRESENCE_RULE__(\d+):(first|second|both|neither)", marker)
+    if not match:
+        raise ValueError("条件付き必須の試験指定が不正です")
+    rules = schema.get("x-otg-presence-rules") or []
+    index = int(match.group(1))
+    if index >= len(rules):
+        raise ValueError("条件付き必須の試験指定が見つかりません")
+    rule = rules[index]
+    first, second = rule["fields"]
+    value = _expand_value(schema)
+    if not isinstance(value, dict):
+        raise ValueError("条件付き必須の対象はJSONオブジェクトにしてください")
+    value.pop(first, None)
+    value.pop(second, None)
+    variant = match.group(2)
+    for name, selected in ((first, variant in {"first", "both"}), (second, variant in {"second", "both"})):
+        if selected:
+            value[name] = _expand_value(schema["properties"][name])
+    return value
 
 
 def _fallback_expand_value(schema: dict) -> object:

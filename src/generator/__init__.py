@@ -207,6 +207,38 @@ def generate_test_cases(
                 "expectedResponseTime": "3秒以内",
             })
 
+        if is_root_body and (opts["includeNormal"] or opts["includeAbnormal"]):
+            rules = spec["schema"].get("x-otg-presence-rules") or []
+            for index, rule in enumerate(rules):
+                if not isinstance(rule, dict) or rule.get("kind") not in {"atLeastOne", "together"}:
+                    continue
+                fields = rule.get("fields") or []
+                if len(fields) != 2 or not all(isinstance(name, str) for name in fields):
+                    continue
+                variants = (
+                    [("neither", False), ("first", True), ("second", True), ("both", True)]
+                    if rule["kind"] == "atLeastOne" else
+                    [("first", False), ("second", False), ("neither", True), ("both", True)]
+                )
+                for variant, valid in variants:
+                    if not opts["includeNormal" if valid else "includeAbnormal"]:
+                        continue
+                    expected_status = spec["successStatus"] if valid else "4xx"
+                    responses_info = _response_info_for_status(expected_status, spec["responsesInfo"])
+                    results.append({
+                        "operationId": spec["operationId"], "path": spec["path"], "method": spec["method"],
+                        "in": "body", "paramName": "requestBody", "verdict": "",
+                        "summary": f"{fields[0]}・{fields[1]} 条件付き必須（{variant}）",
+                        "keyword": "conditionalRequired", "perspective": "正常系_条件付き必須" if valid else "異常系_条件付き必須",
+                        "inputValue": f"__PRESENCE_RULE__{index}:{variant}",
+                        "expectedStatus": expected_status,
+                        "expectedResult": "条件付き必須の指定に従うこと",
+                        "notes": "UIで指定した項目間の必須条件",
+                        "expectedResponseBody": _derive_expected_response_body(expected_status, responses_info),
+                        "expectedResponseHeader": _derive_expected_response_header(expected_status, responses_info),
+                        "expectedResponseTime": "3秒以内",
+                    })
+
     for spec in auth_specs:
         if not opts["includeAbnormal"]:
             continue
