@@ -11,14 +11,15 @@ import pytest
 
 
 @pytest.mark.skipif(os.environ.get('OTG_BROWSER_TEST') != '1' or not os.environ.get('OTG_INFLUX_INTEGRATION_CONFIG'), reason='requires browser and real InfluxDB')
-def test_browser_influx_post_workflow(tmp_path, monkeypatch):
+@pytest.mark.parametrize('managed', [False, True])
+def test_browser_influx_post_workflow(tmp_path, monkeypatch, managed):
     from influxdb import InfluxDBClient
     from playwright.sync_api import sync_playwright, expect
     from openpyxl import load_workbook
     from gui import web_server
 
     root = Path(__file__).parents[2]
-    output = Path(os.environ.get('OTG_BROWSER_EVIDENCE_DIR', str(tmp_path / 'evidence'))) / 'influx-mutation'
+    output = Path(os.environ.get('OTG_BROWSER_EVIDENCE_DIR', str(tmp_path / 'evidence'))) / ('influx-fixture' if managed else 'influx-mutation')
     output.mkdir(parents=True, exist_ok=True)
     config = {**json.loads(os.environ['OTG_INFLUX_INTEGRATION_CONFIG']), 'database': 'otg_browser_' + uuid.uuid4().hex[:12]}
     client = InfluxDBClient(**config)
@@ -83,26 +84,33 @@ def test_browser_influx_post_workflow(tmp_path, monkeypatch):
                     row = page.locator(f'#dbscenario-editor-write-mappings tr[data-field-path="{field}"]')
                     row.locator('[data-api-value]').fill(value)
                     if field == 'value': row.locator('[aria-label="DBカラム"]').fill('value')
+                if managed: page.locator('#dbscenario-editor-influx-fixture').check()
                 page.locator('#dbscenario-editor-add-scenario').click()
                 expect(page.locator('#dbscenario-editor-status')).to_contain_text('1件の対応を追加')
                 page.locator('#dbscenario-editor-save').click()
                 expect(page.locator('#dbscenario-editor-status')).to_contain_text('保存しました')
-                page.locator('#dbscenario-run-button').click()
-                expect(page.locator('#dbscenario-status')).to_contain_text('確認を準備しました', timeout=120000)
-                assert not calls, 'Preparing must not execute the API'
-                review = page.locator('#dbscenario-case-review-panel')
-                expect(review).to_contain_text('influxMutation')
-                review.get_by_role('button', name='レビュー済みにする', exact=True).click()
-                review.get_by_role('button', name='承認する', exact=True).click()
-                page.locator('#dbscenario-execute-approved-button').click()
-                expect(page.locator('#dbscenario-status')).to_contain_text('すべてのDB確認に成功', timeout=120000)
-                assert len(calls) == 1
-                assert list(client.query('SELECT * FROM measure').get_points())[0]['value'] == 2.0
-                with page.expect_download() as download: page.locator('#dbscenario-open-result-button').click()
-                destination = output / 'result.xlsx'; download.value.save_as(destination)
-                workbook = load_workbook(destination, read_only=True)
-                assert any('OK' in row for sheet in workbook for row in sheet.values)
-                workbook.close()
+                for cycle in range(2 if managed else 1):
+                    page.locator('#dbscenario-run-button').click()
+                    expect(page.locator('#dbscenario-status')).to_contain_text('確認を準備しました', timeout=120000)
+                    assert len(calls) == cycle, 'Preparing must not execute the API'
+                    review = page.locator('#dbscenario-case-review-panel')
+                    expect(review).to_contain_text('influxMutation')
+                    if cycle == 0:
+                        review.get_by_role('button', name='レビュー済みにする', exact=True).click()
+                        review.get_by_role('button', name='承認する', exact=True).click()
+                    else:
+                        expect(review).to_contain_text('承認済み')
+                    page.locator('#dbscenario-execute-approved-button').click()
+                    expect(page.locator('#dbscenario-status')).to_contain_text('すべてのDB確認に成功', timeout=120000)
+                    assert len(calls) == cycle + 1
+                    rows = list(client.query('SELECT * FROM measure').get_points())
+                    if managed: assert rows == []
+                    else: assert rows[0]['value'] == 2.0
+                    with page.expect_download() as download: page.locator('#dbscenario-open-result-button').click()
+                    destination = output / f'result-{cycle}.xlsx'; download.value.save_as(destination)
+                    workbook = load_workbook(destination, read_only=True)
+                    assert any('OK' in row for sheet in workbook for row in sheet.values)
+                    workbook.close()
                 assert not errors, errors
             finally:
                 (output / 'page.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')

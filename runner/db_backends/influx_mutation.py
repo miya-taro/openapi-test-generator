@@ -1,6 +1,6 @@
-"""Single-point insertion/update/deletion expectations without writes by the checker."""
-from db_backends.influx_response import _client, _select, _quote_ident, DBResponseCheckUnverified, DBResponseCheckError
-from src.influx_mutation import validate_mutation
+"""Single-point checks with optional explicit, disposable test fixtures."""
+from db_backends.influx_response import _client, _select, _quote_ident, _where, DBResponseCheckUnverified, DBResponseCheckError
+from src.influx_mutation import validate_mutation, fixture_timestamp
 
 
 def _points(config, check):
@@ -19,6 +19,42 @@ def _points(config, check):
 
 def _same(actual, expected):
     return isinstance(actual, bool) == isinstance(expected, bool) and actual == expected
+
+
+def begin_fixture(check, config, state):
+    """Claim an absent identity only. Never overwrite or restore existing points."""
+    validate_mutation(check)
+    fields = {key: float(spec['value']) if spec['type'] == 'float' else spec['value']
+              for key, spec in check['fixture']['fields'].items()}
+    state.update(setup_status='未確認', cleanup_status='対象外', initial_fields=fields)
+    if _points(config, check):
+        raise DBResponseCheckUnverified('検証用ポイントの時刻・タグに既存データがあります。上書きせず停止しました')
+    if check['action'] == 'update' and all(key in fields and _same(fields[key], value) for key, value in check['fields'].items()):
+        raise DBResponseCheckUnverified('初期値と更新後の期待値が同じです。異なる初期値を指定してください')
+    # Arm before the write: the server may accept it even if its reply is lost.
+    state.update(armed=True, cleanup_status='未実施')
+    if fields:
+        with _client(config) as client:
+            if not client.write_points([{'measurement': check['measurement'], 'time': fixture_timestamp(check['time']),
+                                         'tags': check['tags'], 'fields': fields}], time_precision='n'):
+                raise DBResponseCheckError('検証用ポイントを投入できません')
+        actual = _points(config, check)
+        if len(actual) != 1 or any(key not in actual[0] or not _same(actual[0][key], value) for key, value in fields.items()):
+            raise DBResponseCheckError('投入した検証用ポイントを確認できません')
+    state['setup_status'] = 'OK'
+
+
+def cleanup_fixture(check, config, state):
+    if not state.get('armed'):
+        return
+    # Recheck the complete tag identity before allowing a bounded deletion.
+    _points(config, check)
+    specs = [('time', '=', check['time']), *((key, '=', val) for key, val in check['tags'].items())]
+    with _client(config) as client:
+        client.query(f'DELETE FROM {_quote_ident(check["measurement"])} WHERE {_where(specs)}')
+    if _points(config, check):
+        raise DBResponseCheckError('検証用ポイントが残っています')
+    state['cleanup_status'] = 'OK'
 
 
 def prepare(check, config):

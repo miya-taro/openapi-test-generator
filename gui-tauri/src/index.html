@@ -309,9 +309,9 @@
                       <option value="unchanged">API実行前後でDBに変更がないこと</option>
                     </select>
                   </div>
-                  <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。前提ポイントの自動投入は行いません。</p>
+                  <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>
                   <div id="dbscenario-editor-influx-mutation" hidden>
-                    <p class="field-caption">対象は時刻と全タグで特定する1ポイントです。APIが保存・更新・削除した結果をDBから読み取ります。ツールからのポイント投入・後片付けは行いません。</p>
+                    <p class="field-caption">対象は時刻と全タグで特定する1ポイントです。APIが保存・更新・削除した結果をDBから読み取ります。</p>
                     <div class="db-scenario-editor-grid">
                       <label>期待する変更<select id="dbscenario-editor-influx-action"><option value="insert">保存：なし → 1件</option><option value="update">更新：既存1件 → 指定値</option><option value="delete">削除：既存1件 → なし</option></select></label>
                       <label>期待するHTTP status<input id="dbscenario-editor-influx-status" type="number" min="200" max="299" value="200" /></label>
@@ -319,6 +319,15 @@
                     </div>
                     <label>全タグの名前と値（JSON、タグなしなら{}）<textarea id="dbscenario-editor-influx-tags" rows="3" spellcheck="false">{}</textarea></label>
                     <label class="checkbox"><input id="dbscenario-editor-influx-preserve" type="checkbox" /> 対応付けしていない既存フィールドも変更されないことを確認</label>
+                    <label class="checkbox"><input id="dbscenario-editor-influx-fixture" type="checkbox" /> 検証用ポイントを毎回準備し、試験後に削除する</label>
+                    <div id="dbscenario-editor-influx-fixture-panel" hidden>
+                      <p class="field-caption">上の時刻・全タグを検証専用にしてください。既存ポイントがある場合は上書きせず停止します。新規保存は事前投入なし、更新・削除は下記の初期値を投入します。試験の成否にかかわらず対象ポイントを削除し、同じ設定で再実行できます。他の処理が同じ対象へ書き込まない環境で使ってください。</p>
+                      <div id="dbscenario-editor-influx-seeds-panel" hidden>
+                        <table><thead><tr><th>初期フィールド名</th><th>InfluxDBの型</th><th>初期値</th><th></th></tr></thead><tbody id="dbscenario-editor-influx-seeds"></tbody></table>
+                        <button id="dbscenario-editor-influx-add-seed" type="button" class="secondary">初期フィールドを追加</button>
+                        <p class="field-caption">API送信前の値を指定します。更新試験では期待値と異なる値にしてください。既存measurementではフィールド型をDBと合わせてください。</p>
+                      </div>
+                    </div>
                     <div id="dbscenario-editor-influx-delete-body-field" hidden><label>送信するJSON body（不要なら{}）<textarea id="dbscenario-editor-influx-delete-body" rows="3" spellcheck="false">{}</textarea></label></div>
                     <p class="field-caption">下のAPI項目にフィールドを対応付けると送信値から期待値を作ります。timeとタグは上の対象指定に使用し、期待フィールドとは分けます。既存値と同じ値への更新など、変更を確かめられないデータは未確認にします。</p>
                   </div>

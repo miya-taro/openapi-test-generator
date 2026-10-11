@@ -56,6 +56,7 @@ def test_ui_mutation_cases_against_real_api_and_influx(tmp_path):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     passed, detected, unverified = 0, 0, 0
+    fixture_passed, fixture_failed, fixture_collisions = 0, 0, 0
     try:
         for method in ['POST', 'PUT', 'PATCH', 'DELETE']:
             action = {'POST': 'insert', 'PUT': 'update', 'PATCH': 'update', 'DELETE': 'delete'}[method]
@@ -101,7 +102,57 @@ def test_ui_mutation_cases_against_real_api_and_influx(tmp_path):
                     assert evidence['influx_mutation']['verdict'] == ('OK' if fault == 'correct' else 'NG')
                     if fault == 'correct': passed += 1
                     else: detected += 1
-        (output / 'summary.json').write_text(json.dumps({'passed': passed, 'faults_detected': detected, 'unverified_without_http': unverified, 'http_calls': len(calls)}, indent=2))
+            # Same UI definition, twice, without manual reseeding or cleanup in between.
+            form.update(influxFixture=True, influxSeedFields={
+                'value': {'type': 'float', 'value': 1}, 'untouched': {'type': 'integer', 'value': 7}})
+            generated = subprocess.run(['node', '--input-type=module', '-e',
+                "import {buildDbScenarios} from './gui-tauri/src/db-scenario-editor.js'; console.log(JSON.stringify(buildDbScenarios(JSON.parse(process.argv[1]))));",
+                json.dumps(form)], cwd=ROOT, capture_output=True, text=True, check=True)
+            _save_db_scenario_yaml(str(scenario_path), json.loads(generated.stdout))
+            client.query('DROP MEASUREMENT measure')
+            # Same time/different tag, and same tag/different time must survive.
+            neighbors = [point(55.0, '2026-01-03T00:00:00Z', untouched=9), {**point(66.0, untouched=10), 'tags': {'item': 'neighbor'}}]
+            client.write_points(neighbors)
+            sentinel_rows = list(client.query('SELECT * FROM measure ORDER BY time ASC').get_points())
+            for cycle, fault in enumerate(['correct', 'correct', 'no_op', 'collision']):
+                if fault == 'collision': client.write_points([point(99.0, untouched=8)])
+                before_rows = list(client.query('SELECT * FROM measure ORDER BY time ASC').get_points())
+                before_calls = len(calls)
+                label = f'{method}-fixture-{cycle}-{fault}'
+                run = subprocess.run([sys.executable, str(ROOT / 'runner/db_scenario_runner.py'), str(scenario_path), str(spec),
+                                      '--base-url', f'http://127.0.0.1:{server.server_port}', '--config', str(config_path), '--skip-health-check',
+                                      '--report-output', str(output / f'{label}.xlsx'), '--evidence-output', str(output / f'{label}.json')],
+                                      capture_output=True, text=True)
+                assert run.returncode == (0 if fault == 'correct' else 2 if fault == 'collision' else 1), run.stdout + run.stderr
+                current_rows = list(client.query('SELECT * FROM measure ORDER BY time ASC').get_points())
+                evidence = json.loads((output / f'{label}.json').read_text())['cases'][0]
+                if fault == 'collision':
+                    assert current_rows == before_rows
+                    assert len(calls) == before_calls
+                    assert evidence['influx_fixture']['cleanup_status'] == '対象外'
+                    fixture_collisions += 1
+                else:
+                    assert current_rows == sentinel_rows
+                    assert evidence['influx_fixture']['setup_status'] == 'OK'
+                    assert evidence['influx_fixture']['cleanup_status'] == 'OK'
+                    assert len(calls) == before_calls + 1
+                    if fault == 'correct': fixture_passed += 1
+                    else: fixture_failed += 1
+        # The client library truncates RFC3339 strings to microseconds. Fixture writes must not.
+        from db_backends import influx_mutation
+        client.query('DROP MEASUREMENT measure')
+        client.write_points([point(77.0)])
+        nano_check = {'measurement': 'measure', 'time': '2026-01-01T00:00:00.000000001Z', 'tags': {'item': 'a'},
+                      'action': 'update', 'fields': {'value': 2.0}, 'fixture': {'fields': {'value': {'type': 'float', 'value': 1}}}}
+        fixture_state = {}
+        influx_mutation.begin_fixture(nano_check, config, fixture_state)
+        assert len(list(client.query('SELECT * FROM measure').get_points())) == 2
+        influx_mutation.cleanup_fixture(nano_check, config, fixture_state)
+        remaining = list(client.query('SELECT * FROM measure').get_points())
+        assert len(remaining) == 1 and remaining[0]['value'] == 77.0
+        (output / 'summary.json').write_text(json.dumps({'passed': passed, 'faults_detected': detected, 'unverified_without_http': unverified,
+            'fixture_repeated_passed': fixture_passed, 'fixture_failure_cleaned': fixture_failed,
+            'fixture_existing_data_preserved': fixture_collisions, 'http_calls': len(calls)}, indent=2))
     finally:
         server.shutdown(); server.server_close(); thread.join(timeout=5)
         client.drop_database(config['database']); client.close()

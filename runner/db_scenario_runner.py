@@ -416,6 +416,7 @@ def _run_scenario(
     cleanup_where: dict | None = None
     cleanup_primary_keys_before: list[object] | None = None
     api_call_started = False
+    influx_fixture: dict = {}
 
     def _execute() -> tuple[bool, str, str, dict]:
         nonlocal cleanup_where, cleanup_primary_keys_before, api_call_started
@@ -525,6 +526,10 @@ def _run_scenario(
             if method not in {"POST", "PUT", "PATCH", "DELETE"}:
                 return False, "InfluxDB変更確認はPOST/PUT/PATCH/DELETEで指定してください", "ERR", previous_response
             try:
+                if 'fixture' in scenario.influx_mutation:
+                    if evidence is not None:
+                        evidence['influx_fixture'] = influx_fixture
+                    influx_mutation.begin_fixture(scenario.influx_mutation, get_influxdb_config(db_config), influx_fixture)
                 mutation_evidence = influx_mutation.prepare(scenario.influx_mutation, get_influxdb_config(db_config))
             except postgres_backend.DBResponseCheckUnverified as exc:
                 return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
@@ -700,6 +705,14 @@ def _run_scenario(
         result = _execute()
     finally:
         cleanup_errors: list[str] = []
+        if influx_fixture.get('armed'):
+            try:
+                influx_mutation.cleanup_fixture(scenario.influx_mutation, get_influxdb_config(db_config), influx_fixture)
+            except Exception:
+                influx_fixture['cleanup_status'] = 'NG'
+                msg = 'InfluxDBの検証用ポイントの後片付けに失敗しました。対象の時刻・タグと接続を確認してください'
+                cleanup_errors.append(msg)
+                print(f'[WARN] {msg}', file=sys.stderr)
         if (
             scenario.cleanup is not None
             and api_call_started
@@ -733,6 +746,9 @@ def _run_scenario(
                 print(f"[WARN] {msg}", file=sys.stderr)
                 cleanup_errors.append(msg)
 
+    if influx_fixture.get('cleanup_status') == 'NG':
+        ok, detail, status, response = result
+        result = (False, 'InfluxDB検証用ポイントの後片付け失敗' + ('; ' + detail if detail else ''), status, response)
     return (*result, cleanup_errors)
 
 
