@@ -39,6 +39,11 @@ api test generator/
 
 ---
 
+## Windows版インストーラー
+
+[Windowsインストーラー（v0.1.0）](downloads/openapi-test-tool_0.1.0_x64-setup.exe) をダウンロードして実行してください。
+この試験配布版は `codex/windows-build-20261007` の `f13a298` からビルドしています。
+
 ## GUIアプリ（コマンドライン操作なしで使いたい場合）
 
 `gui-tauri/`（Tauri版）を使う。かつて `gui/`（PySide6版）のexeも配布していたが廃止し、
