@@ -89,6 +89,29 @@ describe("DBシナリオエディター", () => {
     });
   });
 
+  test("POSTのレスポンスIDで作成行を特定できる", async () => {
+    const invoke = vi.fn(async (_command, payload) => {
+      if (payload?.command === "list_db_scenario_operations") return [createUserOperation];
+      return "db-checks.yaml";
+    });
+    const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(), onSaved: vi.fn() });
+    await editor.load("openapi.json");
+    selectOperation("createUser");
+
+    document.getElementById("dbscenario-editor-name").value = "採番IDで照合";
+    document.getElementById("dbscenario-editor-table").value = "users";
+    const emailRow = [...document.querySelectorAll("#dbscenario-editor-write-mappings tr")]
+      .find((row) => row.dataset.fieldPath === "email");
+    emailRow.querySelector('input[aria-label="DBカラム"]').value = "email";
+    document.getElementById("dbscenario-editor-response-row-path").value = "id";
+    document.getElementById("dbscenario-editor-response-row-column").value = "id";
+
+    document.getElementById("dbscenario-editor-add-scenario").click();
+    const generated = JSON.parse(document.querySelector("#dbscenario-editor-scenario-list pre").textContent);
+    expect(generated.db_check.where).toEqual({ id: "{{response.id}}" });
+    expect(generated.db_check.expect.columns.email).toBe("test@example.com");
+  });
+
   test("数値・boolean・配列の値を型どおりにJSONへ組み立てる", async () => {
     const operation = {
       operationId: "createBatch",

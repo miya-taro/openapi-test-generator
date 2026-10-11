@@ -136,6 +136,14 @@ def test_compare_row_exists_and_columns_match():
     assert detail == ""
 
 
+def test_compare_rejects_ambiguous_target_rows():
+    ok, detail = postgres_backend._compare(
+        [{"name": "太郎"}, {"name": "太郎"}], {"exists": True, "columns": {"name": "太郎"}}
+    )
+    assert ok is False
+    assert "2件" in detail
+
+
 def test_compare_decimal_column_matches_equal_looking_float():
     # 回帰テスト: psycopg2はNUMERIC/DECIMAL列をDecimalで返す。Decimal("19.99") == 19.99 は
     # 素朴な比較だとFalseになる（19.99は二進浮動小数点として正確に表現できないため）。

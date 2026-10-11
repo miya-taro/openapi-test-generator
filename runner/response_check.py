@@ -50,7 +50,9 @@ def check(response_check: ResponseCheck, status: int, response_json) -> tuple[bo
     return True, ""
 
 
-def check_db_rows(db_response_check, response_json, expected_rows: list[dict]) -> tuple[bool, str]:
+def check_db_rows(
+    db_response_check, response_json, expected_rows: list[dict], evidence: dict | None = None,
+) -> tuple[bool, str]:
     """Compare a response collection/object with the exact rows selected from the DB.
 
     Ordering is ignored because an API's order is not part of its contract unless separately
@@ -69,6 +71,16 @@ def check_db_rows(db_response_check, response_json, expected_rows: list[dict]) -
         if not isinstance(collection, list):
             return False, f"DB照合: 「{array_path}」は配列ではありません"
         actual_rows = collection
+
+    if evidence is not None:
+        evidence["actual_rows"] = [
+            {path: _get_nested(row, path) if _get_nested(row, path) is not _MISSING else "[MISSING]"
+             for path in db_response_check.fields}
+            if isinstance(row, dict) else row
+            for row in actual_rows
+        ]
+        evidence["expected_count"] = len(expected_rows)
+        evidence["actual_count"] = len(actual_rows)
 
     remaining = list(actual_rows)
     missing: list[dict] = []

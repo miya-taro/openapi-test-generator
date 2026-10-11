@@ -226,13 +226,14 @@ def _validate_prepared_db_cases(config, paths) -> dict:
 def _emit_db_result(emit, paths, result: StageResult) -> int:
     _artifact(emit, "db_report_excel", paths.db_report_excel)
     _artifact(emit, "db_junit_xml", paths.db_junit_xml)
+    _artifact(emit, "db_evidence_json", paths.db_evidence_json)
     try:
         write_failed_case_ids([paths.db_junit_xml], paths.failed_case_ids_json)
         _artifact(emit, "failed_case_ids_json", paths.failed_case_ids_json)
         _write_html_report(
             paths, [paths.db_junit_xml],
             {"試験仕様書": paths.case_spec_excel, "DB結果Excel": paths.db_report_excel,
-             "DB JUnit XML": paths.db_junit_xml},
+             "DB JUnit XML": paths.db_junit_xml, "DB比較エビデンス": paths.db_evidence_json},
         )
         _artifact(emit, "html_report", paths.html_report)
     except (CaseMasterError, OSError, ValueError) as exc:
@@ -618,13 +619,14 @@ def main(argv: list[str] | None = None) -> int:
         result = run_command("db-scenarios", command, emit)
         _artifact(emit, "db_report_excel", paths.db_report_excel)
         _artifact(emit, "db_junit_xml", paths.db_junit_xml)
+        _artifact(emit, "db_evidence_json", paths.db_evidence_json)
         try:
             write_failed_case_ids([paths.db_junit_xml], paths.failed_case_ids_json)
             _artifact(emit, "failed_case_ids_json", paths.failed_case_ids_json)
             _write_html_report(
                 paths, [paths.db_junit_xml],
                 {"試験仕様書": paths.case_spec_excel, "DB結果Excel": paths.db_report_excel,
-                 "DB JUnit XML": paths.db_junit_xml},
+                 "DB JUnit XML": paths.db_junit_xml, "DB比較エビデンス": paths.db_evidence_json},
             )
             _artifact(emit, "html_report", paths.html_report)
         except (CaseMasterError, OSError, ValueError) as exc:

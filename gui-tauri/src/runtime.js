@@ -94,7 +94,7 @@ export async function invoke(command, args = {}) {
 function openEventSource() {
   if (webEvents) return webEvents;
   webEvents = webToken().then((token) => new Promise((resolve, reject) => {
-    const source = new EventSource("/api/events?token=" + encodeURIComponent(token));
+    const source = new window.EventSource("/api/events?token=" + encodeURIComponent(token));
     for (const eventName of ["proc-line", "proc-done"]) {
       source.addEventListener(eventName, (event) => {
         let payload;
@@ -104,7 +104,7 @@ function openEventSource() {
     }
     source.addEventListener("open", () => resolve(source), { once: true });
     source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED) {
+      if (source.readyState === window.EventSource.CLOSED) {
         webEvents = null;
         reject(new Error("実行ログの接続が切れました"));
       }

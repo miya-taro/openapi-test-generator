@@ -47,6 +47,9 @@ def run_main(monkeypatch, argv: list[str]) -> int:
 
 def _patch_common(monkeypatch):
     monkeypatch.setattr(dsr_module, "health_check", lambda base_url, health_path: True)
+    # Orchestration tests replace DB verification, so replace the POST before/after read too.
+    counts = iter(range(100))
+    monkeypatch.setattr(dsr_module.postgres_backend, "matching_row_count", lambda *args: next(counts))
 
 
 def _fake_call_api(status: int, response_json: dict):
@@ -57,6 +60,17 @@ def _fake_call_api(status: int, response_json: dict):
         return status, response_json, None
 
     return _call_api
+
+
+def test_evidence_redacts_sensitive_fields_and_failure_detail():
+    sanitized = dsr_module._safe_evidence({
+        "request": {"body": {"password": "private", "name": "public"}},
+        "detail": "password: 期待='private' 実測='other'; name: 期待='A' 実測='B'",
+    })
+    assert sanitized["request"]["body"] == {"password": "[REDACTED]", "name": "public"}
+    assert "private" not in sanitized["detail"]
+    assert "other" not in sanitized["detail"]
+    assert "name:" in sanitized["detail"]
 
 
 # ---------- _resolve_operation ----------

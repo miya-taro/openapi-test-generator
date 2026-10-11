@@ -9,11 +9,15 @@ Layer 1（openapi-test-gen/runner.py によるフィールド単位の検証）�
 """
 from __future__ import annotations
 import argparse
+import json
 import os
 import re
 import sys
 from dataclasses import replace
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 import requests
 
@@ -45,6 +49,31 @@ from src.parser import parse_openapi, OpenAPIParseError
 
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 _RESPONSE_PLACEHOLDER = re.compile(r"\{\{\s*response\.")
+_SENSITIVE_KEYS = (
+    "password", "passwd", "token", "secret", "authorization", "cookie", "credential",
+    "api_key", "apikey", "access_key",
+)
+
+
+def _safe_evidence(value, key: str = ""):
+    """Make comparison evidence JSON-compatible while hiding common credential fields."""
+    if any(marker in key.lower() for marker in _SENSITIVE_KEYS):
+        return "[REDACTED]"
+    if key == "detail" and isinstance(value, str):
+        return re.sub(
+            r"(?i)\b(password|passwd|token|secret|authorization|cookie|credential)\s*:[^;]*",
+            r"\1: [REDACTED]",
+            value,
+        )
+    if isinstance(value, dict):
+        return {str(k): _safe_evidence(v, str(k)) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_evidence(item) for item in value]
+    if isinstance(value, (datetime, date, time, Decimal, UUID)):
+        return str(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 class _ScenarioSessions:
@@ -102,6 +131,10 @@ def main() -> int:
     parser.add_argument(
         "--report-output", metavar="XLSX",
         help="シナリオ名・判定・APIステータス・詳細を一覧できるExcelレポートの出力先（任意）",
+    )
+    parser.add_argument(
+        "--evidence-output", metavar="JSON",
+        help="ケースごとのAPI・DB実測値と比較結果を保存するJSONの出力先（任意）",
     )
     parser.add_argument(
         "--junit-xml", metavar="XML",
@@ -258,19 +291,25 @@ def main() -> int:
         has_fail = False
         has_warning = False
         report_rows: list[tuple[str, str, str, str, str]] = []
+        evidence_rows: list[dict] = []
         all_cleanup_errors: list[str] = []
         # 直前のシナリオのAPIレスポンス。次のシナリオの path_params/body 内の
         # {{response.xxx}} を解決するのに使う（例: create シナリオで作ったIDを
         # 次の update/delete シナリオの path_params に引き継ぐ）。
         previous_response: dict = {}
         for scenario in scenarios:
+            case_evidence: dict | None = (
+                {"case_id": scenario.case_id, "name": scenario.name,
+                 "executed_at": datetime.now(timezone.utc).isoformat()}
+                if args.evidence_output else None
+            )
             case_session = session
             case_auth_header = None
             if scenario.auth_profile is not None:
                 case_session, case_auth_header = profile_sessions[scenario.auth_profile]
             ok, detail, api_status, previous_response, cleanup_errors = _run_scenario(
                 scenario, openapi, args.base_url, db_config, previous_response,
-                case_session, args.cookie_jar, case_auth_header,
+                case_session, args.cookie_jar, case_auth_header, evidence=case_evidence,
             )
             if ok:
                 verdict = "OK"
@@ -286,6 +325,9 @@ def main() -> int:
             if not ok:
                 print(f"         {detail}")
             report_rows.append((scenario.case_id, report_name, verdict, api_status, detail))
+            if case_evidence is not None:
+                case_evidence.update({"verdict": verdict, "api_status": api_status, "detail": detail})
+                evidence_rows.append(_safe_evidence(case_evidence))
             all_cleanup_errors.extend(cleanup_errors)
 
         if all_cleanup_errors:
@@ -300,6 +342,15 @@ def main() -> int:
             db_scenario_report.write_report(report_rows, args.report_output)
             print(f"[INFO] レポートを {args.report_output} に出力しました")
 
+        if args.evidence_output:
+            evidence_path = Path(args.evidence_output)
+            evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            evidence_path.write_text(
+                json.dumps({"cases": evidence_rows}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(f"[INFO] 比較エビデンスを {evidence_path} に出力しました")
+
         if args.junit_xml:
             write_junit_xml_scenarios(report_rows, args.junit_xml)
             print(f"[INFO] JUnit XML を出力しました: {args.junit_xml}")
@@ -311,6 +362,7 @@ def _run_scenario(
     scenario: DBScenario, openapi: dict, base_url: str, db_config: dict, previous_response: dict,
     session: requests.Session, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None,
+    evidence: dict | None = None,
 ) -> tuple[bool, str, str, dict, list[str]]:
     """1シナリオを実行する。
 
@@ -348,6 +400,9 @@ def _run_scenario(
             given_data[item.as_name] = row
             created.append((item.table, primary_key))
 
+        if evidence is not None and given_data:
+            evidence["given_rows"] = given_data
+
         try:
             path, method = _resolve_operation(openapi, scenario.request.operation_id)
         except ScenarioError as e:
@@ -360,6 +415,12 @@ def _run_scenario(
         except ScenarioError as e:
             return False, f"request値の解決に失敗しました: {e}", "ERR", previous_response
 
+        if evidence is not None:
+            evidence["request"] = {
+                "method": method, "path": path, "path_params": resolved_path_params,
+                "query_params": resolved_query_params, "body": resolved_body,
+            }
+
         if scenario.cleanup is not None:
             if method != "POST":
                 return False, "cleanupを指定できるのはPOSTシナリオだけです", "ERR", previous_response
@@ -371,6 +432,23 @@ def _run_scenario(
                 )
             except Exception as e:
                 return False, f"POST後のクリーンアップ準備に失敗しました: {e}", "ERR", previous_response
+
+        post_count_before = None
+        post_count_where = None
+        if method == "POST" and scenario.db_check is not None and scenario.db_check.engine == "postgres":
+            try:
+                pg_config = get_postgres_config(db_config)
+                if scenario.db_check.table:
+                    # A generated ID can only be known after the API response. In that case
+                    # compare the total table count; otherwise use the configured row selector.
+                    if not _contains_response_placeholder(scenario.db_check.where):
+                        before_check = resolve_db_check(scenario.db_check, previous_response, given_data)
+                        post_count_where = before_check.where
+                    post_count_before = postgres_backend.matching_row_count(
+                        pg_config, scenario.db_check.table, post_count_where
+                    )
+            except Exception as e:
+                return False, f"POST前のDB行数を取得できません: {e}", "ERR", previous_response
 
         expected_db_rows = None
         if scenario.db_response_check is not None:
@@ -388,6 +466,17 @@ def _run_scenario(
             resolved_query_params = prepared.query_params
             resolved_path_params = prepared.path_params
             expected_db_rows = prepared.expected_rows
+            if evidence is not None:
+                evidence["request"]["path_params"] = resolved_path_params
+                evidence["request"]["query_params"] = resolved_query_params
+            if evidence is not None:
+                evidence["db_response_comparison"] = {
+                    "table": scenario.db_response_check.table,
+                    "fields": scenario.db_response_check.fields,
+                    "query_params": resolved_query_params,
+                    "path_params": resolved_path_params,
+                    "expected_rows": expected_db_rows,
+                }
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
 
@@ -399,6 +488,10 @@ def _run_scenario(
         status, response_json, error = _call_api(*call_args, **call_kwargs)
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
+        if evidence is not None:
+            evidence["response"] = {"status": status, "body": response_json}
+            if scenario.response_check is not None:
+                evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
 
@@ -426,11 +519,17 @@ def _run_scenario(
                 failures.append(detail)
 
         if scenario.db_response_check is not None:
-            ok, detail = response_check_module.check_db_rows(
-                scenario.db_response_check, response_json, expected_db_rows or []
-            )
-            if not ok:
-                failures.append(detail)
+            expected_status = scenario.response_check.expect_status if scenario.response_check else None
+            if expected_status is not None and expected_status >= 400:
+                if evidence is not None:
+                    evidence["db_response_comparison"]["skipped"] = "設定されたエラーステータスを照合"
+            else:
+                comparison_evidence = evidence.get("db_response_comparison") if evidence is not None else None
+                ok, detail = response_check_module.check_db_rows(
+                    scenario.db_response_check, response_json, expected_db_rows or [], comparison_evidence
+                )
+                if not ok:
+                    failures.append(detail)
 
         if scenario.db_check is not None:
             try:
@@ -441,7 +540,24 @@ def _run_scenario(
             try:
                 if resolved_check.engine == "postgres":
                     pg_config = get_postgres_config(db_config)
-                    ok, detail = postgres_backend.check(resolved_check, pg_config)
+                    db_evidence = {} if evidence is not None else None
+                    if db_evidence is None:
+                        ok, detail = postgres_backend.check(resolved_check, pg_config)
+                    else:
+                        ok, detail = postgres_backend.check(resolved_check, pg_config, db_evidence)
+                    if evidence is not None:
+                        evidence["db_check"] = db_evidence
+                    if method == "POST" and post_count_before is not None:
+                        post_count_after = postgres_backend.matching_row_count(
+                            pg_config, resolved_check.table, post_count_where
+                        )
+                        if evidence is not None:
+                            db_evidence["matching_rows_before"] = post_count_before
+                            db_evidence["matching_rows_after"] = post_count_after
+                            db_evidence["count_scope"] = post_count_where or "table"
+                        if post_count_after <= post_count_before:
+                            ok = False
+                            detail = (detail + "; " if detail else "") + "POST後に対象行が増えていません"
                 else:
                     influx_config = get_influxdb_config(db_config)
                     ok, detail = influx_backend.check(resolved_check, influx_config)

@@ -317,7 +317,22 @@
                           <tbody id="dbscenario-editor-write-mappings"></tbody>
                         </table>
                       </div>
-                      <p class="field-caption">項目と型はOpenAPIから表示します。値は項目ごとに設定でき、必須/任意やschemaの制約も確認できます。配列・object項目はその値だけJSONで編集します。DBに保存される項目の列を人が指定してください。POSTでは行を特定する列を1つ以上選びます。</p>
+                      <p class="field-caption">項目と型はOpenAPIから表示します。値は項目ごとに設定でき、必須/任意やschemaの制約も確認できます。配列・object項目はその値だけJSONで編集します。DBに保存される項目の列を人が指定してください。</p>
+                    </div>
+                    <div id="dbscenario-editor-post-row-id" class="form-field" hidden>
+                      <label>POSTで作成された行の特定方法</label>
+                      <p class="field-caption">上の「保存行の特定に使う」を選ぶか、APIレスポンスで返るIDの項目とDB列を指定してください。</p>
+                      <div class="db-scenario-editor-grid">
+                        <div class="form-field">
+                          <label for="dbscenario-editor-response-row-path">レスポンスのID項目</label>
+                          <input id="dbscenario-editor-response-row-path" type="text" list="dbscenario-editor-response-row-paths" placeholder="例: id / data.id" />
+                          <datalist id="dbscenario-editor-response-row-paths"></datalist>
+                        </div>
+                        <div class="form-field">
+                          <label for="dbscenario-editor-response-row-column">対応するDB列</label>
+                          <input id="dbscenario-editor-response-row-column" type="text" placeholder="例: id" />
+                        </div>
+                      </div>
                     </div>
                     <div id="dbscenario-editor-post-cleanup" class="form-field db-scenario-post-cleanup" hidden>
                       <label class="checkbox"><input type="checkbox" id="dbscenario-editor-post-cleanup-enabled" /> POSTで作ったテスト行を試験後に削除する</label>

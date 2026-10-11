@@ -152,7 +152,7 @@ def prepare_db_response_check(db_response_check, db_config: dict, query_params: 
                 raise DBResponseCheckUnverified(
                     f"照合対象が{_MAX_RESPONSE_ROWS}件を超えるため、自動照合できません"
                 )
-            if not rows:
+            if not rows and filters:
                 raise DBResponseCheckUnverified("指定した検索条件に一致するDB行がありません")
 
             # Prove every configured condition changes the result and has a row exactly at its
@@ -302,7 +302,7 @@ def _request_value(value, parameter_format: str | None = None):
     return str(value) if value is not None else value
 
 
-def check(db_check, db_config: dict) -> tuple[bool, str]:
+def check(db_check, db_config: dict, evidence: dict | None = None) -> tuple[bool, str]:
     """db_check を実行し (適合したか, 詳細メッセージ) を返す。"""
     conn = psycopg2.connect(**db_config)
     try:
@@ -318,7 +318,34 @@ def check(db_check, db_config: dict) -> tuple[bool, str]:
     finally:
         conn.close()
 
+    if evidence is not None:
+        evidence["table"] = db_check.table
+        evidence["where"] = db_check.where
+        evidence["expected"] = db_check.expect
+        evidence["actual_rows"] = [dict(row) for row in rows]
     return _compare(rows, db_check.expect, db_check.invariants)
+
+
+def matching_row_count(db_config: dict, table: str, where: dict | None = None) -> int:
+    """Count matching rows before a POST so a pre-existing row cannot produce a false pass."""
+    table_ident = _quote_ident(table)
+    conditions = []
+    params = []
+    for column, value in (where or {}).items():
+        column_ident = _quote_ident(column)
+        if value is None:
+            conditions.append(f"{column_ident} IS NULL")
+        else:
+            conditions.append(f"{column_ident} = %s")
+            params.append(value)
+    conn = psycopg2.connect(**db_config)
+    try:
+        with conn.cursor() as cur:
+            predicate = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+            cur.execute(f"SELECT COUNT(*) FROM {table_ident}{predicate}", params)
+            return int(cur.fetchone()[0])
+    finally:
+        conn.close()
 
 
 def _build_select(table: str, where: dict) -> tuple[str, list]:
@@ -365,6 +392,9 @@ def _compare(rows: list[dict], expect: dict, invariants: list[str] | None = None
 
     if not rows:
         return False, "該当する行が見つかりません"
+
+    if len(rows) != 1:
+        return False, f"対象行を1件に特定できません（実測={len(rows)}件）"
 
     columns = expect.get("columns") or {}
     row = rows[0]

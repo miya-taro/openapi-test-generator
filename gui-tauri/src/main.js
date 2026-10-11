@@ -1110,6 +1110,7 @@ const ARTIFACT_LABELS = {
   junit_xml: "JUnit XML",
   db_report_excel: "DB試験結果Excel",
   db_junit_xml: "DB JUnit XML",
+  db_evidence_json: "DB比較エビデンスJSON",
   html_report: "HTML結果レポート",
   failed_case_ids_json: "失敗ケースID一覧",
 };
