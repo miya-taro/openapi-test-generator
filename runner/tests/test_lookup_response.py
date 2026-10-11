@@ -96,6 +96,23 @@ def test_parser_keeps_lookup_in_definition_and_case_identity():
     assert scenario.case_id != before
 
 
+def test_lookup_evidence_masks_credentials_by_source_and_destination_names():
+    from db_scenario_runner import _safe_evidence
+    record = {'parameter': 'body.location_id', 'definition': RULE, 'input_value': 'A',
+              'target_column': 'site_id', 'values': ['11'], 'comparison_value': '11'}
+    assert _safe_evidence(record) == record
+    for key in ('match_column', 'value_column'):
+        sensitive = {**record, 'definition': {**RULE, key: 'access_token'}}
+        saved = _safe_evidence(sensitive)
+        if key == 'match_column':
+            assert saved['input_value'] == '[REDACTED]'
+        else:
+            assert saved['values'] == saved['comparison_value'] == '[REDACTED]'
+    saved = _safe_evidence({**record, 'parameter': 'body.password', 'target_column': 'secret'})
+    assert saved['input_value'] == saved['values'] == saved['comparison_value'] == '[REDACTED]'
+    assert record['input_value'] == 'A'
+
+
 @pytest.mark.parametrize('change', [{'table': 't_site;DROP TABLE x'}, {'cardinality': 'first'},
                                     {'on_empty': 'guess'}, {'on_empty': 'status', 'empty_status': 200},
                                     {'raw_sql': 'SELECT 1'}, {'value_type': 'guess'}])

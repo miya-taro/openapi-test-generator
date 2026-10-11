@@ -98,6 +98,17 @@ def _safe_evidence(value, key: str = ""):
             value,
         )
     if isinstance(value, dict):
+        # Lookup values are stored beside their column names, rather than under
+        # them. Apply the same credential masking used for request/DB objects.
+        if isinstance(value.get("definition"), dict) and "input_value" in value:
+            definition = value["definition"]
+            value = dict(value)
+            value["input_value"] = _safe_evidence(value["input_value"],
+                                                  f'{value.get("parameter", "")} {definition.get("match_column", "")}')
+            for field_name in ("values", "comparison_value"):
+                if field_name in value:
+                    value[field_name] = _safe_evidence(value[field_name],
+                                                      f'{definition.get("value_column", "")} {value.get("target_column", "")}')
         return {str(k): _safe_evidence(v, str(k)) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_safe_evidence(item) for item in value]
