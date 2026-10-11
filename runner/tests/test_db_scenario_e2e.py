@@ -155,7 +155,7 @@ def test_real_api_and_db_comparison(tmp_path):
              "response_check": {"expect": {"status": 200}}, "db_response_check": mapping},
             {"name": "POST", "request": {"operationId": "createData", "body": {"name": "C", "location_id": "L3"}},
              "response_check": {"expect": {"status": 201}},
-             "db_check": {"table": table, "where": {"name": "C"},
+             "db_check": {"table": table, "where": {"id": "{{response.id}}"},
                           "expect": {"exists": True, "columns": {"name": "C", "location_id": "L3"}}}},
             {"name": "PUT", "request": {"operationId": "replaceData", "path_params": {"id": 1}, "body": {"name": "A2"}},
              "response_check": {"expect": {"status": 200}},
@@ -173,8 +173,8 @@ def test_real_api_and_db_comparison(tmp_path):
         assert [case["verdict"] for case in cases] == ["OK"] * 5
         assert cases[0]["db_response_comparison"]["expected_count"] == 2
         assert cases[0]["db_response_comparison"]["actual_count"] == 2
-        assert cases[1]["db_check"]["matching_rows_before"] == 0
-        assert cases[1]["db_check"]["matching_rows_after"] == 1
+        assert cases[1]["db_check"]["matching_rows_before"] == 2
+        assert cases[1]["db_check"]["matching_rows_after"] == 3
         assert "integration-token" not in (tmp_path / "normal.json").read_text(encoding="utf-8")
 
         wrong, cases = run([

@@ -638,9 +638,27 @@ export function buildDbScenario(form) {
     }
     scenario.request.body = body;
     const { columns, where } = collectWriteMappings(body);
+    const cleanupWhere = { ...where };
     if (!Object.keys(columns).length) throw new Error("OpenAPIに表示されたリクエスト項目のうち、DBで確認する項目のDBカラムを入力してください");
+    if (method === "POST") {
+      const responsePath = String(form.responseRowPath || "").trim();
+      const responseColumn = String(form.responseRowColumn || "").trim();
+      if (Boolean(responsePath) !== Boolean(responseColumn)) {
+        throw new Error("レスポンスのID項目と対応するDB列は両方入力してください");
+      }
+      if (responsePath) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(responsePath)) {
+          throw new Error("レスポンスのID項目はドット区切りの項目パスで入力してください");
+        }
+        requireDbIdentifier(responseColumn, "レスポンスIDに対応するDB列");
+        if (Object.hasOwn(where, responseColumn)) {
+          throw new Error(`行特定に使うDB列「${responseColumn}」が重複しています`);
+        }
+        where[responseColumn] = `{{response.${responsePath}}}`;
+      }
+    }
     if (method === "POST" && !Object.keys(where).length) {
-      throw new Error("保存された行を特定するため、照合に使う列を1つ以上選んでください");
+      throw new Error("保存された行を特定するため、リクエスト項目の列を選ぶか、レスポンスのID項目を入力してください");
     }
     scenario.db_check = {
       table,
@@ -650,10 +668,13 @@ export function buildDbScenario(form) {
       expect: { exists: true, columns },
     };
     if (method === "POST" && form.postCleanup) {
+      if (!Object.keys(cleanupWhere).length) {
+        throw new Error("POST後に行を片付ける場合は、リクエスト項目から保存行の特定に使う列も選んでください");
+      }
       const primaryKey = String(form.postCleanupPrimaryKey || "").trim();
       if (!primaryKey) throw new Error("POST後の片付けに使う主キー列を入力してください");
       requireDbIdentifier(primaryKey, "POST後の片付けに使う主キー列");
-      scenario.cleanup = { table, primary_key: primaryKey, where };
+      scenario.cleanup = { table, primary_key: primaryKey, where: cleanupWhere };
     }
   }
   return scenario;
@@ -775,6 +796,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     const usesSeed = SEEDED_METHODS.has(method);
     byId("dbscenario-editor-write-panel").hidden = !hasRequestBody;
     byId("dbscenario-editor-post-cleanup").hidden = method !== "POST";
+    byId("dbscenario-editor-post-row-id").hidden = method !== "POST";
     byId("dbscenario-editor-post-cleanup-fields").hidden = method !== "POST" || !byId("dbscenario-editor-post-cleanup-enabled").checked;
     byId("dbscenario-editor-seed-panel").hidden = !usesSeed;
     byId("dbscenario-editor-get-panel").hidden = !isGet;
@@ -805,6 +827,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-primary-key").value = "";
       byId("dbscenario-editor-post-cleanup-enabled").checked = false;
       byId("dbscenario-editor-post-cleanup-primary-key").value = "";
+      byId("dbscenario-editor-response-row-path").value = "";
+      byId("dbscenario-editor-response-row-column").value = "";
       byId("dbscenario-editor-soft-delete").checked = false;
       byId("dbscenario-editor-soft-delete-column").value = "";
       byId("dbscenario-editor-soft-delete-value").value = "";
@@ -825,6 +849,15 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     renderPathParams(operation);
     renderQueryParams(operation);
     if (hasRequestBody) renderWriteMappings(operation);
+    if (method === "POST") {
+      const choices = byId("dbscenario-editor-response-row-paths");
+      choices.replaceChildren();
+      for (const field of schemaFields(operation.responseSchema || {}, "", 0, "response")) {
+        const option = make("option");
+        option.value = field.path;
+        choices.append(option);
+      }
+    }
     if (isGet) {
       renderReadFilters(operation);
       renderReadMappings(operation);
@@ -882,6 +915,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       softDeleteValue: byId("dbscenario-editor-soft-delete-value").value,
       postCleanup: byId("dbscenario-editor-post-cleanup-enabled").checked,
       postCleanupPrimaryKey: byId("dbscenario-editor-post-cleanup-primary-key").value,
+      responseRowPath: byId("dbscenario-editor-response-row-path").value,
+      responseRowColumn: byId("dbscenario-editor-response-row-column").value,
     };
   }
 
