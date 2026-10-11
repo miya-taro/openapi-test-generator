@@ -477,3 +477,56 @@ def test_no_header_when_only_name_set(monkeypatch):
     monkeypatch.delenv("TEST_AUTH_HEADER_VALUE", raising=False)
     monkeypatch.delenv("TEST_AUTH_TOKEN", raising=False)
     assert _resolve_auth_header() is None
+
+
+def test_prepared_request_preserves_environment_ca_bundle_and_proxy(monkeypatch):
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/configured/trust.pem")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("https_proxy", "http://proxy.example:8080")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
+    captured = []
+
+    def send(self, prepared_request, **kwargs):
+        captured.append(kwargs)
+        return mock_send(200, "{}")(self, prepared_request, **kwargs)
+
+    with patch("requests.Session.send", send):
+        result = execute_with_openapi(make_case(), "https://api.example", None)
+    assert result.exit_code == EXIT_OK
+    assert captured[0]["verify"] == "/configured/trust.pem"
+    assert captured[0]["proxies"]["https"] == "http://proxy.example:8080"
+    assert captured[0]["allow_redirects"] is False
+
+
+def test_prepared_request_preserves_session_tls_settings(monkeypatch):
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/environment/ignored.pem")
+    session = requests.Session()
+    session.trust_env = False
+    session.verify = "/session/trust.pem"
+    session.cert = ("/session/client.pem", "/session/client.key")
+    captured = []
+
+    def send(self, prepared_request, **kwargs):
+        captured.append(kwargs)
+        return mock_send(200, "{}")(self, prepared_request, **kwargs)
+
+    with patch("requests.Session.send", send):
+        execute_with_openapi(make_case(), "https://api.example", None, session)
+    assert captured[0]["verify"] == session.verify
+    assert captured[0]["cert"] == session.cert
+    assert captured[0]["proxies"] == {}
+
+
+def test_prepared_request_keeps_certificate_verification_enabled(monkeypatch):
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    captured = []
+
+    def send(self, prepared_request, **kwargs):
+        captured.append(kwargs)
+        return mock_send(200, "{}")(self, prepared_request, **kwargs)
+
+    with patch("requests.Session.send", send):
+        execute_with_openapi(make_case(), "https://api.example", None)
+    assert captured[0]["verify"] is True

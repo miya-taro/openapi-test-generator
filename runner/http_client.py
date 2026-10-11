@@ -167,7 +167,10 @@ def _send_request(
             # response.elapsed はヘッダ受信までの時間しか計測しない（ボディ転送時間を含まない）ため、
             # curl の %{time_total}（応答完了までの総時間）と揃えるために自前で計測する。
             start = time.perf_counter()
-            response = sender.send(prepared, timeout=REQUEST_TIMEOUT, allow_redirects=False)
+            # PreparedRequest + send() skips Session.request()'s environment merge.
+            # Respect configured CA bundles/proxies and session TLS/client certificates.
+            settings = sender.merge_environment_settings(prepared.url, {}, None, None, None)
+            response = sender.send(prepared, timeout=REQUEST_TIMEOUT, allow_redirects=False, **settings)
             elapsed_ms = (time.perf_counter() - start) * 1000
         except requests.exceptions.Timeout:
             return RunResult(
