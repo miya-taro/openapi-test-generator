@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import islice
 import re
 
+from .choices import generate_choice_cases
 from ...samples.format_samples import FORMAT_VALID_SAMPLES, FORMAT_INVALID_SAMPLES
 from ... import logger as log
 
@@ -16,42 +17,8 @@ def generate_string_cases(schema: dict, ctx: dict) -> list[dict]:
     cases: list[dict] = []
     opts = ctx["opts"]
 
-    # enum
-    enum = schema.get("enum")
-    if enum:
-        if opts["includeNormal"]:
-            if opts.get("enumFullCoverage"):
-                for val in enum:
-                    cases.append({
-                        "summary": f'{ctx["paramName"]} enum 値 "{val}"（正常）',
-                        "keyword": "enum",
-                        "perspective": "正常系_enum値",
-                        "inputValue": str(val),
-                        "expectedStatus": ctx.get("successStatus"),
-                        "expectedResult": "正常に処理されること",
-                        "notes": "",
-                    })
-            else:
-                cases.append({
-                    "summary": f"{ctx['paramName']} enum 代表値（正常）",
-                    "keyword": "enum",
-                    "perspective": "正常系_enum代表値",
-                    "inputValue": str(enum[0]),
-                    "expectedStatus": ctx.get("successStatus"),
-                    "expectedResult": "正常に処理されること",
-                    "notes": "",
-                })
-
-        if opts["includeAbnormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} enum 外の値（異常）",
-                "keyword": "enum",
-                "perspective": "異常系_enum外値",
-                "inputValue": "__INVALID__",
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "",
-            })
+    if ctx.get("includeChoices", True):
+        cases.extend(generate_choice_cases(schema, ctx))
 
     # maxLength
     max_length = schema.get("maxLength")

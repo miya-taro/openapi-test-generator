@@ -134,6 +134,10 @@ def _find_path_by_operation_id(paths: dict, operation_id: str) -> dict | None:
     return None
 
 
+def _reject_json_constant(value):
+    raise ValueError(f"JSONに使用できない数値: {value}")
+
+
 def validate_body(actual_body: str, schema: dict | None) -> list[str]:
     """actual_body（JSON文字列）が schema に適合するか検証する。
 
@@ -141,15 +145,15 @@ def validate_body(actual_body: str, schema: dict | None) -> list[str]:
     schema が None（該当ステータスにレスポンスボディ定義がない）の場合は検証対象外として空リストを返す。
     """
     schema = validation_schema(schema)
-    if schema is None or schema == {}:
+    if schema is None:
         return []
 
     if not actual_body or not actual_body.strip():
         return ["レスポンスボディが空です（スキーマ定義があるため空は不正）"]
 
     try:
-        parsed: Any = json.loads(actual_body)
-    except json.JSONDecodeError as e:
+        parsed: Any = json.loads(actual_body, parse_constant=_reject_json_constant)
+    except ValueError as e:
         return [f"レスポンスボディがJSONとして解析できません: {e}"]
 
     # レスポンススキーマのルート直下が oneOf/anyOf の場合、parser.py（_reduce_one_of_any_of）は

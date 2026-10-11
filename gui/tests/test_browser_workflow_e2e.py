@@ -1,5 +1,6 @@
 """Opt-in real Chromium test: import, approve, run, download, fail and rerun."""
 import os
+import json
 import shutil
 import sys
 import threading
@@ -85,6 +86,40 @@ def test_browser_workflow(tmp_path, monkeypatch):
                 page.locator("#rerun-failed-button").click()
                 expect(page.locator("#run-status")).to_have_text("OK：全ケース成功", timeout=120000)
                 download_result("recovered", "OK")
+                # Coverage review must expose missing obligations, even when generated
+                # cases can all pass. Do not execute this synthetic authentication API.
+                coverage_spec = tmp_path / "coverage.json"
+                coverage_spec.write_text(json.dumps({
+                    "openapi": "3.1.0", "info": {"title": "Coverage", "version": "1"},
+                    "components": {"securitySchemes": {
+                        "first": {"type": "apiKey", "in": "header", "name": "X-First"},
+                        "second": {"type": "apiKey", "in": "header", "name": "X-Second"},
+                    }},
+                    "paths": {"/coverage": {"post": {"operationId": "coverageAudit",
+                        "security": [{"first": [], "second": []}],
+                        "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                            "type": "integer", "enum": [1, 2, 3], "multipleOf": 1,
+                        }}}},
+                        "responses": {"200": {"description": "ok"}, "401": {"description": "auth"}},
+                    }}},
+                }), encoding="utf-8")
+                page.locator('[data-step="target"]').click()
+                with page.expect_file_chooser() as chooser:
+                    page.locator("#browse-openapi").click()
+                chooser.value.set_files(coverage_spec)
+                expect(page.locator("#operations-list input[data-op-id]")).to_have_count(1)
+                page.locator('#operations-list input[data-op-id="coverageAudit"]').check()
+                page.locator('[data-step="run"]').click()
+                page.locator("#run-button").click()
+                expect(page.locator("#run-status")).to_contain_text("ケース準備完了", timeout=120000)
+                inventory = page.locator(".coverage-review:visible")
+                expect(inventory.locator("tr").filter(has_text="enum / 正常値:3")).to_contain_text("ケース生成済み")
+                expect(inventory.locator("tr").filter(has_text="type / 不正型:fractional")).to_contain_text("ケース生成済み")
+                expect(inventory.locator("tr").filter(has_text="multipleOf / 異常側")).to_contain_text("該当なし")
+                missing = inventory.locator("tr").filter(has_text="単独欠落")
+                expect(missing).to_have_count(2)
+                for row in missing.all():
+                    expect(row).to_contain_text("未生成")
                 assert not errors, errors
             finally:
                 (output / "page.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")

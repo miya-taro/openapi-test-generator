@@ -1,7 +1,7 @@
 """Conservative JSON Schema example synthesis for valid operation-level requests."""
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_CEILING
+from .numeric_samples import numeric_candidates
 from itertools import islice
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -156,37 +156,7 @@ def _string_candidates(schema: dict) -> list[str]:
 
 
 def _number_candidates(schema: dict, type_: str) -> list[int | float]:
-    try:
-        lower = Decimal(str(schema["minimum"])) if "minimum" in schema else None
-        upper = Decimal(str(schema["maximum"])) if "maximum" in schema else None
-        exclusive_lower = schema.get("exclusiveMinimum")
-        exclusive_upper = schema.get("exclusiveMaximum")
-        if isinstance(exclusive_lower, (int, float)) and not isinstance(exclusive_lower, bool):
-            lower = max(lower, Decimal(str(exclusive_lower))) if lower is not None else Decimal(str(exclusive_lower))
-        if isinstance(exclusive_upper, (int, float)) and not isinstance(exclusive_upper, bool):
-            upper = min(upper, Decimal(str(exclusive_upper))) if upper is not None else Decimal(str(exclusive_upper))
-        step = Decimal(str(schema.get("multipleOf", 1 if type_ == "integer" else "0.1")))
-        increment = Decimal(1) if type_ == "integer" else min(step, Decimal("0.1"))
-        base = lower if lower is not None else Decimal(0)
-        if exclusive_lower is not None:
-            base += increment
-        if step > 0:
-            base = (base / step).to_integral_value(rounding=ROUND_CEILING) * step
-            if exclusive_lower is not None and lower is not None and base <= lower:
-                base += step
-        values = [base, base + step, Decimal(0), Decimal(1), Decimal(-1)]
-        if upper is not None:
-            values.extend((upper, upper - increment))
-        candidates: list[int | float] = []
-        for value in values:
-            if type_ == "integer":
-                if value == value.to_integral_value():
-                    candidates.append(int(value))
-            else:
-                candidates.append(float(value))
-        return candidates
-    except (InvalidOperation, ValueError, TypeError):
-        return [0, 1, -1] if type_ == "integer" else [0.0, 1.0, -1.0]
+    return numeric_candidates({**schema, "type": type_})
 
 
 def _array_candidates(schema: dict) -> list[list[object]]:

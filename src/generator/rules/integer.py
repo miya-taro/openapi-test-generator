@@ -1,185 +1,92 @@
-"""integer / number 型のルール。"""
-from __future__ import annotations
+"""Numeric boundaries selected from valid intersections, never independent guesses."""
+
+from decimal import Decimal
+from jsonschema import Draft202012Validator, FormatChecker
+from ...numeric_samples import numeric_candidates
+from ...schema_contract import validation_schema
 
 
 def generate_integer_cases(schema: dict, ctx: dict) -> list[dict]:
-    cases: list[dict] = []
-    opts = ctx["opts"]
-    is_number = "number" in _type_set(schema)
-    step = 0.1 if is_number else 1
+    schema = validation_schema(schema)
+    # Raw OAS 3.0 booleans are normalized by the parser before reaching this rule.
+    schema = {
+        k: v
+        for k, v in schema.items()
+        if not (k in {"exclusiveMinimum", "exclusiveMaximum"} and isinstance(v, bool))
+    }
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    cases = []
+    type_ = schema.get("type")
+    is_number = type_ == "number" or isinstance(type_, list) and "number" in type_
+    step = Decimal("0.1") if is_number else Decimal(1)
 
-    minimum = schema.get("minimum")
-    maximum = schema.get("maximum")
-    # exclusiveMinimum/Maximum は parser.py で OAS バージョンによらず数値形式に正規化済みの前提
-    # （bool は int のサブクラスのため isinstance チェックで明示的に除外する）
-    ex_min_val = _as_number(schema.get("exclusiveMinimum"))
-    ex_max_val = _as_number(schema.get("exclusiveMaximum"))
+    def add(keyword, label, preferred, normal):
+        if not ctx["opts"]["includeNormal" if normal else "includeAbnormal"]:
+            return
+        relaxed = {k: v for k, v in schema.items() if k != keyword}
+        other = Draft202012Validator(relaxed, format_checker=FormatChecker())
+        pool = numeric_candidates(schema if normal else relaxed, preferred)
+        if normal:
+            pool += list(schema.get("enum", []))
+            if "const" in schema:
+                pool.append(schema["const"])
+        pool = [
+            v
+            for v in pool
+            if isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and validator.is_valid(v) == normal
+            and (normal or other.is_valid(v))
+        ]
+        if not pool:
+            return  # Coverage inventory records the ungenerated obligation.
+        value = min(
+            pool, key=lambda v: (abs(Decimal(str(v)) - Decimal(str(preferred[0]))), v)
+        )
+        cases.append(
+            {
+                "summary": f"{ctx['paramName']} {label}（{'正常' if normal else '異常'}）",
+                "keyword": keyword,
+                "perspective": ("正常系_" if normal else "異常系_") + label,
+                "inputValue": _num_str(value),
+                "expectedStatus": ctx.get("successStatus") if normal else "4xx",
+                "expectedResult": "正常に処理されること"
+                if normal
+                else "バリデーションエラーが返ること",
+                "notes": "他の数値制約も満たす値を選択",
+            }
+        )
 
-    # minimum
-    if minimum is not None:
-        if opts["includeNormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} 最小値（正常）",
-                "keyword": "minimum",
-                "perspective": "正常系_最小値",
-                "inputValue": _num_str(minimum),
-                "expectedStatus": ctx.get("successStatus"),
-                "expectedResult": "正常に処理されること",
-                "notes": "",
-            })
-        if opts["includeAbnormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} 最小値未満（異常）",
-                "keyword": "minimum",
-                "perspective": "異常系_最小値未満",
-                "inputValue": _num_str(minimum - step if is_number else minimum - 1),
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "小数点以下を考慮" if is_number else "",
-            })
-
-    # maximum
-    if maximum is not None:
-        if opts["includeNormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} 最大値（正常）",
-                "keyword": "maximum",
-                "perspective": "正常系_最大値",
-                "inputValue": _num_str(maximum),
-                "expectedStatus": ctx.get("successStatus"),
-                "expectedResult": "正常に処理されること",
-                "notes": "",
-            })
-        if opts["includeAbnormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} 最大値超過（異常）",
-                "keyword": "maximum",
-                "perspective": "異常系_最大値超過",
-                "inputValue": _num_str(maximum + step if is_number else maximum + 1),
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "",
-            })
-
-    # 中間値（minimum + maximum の両方がある場合）
-    if minimum is not None and maximum is not None and opts["includeNormal"]:
-        mid = (minimum + maximum) // 2
-        cases.append({
-            "summary": f"{ctx['paramName']} 中間値（正常）",
-            "keyword": "minimum+maximum",
-            "perspective": "正常系_中間値",
-            "inputValue": _num_str(mid),
-            "expectedStatus": ctx.get("successStatus"),
-            "expectedResult": "正常に処理されること",
-            "notes": "",
-        })
-
-    # exclusiveMinimum
-    if ex_min_val is not None:
-        if opts["includeAbnormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} exclusiveMinimum 境界値そのもの（異常）",
-                "keyword": "exclusiveMinimum",
-                "perspective": "異常系_exclusiveMinimum境界値",
-                "inputValue": _num_str(ex_min_val),
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "",
-            })
-        if opts["includeNormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} exclusiveMinimum 境界値+1（正常）",
-                "keyword": "exclusiveMinimum",
-                "perspective": "正常系_exclusiveMinimum超過値",
-                "inputValue": _num_str(ex_min_val + step if is_number else ex_min_val + 1),
-                "expectedStatus": ctx.get("successStatus"),
-                "expectedResult": "正常に処理されること",
-                "notes": "",
-            })
-
-    # exclusiveMaximum
-    if ex_max_val is not None:
-        if opts["includeAbnormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} exclusiveMaximum 境界値そのもの（異常）",
-                "keyword": "exclusiveMaximum",
-                "perspective": "異常系_exclusiveMaximum境界値",
-                "inputValue": _num_str(ex_max_val),
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "",
-            })
-        if opts["includeNormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} exclusiveMaximum 境界値-1（正常）",
-                "keyword": "exclusiveMaximum",
-                "perspective": "正常系_exclusiveMaximum未満値",
-                "inputValue": _num_str(ex_max_val - step if is_number else ex_max_val - 1),
-                "expectedStatus": ctx.get("successStatus"),
-                "expectedResult": "正常に処理されること",
-                "notes": "",
-            })
-
-    # multipleOf
-    multiple_of = schema.get("multipleOf")
-    if multiple_of is not None:
-        if opts["includeNormal"]:
-            cases.append({
-                "summary": f"{ctx['paramName']} multipleOf 倍数値（正常）",
-                "keyword": "multipleOf",
-                "perspective": "正常系_multipleOf倍数",
-                "inputValue": _num_str(multiple_of * 2),
-                "expectedStatus": ctx.get("successStatus"),
-                "expectedResult": "正常に処理されること",
-                "notes": "",
-            })
-        if opts["includeAbnormal"]:
-            # multiple_of が 0.01 のような単位分数の場合、"+1" は正当な倍数になり
-            # うる（例: 0.01 + 1 = 1.01 は 0.01 の倍数）。比率 1.5 倍の値は
-            # multiple_of がどんな値でも整数倍にならないため、確実に非倍数となる。
-            non_multiple = multiple_of * 1.5 if is_number else multiple_of + 1
-            cases.append({
-                "summary": f"{ctx['paramName']} multipleOf 非倍数値（異常）",
-                "keyword": "multipleOf",
-                "perspective": "異常系_multipleOf非倍数",
-                "inputValue": _num_str(non_multiple),
-                "expectedStatus": "4xx",
-                "expectedResult": "バリデーションエラーが返ること",
-                "notes": "",
-            })
-
+    for key, positive, negative, direction in (
+        ("minimum", "最小値", "最小値未満", -1),
+        ("maximum", "最大値", "最大値超過", 1),
+        ("exclusiveMinimum", "exclusiveMinimum超過値", "exclusiveMinimum境界値", -1),
+        ("exclusiveMaximum", "exclusiveMaximum未満値", "exclusiveMaximum境界値", 1),
+    ):
+        if key not in schema:
+            continue
+        bound = Decimal(str(schema[key]))
+        exclusive = key.startswith("exclusive")
+        add(key, positive, [bound - direction * step if exclusive else bound], True)
+        add(key, negative, [bound if exclusive else bound + direction * step], False)
+    if "minimum" in schema and "maximum" in schema:
+        mid = (Decimal(str(schema["minimum"])) + Decimal(str(schema["maximum"]))) / 2
+        add("minimum+maximum", "中間値", [mid], True)
+    if "multipleOf" in schema:
+        multiple = Decimal(str(schema["multipleOf"]))
+        add("multipleOf", "multipleOf倍数", [multiple * 2], True)
+        add(
+            "multipleOf",
+            "multipleOf非倍数",
+            [multiple * Decimal("1.5") if is_number else multiple + 1],
+            False,
+        )
     return cases
 
 
-def _num_str(value: float) -> str:
-    """JS の String(number) 相当（整数値は小数点なしで出力）。
-
-    minimum ± step のような減算・加算の結果は、IEEE754の丸め誤差で
-    "0.19999999999999998" のような値になることがある（例: 0.3 - 0.1）。
-    表示・送信するテストケースの入力値としては不自然かつ誤解を招くため、
-    実用上十分な精度（小数点以下10桁）に丸めてから文字列化する。
-    """
-    if isinstance(value, float):
-        value = round(value, 10)
-        if value.is_integer():
-            return str(int(value))
-    return str(value)
-
-
-def _as_number(value: object) -> float | int | None:
-    """bool を除く int/float のみを数値として受け付ける（bool は int のサブクラスのため）。"""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    return None
-
-
-def _type_set(schema: dict) -> set[str]:
-    """schema["type"] を集合として返す（nullable 正規化後の配列形式にも対応）。"""
-    t = schema.get("type")
-    if isinstance(t, list):
-        return set(t)
-    if isinstance(t, str):
-        return {t}
-    return set()
+def _num_str(value):
+    return (
+        str(int(value))
+        if isinstance(value, float) and value.is_integer()
+        else str(value)
+    )
