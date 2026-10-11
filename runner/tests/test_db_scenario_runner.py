@@ -62,6 +62,17 @@ def _fake_call_api(status: int, response_json: dict):
     return _call_api
 
 
+def test_evidence_redacts_sensitive_fields_and_failure_detail():
+    sanitized = dsr_module._safe_evidence({
+        "request": {"body": {"password": "private", "name": "public"}},
+        "detail": "password: 期待='private' 実測='other'; name: 期待='A' 実測='B'",
+    })
+    assert sanitized["request"]["body"] == {"password": "[REDACTED]", "name": "public"}
+    assert "private" not in sanitized["detail"]
+    assert "other" not in sanitized["detail"]
+    assert "name:" in sanitized["detail"]
+
+
 # ---------- _resolve_operation ----------
 
 

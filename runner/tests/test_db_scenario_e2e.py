@@ -65,7 +65,10 @@ def test_real_api_and_db_comparison(tmp_path):
                 return
             rows = execute(f'SELECT id, name, location_id FROM "{table}" ORDER BY id DESC', fetch=True)
             if not rows:
-                self.respond(400, {"error": "empty"})
+                if self.path == "/empty-ok":
+                    self.respond(200, {"data": []})
+                else:
+                    self.respond(400, {"error": "empty"})
                 return
             data = [dict(zip(("id", "name", "location_id"), row, strict=True)) for row in rows]
             if self.path == "/wrong":
@@ -120,6 +123,7 @@ def test_real_api_and_db_comparison(tmp_path):
         },
         "/noop": {"post": {"operationId": "noopData", "responses": {"201": {"description": "Created"}}}},
         "/wrong": {"get": {"operationId": "wrongData", "responses": {"200": {"description": "OK"}}}},
+        "/empty-ok": {"get": {"operationId": "emptyOkData", "responses": {"200": {"description": "OK"}}}},
     }}
     spec_path = tmp_path / "openapi.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
@@ -171,6 +175,7 @@ def test_real_api_and_db_comparison(tmp_path):
         assert cases[0]["db_response_comparison"]["actual_count"] == 2
         assert cases[1]["db_check"]["matching_rows_before"] == 0
         assert cases[1]["db_check"]["matching_rows_after"] == 1
+        assert "integration-token" not in (tmp_path / "normal.json").read_text(encoding="utf-8")
 
         wrong, cases = run([
             {"name": "wrong GET", "request": {"operationId": "wrongData"},
@@ -192,6 +197,13 @@ def test_real_api_and_db_comparison(tmp_path):
         assert empty.returncode == 0, empty.stdout + empty.stderr
         assert cases[0]["verdict"] == "OK"
         assert cases[0]["db_response_comparison"]["expected_rows"] == []
+
+        empty_ok, cases = run([
+            {"name": "empty GET returns data", "request": {"operationId": "emptyOkData"},
+             "response_check": {"expect": {"status": 200}}, "db_response_check": mapping},
+        ], "empty-ok")
+        assert empty_ok.returncode == 0, empty_ok.stdout + empty_ok.stderr
+        assert cases[0]["db_response_comparison"]["actual_rows"] == []
     finally:
         server.shutdown()
         server.server_close()
