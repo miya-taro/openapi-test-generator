@@ -1,7 +1,7 @@
 """DBシナリオの db_check（engine: postgres）を実行・検証する。"""
 from __future__ import annotations
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -490,3 +490,49 @@ def _compare(rows: list[dict], expect: dict, invariants: list[str] | None = None
     if mismatches:
         return False, "; ".join(mismatches)
     return True, ""
+
+
+def snapshot_rows(db_config: dict, scope) -> list[dict]:
+    """Read an explicit scope; never truncate a comparison or modify the database."""
+    table = _quote_ident(scope.table)
+    columns = ", ".join(_quote_ident(column) for column in scope.columns)
+    if not columns:
+        raise ValueError("比較するDB列が必要です")
+    clauses, params = [], []
+    for column, value in scope.where.items():
+        if value is None:
+            clauses.append(f"{_quote_ident(column)} IS NULL")
+        else:
+            clauses.append(f"{_quote_ident(column)} = %s")
+            params.append(value)
+    query = f"SELECT {columns} FROM {table}"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += f" LIMIT {_MAX_RESPONSE_ROWS + 1}"
+    conn = psycopg2.connect(**db_config)
+    try:
+        conn.set_session(isolation_level=ISOLATION_LEVEL_REPEATABLE_READ, readonly=True)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            rows = [dict(row) for row in cursor.fetchall()]
+        if len(rows) > _MAX_RESPONSE_ROWS:
+            raise DBResponseCheckUnverified(f"DB変更なし確認の対象が{_MAX_RESPONSE_ROWS}件を超えています。whereで範囲を限定してください")
+        return rows
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def unchanged_rows(before: list[dict], after: list[dict]) -> bool:
+    """Compare row multiplicities and typed values, ignoring database row order."""
+    def frozen(value):
+        if isinstance(value, dict):
+            return ("object", tuple(sorted((key, frozen(item)) for key, item in value.items())))
+        if isinstance(value, (list, tuple)):
+            return ("array", tuple(frozen(item) for item in value))
+        if isinstance(value, Decimal) and value.is_nan():
+            return ("Decimal", str(value))
+        if isinstance(value, float) and (value != value):
+            return ("float", "NaN")
+        return (type(value).__name__, value)
+    return Counter(frozen(row) for row in before) == Counter(frozen(row) for row in after)

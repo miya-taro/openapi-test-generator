@@ -32,6 +32,8 @@ def parse_openapi(input_path: str) -> dict:
 
     api, _ = _resolve_refs(raw, raw, (), {})
     _walk_schemas(api, _normalize_schema, set())
+    _walk_schemas(api, _validate_comparison_rules, set())
+    _validate_comparison_locations(api)
 
     log.info({"version": version}, "OpenAPI パース完了")
     return api
@@ -104,6 +106,41 @@ def _normalize_schema(schema: dict) -> None:
     _normalize_exclusive_bound(schema, "minimum", "exclusiveMinimum")
     _normalize_exclusive_bound(schema, "maximum", "exclusiveMaximum")
     _normalize_nullable(schema)
+
+
+def _validate_comparison_rules(schema: dict) -> None:
+    from .comparison_rules import validate_rules
+    try:
+        validate_rules(schema)
+    except ValueError as exc:
+        raise OpenAPIParseError(str(exc)) from exc
+
+
+def _validate_comparison_locations(api: dict) -> None:
+    from .comparison_rules import KEY
+
+    def reject_nested(value, allowed=False):
+        if isinstance(value, dict):
+            if KEY in value and not allowed:
+                raise OpenAPIParseError("項目間の大小条件はapplication/jsonのリクエストbody直下だけに指定できます")
+            for child in value.values():
+                reject_nested(child)
+        elif isinstance(value, list):
+            for child in value:
+                reject_nested(child)
+
+    for path_item in (api.get("paths") or {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        reject_nested(path_item.get("parameters"))
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"} or not isinstance(operation, dict):
+                continue
+            reject_nested(operation.get("parameters"))
+            reject_nested(operation.get("responses"))
+            for media_type, media in ((operation.get("requestBody") or {}).get("content") or {}).items():
+                if isinstance(media, dict):
+                    reject_nested(media.get("schema"), allowed=media_type == "application/json")
 
 
 def _extract_presence_rules(schema: dict) -> None:

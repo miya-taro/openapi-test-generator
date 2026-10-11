@@ -61,7 +61,11 @@ def execute_with_openapi(
     persist_cookies: bool = False,
 ) -> RunResult:
     url = build_url(base_url, case, openapi)
-    prepared_body = build_request_body(case, openapi)
+    try:
+        prepared_body = build_request_body(case, openapi)
+    except ValueError as error:
+        return RunResult(case=case, actual_status=0, actual_body="", actual_headers={}, elapsed_ms=0.0,
+                         exit_code=EXIT_ERROR, error=f"リクエストを生成できません: {error}")
     return _send_request(case, url, prepared_body, session, persist_cookies, openapi)
 
 

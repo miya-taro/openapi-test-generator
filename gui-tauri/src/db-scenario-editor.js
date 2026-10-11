@@ -1,3 +1,4 @@
+import { validateComparisonBody } from "./comparison-rules.js";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const SEEDED_METHODS = new Set(["PUT", "PATCH", "DELETE"]);
 
@@ -705,6 +706,24 @@ export function buildDbScenario(form) {
       query_params: { ...(form.queryParams || {}) },
     },
   };
+  if (form.mode === "unchanged") {
+    const status = Number(form.unchangedStatus);
+    if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("期待するHTTP statusを100〜599の整数で入力してください");
+    const columns = String(form.unchangedColumns || "").split(",").map((name) => name.trim());
+    if (!columns.length || columns.some((name) => !name)) throw new Error("比較するDB列を入力してください");
+    columns.forEach((name) => requireDbIdentifier(name, "比較するDB列"));
+    if (new Set(columns).size !== columns.length) throw new Error("比較するDB列が重複しています");
+    const where = form.unchangedWhere || {};
+    if (typeof where !== "object" || Array.isArray(where)) throw new Error("比較する行の条件をJSONオブジェクトで入力してください");
+    for (const [column, value] of Object.entries(where)) {
+      requireDbIdentifier(column, "比較する行の条件");
+      if (value !== null && !["string", "number", "boolean"].includes(typeof value)) throw new Error("比較する行の条件は単一の値を入力してください");
+    }
+    scenario.request.body = form.requestBody || {};
+    scenario.response_check = { expect: { status } };
+    scenario.db_unchanged = [{ table, columns, where }];
+    return scenario;
+  }
   if (MUTATING_METHODS.has(method)) {
     const writeStatus = Number(form.writeStatus);
     if (!Number.isInteger(writeStatus) || writeStatus < 100 || writeStatus > 599) {
@@ -714,6 +733,7 @@ export function buildDbScenario(form) {
   }
 
   if (method === "GET") {
+    validateComparisonBody(form.requestBody || {}, operation.requestSchema);
     for (const rule of operation.requestSchema?.["x-otg-presence-rules"] || []) {
       const [first, second] = rule.fields || [];
       const firstSent = Object.hasOwn(form.requestBody || {}, first);
@@ -883,7 +903,7 @@ export function buildDbScenario(form) {
 
 export function buildDbScenarios(form) {
   const base = buildDbScenario(form);
-  if (form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
+  if (form.mode === "unchanged" || form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
   const schema = form.operation.requestSchema || {};
   const rules = schema["x-otg-presence-rules"] || [];
   const values = form.requestBody || {};
@@ -1050,6 +1070,14 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     const method = operation?.method || "";
     const operationChanged = operation?.operationId !== renderedOperationId;
     renderedOperationId = operation?.operationId || "";
+    if (operationChanged) {
+      byId("dbscenario-editor-mode").value = "mapping";
+      byId("dbscenario-editor-unchanged-body").value = "{}";
+      byId("dbscenario-editor-unchanged-status").value = "";
+      byId("dbscenario-editor-unchanged-columns").value = "";
+      byId("dbscenario-editor-unchanged-where").value = "{}";
+    }
+    byId("dbscenario-editor-unchanged-panel").hidden = byId("dbscenario-editor-mode").value !== "unchanged";
     const isGet = method === "GET";
     const hasRequestBody = ["POST", "PUT", "PATCH"].includes(method);
     const usesSeed = SEEDED_METHODS.has(method);
@@ -1075,6 +1103,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       DELETE: "DELETE：削除対象のDB行を用意し、API実行後に行が消えるか、削除フラグが変わるか確認します。",
     }[method] || "選択したAPI操作に合わせて、DBに確認用データを設定します。";
     byId("dbscenario-editor-guidance").textContent = guidance;
+    byId("dbscenario-editor-guidance").dataset.mappingGuidance = guidance;
     if (operationChanged) {
       byId("dbscenario-editor-expand-combinations").checked = false;
       byId("dbscenario-editor-name").value = `${operation.operationId} のDB検証`;
@@ -1129,10 +1158,42 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       renderResponseValues(operation);
     }
     syncMappedQueryParams();
+    updateMode();
     if (!byId("dbscenario-editor-status").classList.contains("ok")) setStatus("");
   }
 
+  function updateMode() {
+    const unchanged = byId("dbscenario-editor-mode").value === "unchanged";
+    const method = selectedOperation()?.method;
+    byId("dbscenario-editor-unchanged-panel").hidden = !unchanged;
+    byId("dbscenario-editor-write-panel").hidden = unchanged || !["POST", "PUT", "PATCH"].includes(method);
+    byId("dbscenario-editor-seed-panel").hidden = unchanged || !SEEDED_METHODS.has(method);
+    byId("dbscenario-editor-get-panel").hidden = unchanged || method !== "GET";
+    // Seed references are not available in the no-change mode.
+    for (const checkbox of byId("dbscenario-editor-path-param-rows").querySelectorAll("input[data-auto-path-param]")) {
+      if (unchanged && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
+      checkbox.disabled = unchanged;
+    }
+    if (unchanged) {
+      for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input")) input.disabled = false;
+      byId("dbscenario-editor-guidance").textContent = "実行前後のDBを比較します。送る値と期待statusを仕様に従って入力してください。DB列やエラー条件は推測しません。";
+    } else {
+      byId("dbscenario-editor-guidance").textContent = byId("dbscenario-editor-guidance").dataset.mappingGuidance || "API操作を選択してください";
+      syncMappedQueryParams();
+    }
+  }
+
   function currentForm() {
+    if (byId("dbscenario-editor-mode").value === "unchanged") {
+      return {
+        mode: "unchanged", operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
+        table: byId("dbscenario-editor-table").value, pathParams: collectPathParams(), queryParams: collectQueryParams(),
+        requestBody: parseJson(byId("dbscenario-editor-unchanged-body").value || "{}", "送信するJSON body"),
+        unchangedStatus: byId("dbscenario-editor-unchanged-status").value,
+        unchangedColumns: byId("dbscenario-editor-unchanged-columns").value,
+        unchangedWhere: parseJson(byId("dbscenario-editor-unchanged-where").value || "{}", "比較する行の条件"),
+      };
+    }
     const operation = selectedOperation();
     const method = operation?.method;
     let requestBody = {};
@@ -1233,6 +1294,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   byId("dbscenario-editor-operation").addEventListener("change", renderForOperation);
+  byId("dbscenario-editor-mode").addEventListener("change", updateMode);
   byId("dbscenario-editor-primary-key").addEventListener("change", () => {
     const operation = selectedOperation();
     if (operation) renderPathParams(operation);

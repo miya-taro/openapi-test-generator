@@ -6,6 +6,7 @@ from urllib.parse import quote, urlencode
 from models import RunCase
 from src.schema_example import NoSchemaExample, find_schema_example
 from src.presence import complete_presence
+from src.comparison_rules import comparison_body, complete_comparisons, KEY as COMPARISON_KEY
 
 _PATH_PARAM_PATTERN = re.compile(r"\{([^{}]+)\}")
 
@@ -500,6 +501,13 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
     # ルートbody全体を対象とするケース（空body / additionalProperties / oneOfバリアント）は
     # body 全体を差し替える
     if case.param_name == "requestBody":
+        if case.input_value.startswith("__COMPARISON_RULE__"):
+            match = re.fullmatch(r"__COMPARISON_RULE__(\d+):(less|equal|greater)", case.input_value)
+            if not match or int(match[1]) >= len((schema or {}).get(COMPARISON_KEY, [])):
+                raise ValueError("項目間比較の試験指定が不正です")
+            value = comparison_body(body, schema, int(match[1]), match[2])
+            complete_presence(value, schema, _expand_value)
+            return complete_comparisons(value, schema, ignore_index=int(match[1]))
         if case.input_value.startswith("__PRESENCE_RULE__"):
             return _presence_rule_body(schema or {}, case.input_value)
         if case.input_value == NULL_VALUE_MARKER:
@@ -516,7 +524,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
             if variant_value is not _MISSING:
                 return variant_value
             return baseline
-        return _coerce_value(case.input_value, schema or {})
+        value = _coerce_value(case.input_value, schema or {})
+        return complete_comparisons(value, schema or {}) if isinstance(value, dict) else value
 
     field_path = case.param_name
     if field_path.startswith("requestBody[]"):
@@ -542,6 +551,7 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
                 _set_nested(body, field_path, variant_value, schema)
                 if isinstance(body, dict):
                     complete_presence(body, schema or {}, _expand_value, target=case.param_name)
+                    complete_comparisons(body, schema or {}, target=case.param_name)
                 return body
             # An invalid internal marker is not user input. Leave the valid baseline field intact.
             return body
@@ -549,6 +559,7 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
 
     if isinstance(body, dict):
         complete_presence(body, schema or {}, _expand_value, target=case.param_name)
+        complete_comparisons(body, schema or {}, target=case.param_name)
     return body
 
 
@@ -812,6 +823,7 @@ def _expand_value(schema: dict) -> object:
         value = _fallback_expand_value(schema)
     if isinstance(value, dict):
         complete_presence(value, schema, _expand_value)
+        complete_comparisons(value, schema)
     return value
 
 
@@ -834,7 +846,7 @@ def _presence_rule_body(schema: dict, marker: str) -> dict:
     for name, selected in ((first, variant in {"first", "both"}), (second, variant in {"second", "both"})):
         if selected:
             value[name] = _expand_value(schema["properties"][name])
-    return value
+    return complete_comparisons(value, schema)
 
 
 def _fallback_expand_value(schema: dict) -> object:

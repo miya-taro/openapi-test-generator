@@ -68,6 +68,14 @@ class DBCheck:
 
 
 @dataclass
+class DBUnchangedCheck:
+    """Explicit PostgreSQL scope whose rows and selected values must remain unchanged."""
+    table: str
+    columns: list[str]
+    where: dict = field(default_factory=dict)
+
+
+@dataclass
 class DBResponseFilter:
     """Map an API body/path/query parameter to a database comparison rule."""
     source: str
@@ -123,6 +131,7 @@ class DBScenario:
     case_id_override: str | None = field(default=None, repr=False, compare=False)
     db_response_check: DBResponseCheck | None = None
     cleanup: ScenarioCleanup | None = None
+    db_unchanged: list[DBUnchangedCheck] = field(default_factory=list)
 
     @property
     def case_id(self) -> str:
@@ -187,6 +196,11 @@ class DBScenario:
                 else None
             ),
         }
+        if self.db_unchanged:
+            definition["dbUnchanged"] = [
+                {"table": check.table, "columns": check.columns, "where": check.where}
+                for check in self.db_unchanged
+            ]
         if self.db_response_check:
             definition["dbResponseCheck"] = {
                 "table": self.db_response_check.table,
@@ -302,8 +316,8 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check")):
-        raise ScenarioError("db_check、response_check、db_response_check のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged のいずれかは必須です")
 
     db_check = None
     if "db_check" in raw:
@@ -459,6 +473,25 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError("cleanup.where の値は文字列・数値・boolean・nullで指定してください")
         cleanup = ScenarioCleanup(table=table, primary_key=primary_key, where=where)
 
+    db_unchanged = []
+    if "db_unchanged" in raw:
+        checks = raw["db_unchanged"]
+        if not isinstance(checks, list) or not checks:
+            raise ScenarioError("db_unchanged は比較範囲を1件以上指定してください")
+        for check in checks:
+            if not isinstance(check, dict):
+                raise ScenarioError("db_unchanged の比較範囲はオブジェクトにしてください")
+            table, columns, where = check.get("table"), check.get("columns"), check.get("where", {})
+            def identifier(value):
+                return isinstance(value, str) and _SAFE_DB_IDENTIFIER.fullmatch(value)
+            if not identifier(table) or not isinstance(columns, list) or not columns or not all(identifier(c) for c in columns):
+                raise ScenarioError("db_unchanged には有効なtableと1件以上のcolumnsを指定してください")
+            if len(set(columns)) != len(columns):
+                raise ScenarioError("db_unchanged.columns が重複しています")
+            if not isinstance(where, dict) or not all(identifier(k) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in where.items()):
+                raise ScenarioError("db_unchanged.where は列名と単一値のオブジェクトにしてください")
+            db_unchanged.append(DBUnchangedCheck(table=table, columns=columns, where=where))
+
     given: list[GivenItem] = []
     for i, g in enumerate(raw.get("given") or []):
         if "table" not in g or "as" not in g:
@@ -471,6 +504,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         db_check=db_check,
         response_check=response_check,
         db_response_check=db_response_check,
+        db_unchanged=db_unchanged,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

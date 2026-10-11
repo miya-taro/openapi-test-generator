@@ -416,3 +416,20 @@ def test_openapi_source_change_invalidates_case_approval(tmp_path):
     second = build_case_master("sample", _contract_output(), None, openapi)
 
     assert second["cases"][0]["definitionHash"] != original_hash
+
+
+def test_no_change_scope_is_visible_in_master_and_excel(tmp_path):
+    openapi = tmp_path / "openapi.json"
+    _write_openapi(openapi)
+    scenarios = tmp_path / "unchanged.yaml"
+    scopes = [{"table": "users", "columns": ["id", "name"], "where": {"id": 1}}]
+    scenarios.write_text(json.dumps({"scenarios": [{"name": "readonly", "request": {"operationId": "getUser", "path_params": {"id": 1}},
+                                                    "response_check": {"expect": {"status": 200}}, "db_unchanged": scopes}]}), encoding="utf-8")
+    master = build_case_master("sample", None, scenarios, openapi)
+    assert master["cases"][0]["expected"]["databaseUnchanged"] == scopes
+    assert master["cases"][0]["definition"]["dbUnchanged"] == scopes
+    excel = tmp_path / "case-spec.xlsx"
+    write_case_spec_excel(master, excel)
+    workbook = load_workbook(excel)
+    values = [str(cell.value) for sheet in workbook for row in sheet for cell in row]
+    assert any("databaseUnchanged" in value and "users" in value for value in values)

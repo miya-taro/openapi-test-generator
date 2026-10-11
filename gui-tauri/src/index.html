@@ -66,7 +66,7 @@
                     </div>
                   </div>
                   <p class="field-caption contract-validation-note">
-                    bodyの制約違反ケースは自動生成し、期待statusは400固定ではなく4xxです。エラーボディschemaも検証する場合は、OpenAPIの400/422 responseに定義してください。
+                    bodyの制約違反ケースは自動生成し、OpenAPIに定義した4xxのstatusを照合します。エラーボディも検証する場合は、該当するresponseにschemaを定義してください。
                   </p>
                   <div class="contract-schema-grid">
                     <div class="form-field contract-schema-panel">
@@ -81,6 +81,10 @@
                         <p class="field-caption">同じbody内の2項目を選び、「どちらか必須」または「片方を指定したらもう片方も必須」を設定します。</p>
                         <div id="contract-presence-rules"></div>
                         <button class="secondary" id="contract-add-presence-rule" type="button">＋ 条件を追加</button>
+                        <h4>項目間の大小条件（任意）</h4>
+                        <p class="field-caption">例：start ≦ end。両方指定した場合だけ比較します。小さい試験値・大きい試験値は両項目の制約を満たすJSONで入力（例：1、10、日時は "2026-01-01T00:00:00Z"）。大小・同値の3ケースを作ります。同じ項目は複数の大小条件に使えません。</p>
+                        <div id="contract-comparison-rules"></div>
+                        <button class="secondary" id="contract-add-comparison-rule" type="button">＋ 大小条件を追加</button>
                       </div>
                     </div>
                     <div class="form-field contract-schema-panel">
@@ -287,6 +291,35 @@
                     <div class="form-field">
                       <label for="dbscenario-editor-table">確認するDBテーブル</label>
                       <input id="dbscenario-editor-table" type="text" placeholder="例: users" />
+                    </div>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="dbscenario-editor-mode">確認する内容</label>
+                    <select id="dbscenario-editor-mode">
+                      <option value="mapping">APIとDBの値を照合する</option>
+                      <option value="unchanged">API実行前後でDBに変更がないこと</option>
+                    </select>
+                  </div>
+                  <div id="dbscenario-editor-unchanged-panel" hidden>
+                    <p class="field-caption">正常な参照処理や、エラー時の副作用を確認します。選択した列の値・行数を実行前後で比較します。順序は問いません。比較中に他の処理がDBを更新しない試験環境で実行してください。</p>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-body">送信するJSON body（異常値もそのまま送信）</label>
+                      <textarea id="dbscenario-editor-unchanged-body" rows="5" spellcheck="false">{}</textarea>
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-status">期待するHTTP status（仕様に従って入力）</label>
+                      <input id="dbscenario-editor-unchanged-status" type="number" min="100" max="599" />
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-columns">比較するDB列（カンマ区切り）</label>
+                      <input id="dbscenario-editor-unchanged-columns" type="text" placeholder="id, name, updated_at" />
+                      <p class="field-caption">値の入れ替わりも検出するには主キーを含めてください。指定しない列の値は比較しません。</p>
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-unchanged-where">比較する行の条件（JSON、{}ならテーブル全体）</label>
+                      <textarea id="dbscenario-editor-unchanged-where" rows="3" spellcheck="false">{}</textarea>
+                      <p class="field-caption">例：{"site_id": 1}。各列はANDで一致判定し、nullはIS NULLとして扱います。対象は最大5,000行。超過は合格にせず未確認とします。</p>
                     </div>
                   </div>
 

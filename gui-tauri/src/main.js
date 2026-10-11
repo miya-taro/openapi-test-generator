@@ -1,3 +1,4 @@
+import { applyComparisonRules, comparisonRulesFromSchema, renderComparisonRules } from "./comparison-rules.js";
 import { invoke, listen, open, save, openPath } from "./runtime.js";
 import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
@@ -643,13 +644,20 @@ function contractOption(label, value) {
 let contractRequestSchemaNode = null;
 let contractResponseSchemaNode = null;
 let contractPresenceRules = [];
+let contractComparisonRules = [];
 
 function refreshPresenceRules() {
+  renderComparisonRules($("contract-comparison-rules"), contractComparisonRules, contractRequestSchemaNode);
   renderPresenceRules($("contract-presence-rules"), contractPresenceRules, contractRequestSchemaNode);
 }
 
 $("contract-add-presence-rule").addEventListener("click", () => {
   contractPresenceRules.push({ kind: "atLeastOne", fields: ["", ""] });
+  refreshPresenceRules();
+});
+
+$("contract-add-comparison-rule").addEventListener("click", () => {
+  contractComparisonRules.push({ fields: ["", ""], operator: "<=" });
   refreshPresenceRules();
 });
 
@@ -660,6 +668,7 @@ function setContractSchemaBuilder(kind, schema) {
   else contractResponseSchemaNode = model;
   if (isRequest) {
     contractPresenceRules = presenceRulesFromSchema(schema);
+    contractComparisonRules = comparisonRulesFromSchema(schema);
     refreshPresenceRules();
   }
 
@@ -759,6 +768,7 @@ async function saveOperationBodyContract() {
   try {
     requestSchema = contractRequestSchemaNode ? builderNodeToSchema(contractRequestSchemaNode) : null;
     requestSchema = applyPresenceRules(requestSchema, contractPresenceRules);
+    requestSchema = applyComparisonRules(requestSchema, contractComparisonRules);
     responseSchema = contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
   } catch (error) {
     setContractEditorStatus(error.message, "error");

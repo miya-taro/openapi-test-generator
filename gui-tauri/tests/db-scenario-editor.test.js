@@ -228,3 +228,32 @@ describe("DBシナリオエディター", () => {
     });
   });
 });
+
+test("エラー時の変更なし確認をUIから登録でき、正常系の必須入力を強制しない", async () => {
+  const invoke = vi.fn(async (_command, payload) => payload?.command === "list_db_scenario_operations" ? [createUserOperation] : "db-checks.yaml");
+  const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(), onSaved: vi.fn() });
+  await editor.load("openapi.json");
+  selectOperation("createUser");
+  const set = (id, value) => { document.getElementById(`dbscenario-editor-${id}`).value = value; };
+  set("mode", "unchanged");
+  document.getElementById("dbscenario-editor-mode").dispatchEvent(new window.Event("change"));
+  expect(document.getElementById("dbscenario-editor-write-panel").hidden).toBe(true);
+  expect(document.getElementById("dbscenario-editor-unchanged-panel").hidden).toBe(false);
+  set("table", "users"); set("unchanged-body", '{"email":123}');
+  set("unchanged-status", "422"); set("unchanged-columns", "id, email"); set("unchanged-where", '{"site_id":1}');
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  const preview = document.querySelector("#dbscenario-editor-scenario-list pre");
+  expect(preview).not.toBeNull();
+  const saved = JSON.parse(preview.textContent);
+  expect(saved.request.body).toEqual({ email: 123 });
+  expect(saved.response_check.expect.status).toBe(422);
+  expect(saved.db_unchanged).toEqual([{ table: "users", columns: ["id", "email"], where: { site_id: 1 } }]);
+  expect(saved.given).toBeUndefined(); expect(saved.db_check).toBeUndefined();
+});
+
+test("DB変更なしのstatusと比較する列を人間が指定しなければ登録しない", () => {
+  const form = { operation: createUserOperation, name: "error", table: "users", mode: "unchanged", requestBody: {} };
+  expect(() => buildDbScenario(form)).toThrow("HTTP status");
+  expect(() => buildDbScenario({ ...form, unchangedStatus: 400 })).toThrow("DB列");
+  expect(() => buildDbScenario({ ...form, unchangedStatus: 400, unchangedColumns: "id", unchangedWhere: { id: [] } })).toThrow("単一");
+});

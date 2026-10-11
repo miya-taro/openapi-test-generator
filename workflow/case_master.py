@@ -192,6 +192,7 @@ def _scenario_case(
             ),
             "database": definition["dbCheck"],
             "databaseResponse": definition.get("dbResponseCheck"),
+            **({"databaseUnchanged": definition["dbUnchanged"]} if definition.get("dbUnchanged") else {}),
         },
         "reviewStatus": "draft",
     }

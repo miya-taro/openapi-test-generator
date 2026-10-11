@@ -518,6 +518,23 @@ def _run_scenario(
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
 
+        snapshots = []
+        if scenario.db_unchanged:
+            try:
+                pg_config = get_postgres_config(db_config)
+                for scope in scenario.db_unchanged:
+                    resolved_scope = replace(scope, where=resolve_placeholders(scope.where, previous_response, given_data))
+                    before = postgres_backend.snapshot_rows(pg_config, resolved_scope)
+                    record = {"table": scope.table, "columns": scope.columns, "where": resolved_scope.where,
+                              "before_rows": before, "before_count": len(before), "verdict": "未確認"}
+                    snapshots.append((resolved_scope, before, record))
+                if evidence is not None:
+                    evidence["db_unchanged"] = [record for _, _, record in snapshots]
+            except postgres_backend.DBResponseCheckUnverified as e:
+                return False, f"[UNVERIFIED] {e}", "未実行", previous_response
+            except Exception as e:
+                return False, f"DB変更なし確認の準備に失敗しました: {e}", "ERR", previous_response
+
         call_args = (base_url, path, method, resolved_path_params, resolved_body, session, persist_cookies)
         call_kwargs = {"auth_header": auth_header} if auth_header is not None else {}
         if resolved_query_params:
@@ -533,6 +550,20 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        unchanged_unverified = []
+        for scope, before, record in snapshots:
+            try:
+                after = postgres_backend.snapshot_rows(pg_config, scope)
+                unchanged = postgres_backend.unchanged_rows(before, after)
+                record.update(after_rows=after, after_count=len(after), verdict="OK" if unchanged else "NG")
+                if not unchanged:
+                    failures.append(f"DB変更なし確認: {scope.table} の対象行または列の値が変化しました")
+            except postgres_backend.DBResponseCheckUnverified as e:
+                record.update(verdict="未確認", detail=str(e))
+                unchanged_unverified.append(str(e))
+            except Exception as e:
+                record.update(verdict="未確認", detail=str(e))
+                failures.append(f"DB変更なし確認を完了できません: {e}")
 
         contract_verdict, contract_detail, report_body = _verify_response_contract(scenario, openapi, path, method, api_response)
         if evidence is not None:
@@ -634,7 +665,9 @@ def _run_scenario(
             if not ok:
                 failures.append(detail)
 
-        return not failures, "; ".join(failures), str(status), response_json
+        if unchanged_unverified and not failures:
+            return False, "[UNVERIFIED] " + "; ".join(unchanged_unverified), str(status), response_json
+        return not failures, "; ".join(failures + unchanged_unverified), str(status), response_json
 
     try:
         result = _execute()
