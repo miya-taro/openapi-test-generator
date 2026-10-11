@@ -513,6 +513,26 @@ label.checkbox input[type="checkbox"] {
   padding: 6px 7px;
 }
 
+.db-lookup-fields:not([hidden]) {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+  max-width: 340px;
+  margin-top: 10px;
+}
+
+.db-lookup-fields > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 9pt;
+}
+
+.db-scenario-map-row:has(.db-lookup-fields:not([hidden])) > td {
+  vertical-align: top;
+}
+
 .db-scenario-request-value-cell {
   min-width: 180px;
 }

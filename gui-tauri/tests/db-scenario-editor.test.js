@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { initDbScenarioEditor, buildDbScenario } from "../src/db-scenario-editor.js";
+import { initDbScenarioEditor, buildDbScenario, buildDbScenarios } from "../src/db-scenario-editor.js";
 
 const initialBody = document.body.innerHTML;
 beforeEach(() => { document.body.innerHTML = initialBody; });
@@ -334,4 +334,78 @@ test("InfluxDBのPOSTではAPI項目から保存期待値を生成し、SQLと�
   expect(saved.influx_mutation).toMatchObject({ action: "insert", measurement: "measure", fields: { email: "test@example.com" }, tags: { item: "a" } });
   expect(saved).not.toHaveProperty("given");
   expect(saved).not.toHaveProperty("db_check");
+});
+
+const lookupOperation = {
+  operationId: "measureLookup", method: "GET", path: "/measure", parameters: [],
+  requestSchema: { type: "object", required: ["location_id"], properties: { location_id: { type: "string" } } },
+  responseSchema: { type: "object", properties: { result: { type: "array", items: {
+    type: "object", properties: { value: { type: "number" } },
+  } } } },
+};
+const lookupRule = { engine: "postgres", table: "t_site", match_column: "location_id", value_column: "site_id",
+  cardinality: "many", value_type: "string", on_empty: "unverified" };
+const lookupForm = { operation: lookupOperation, engine: "influxdb", name: "locationから計測値", table: "measure",
+  requestBody: { location_id: "A" }, responseStatus: "200", responseShape: "array", responseArrayPath: "result",
+  readMappings: [{ source: "value", target: "value" }],
+  readFilters: [{ source: "body", parameter: "location_id", column: "site_id", operator: "in", lookup: lookupRule }],
+};
+
+test("別DBの取得値を照合条件に使い、APIへは元のlocation_idを送る定義を保存する", () => {
+  const scenario = buildDbScenario(lookupForm);
+  expect(scenario.request.body).toEqual({ location_id: "A" });
+  expect(scenario.db_response_check.filters[0]).toMatchObject({ operator: "in", auto: false, lookup: lookupRule });
+  expect(scenario.db_response_check.engine).toBe("influxdb");
+});
+
+test("別DB参照の0件動作と比較方法は明示した設定のみ許可する", () => {
+  const build = (lookup, operator = "in") => buildDbScenario({ ...lookupForm,
+    readFilters: [{ ...lookupForm.readFilters[0], operator, lookup }] });
+  expect(() => build({ ...lookupRule, on_empty: "status", empty_status: "" })).toThrow("400〜499");
+  expect(build({ ...lookupRule, on_empty: "status", empty_status: "404" }).db_response_check.filters[0].lookup.empty_status).toBe(404);
+  expect(() => build(lookupRule, "=")).toThrow("全件ならIN");
+  expect(() => build({ ...lookupRule, table: "t_site;DROP TABLE t" })).toThrow();
+});
+
+test("UIの固定項目行から参照元DBと取得列を入力できる", async () => {
+  const invoke = vi.fn(async (_command, payload) => payload?.command === "list_db_scenario_operations" ? [lookupOperation] : "checks.yaml");
+  const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(), onSaved: vi.fn() });
+  await editor.load("openapi.json"); selectOperation("measureLookup");
+  document.getElementById("dbscenario-editor-table").value = "measure";
+  document.getElementById("dbscenario-editor-response-shape").value = "array";
+  document.getElementById("dbscenario-editor-response-array-path").value = "result";
+  document.getElementById("dbscenario-editor-response-array-path").dispatchEvent(new window.Event("input"));
+  const row = document.querySelector('#dbscenario-editor-read-filters tr[data-parameter-name="location_id"]');
+  row.querySelector("[data-request-value]").value = '"A"';
+  row.querySelector("[data-db-column]").value = "site_id";
+  row.querySelector("[data-lookup-enabled]").click();
+  expect(row.querySelector(".db-lookup-fields").hidden).toBe(false);
+  for (const [name, value] of Object.entries(lookupRule)) {
+    const input = row.querySelector(`[data-lookup-field="${name}"]`);
+    input.value = value; input.dispatchEvent(new window.Event("change"));
+  }
+  expect(row.querySelector('select[aria-label="DBとの比較条件"]').value).toBe("in");
+  expect(row.querySelector('select[aria-label="DBとの比較条件"]').disabled).toBe(true);
+  const mapping = document.querySelector('#dbscenario-editor-read-mappings input[data-db-column]');
+  mapping.value = "value";
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  const saved = document.querySelector("#dbscenario-editor-scenario-list pre");
+  expect(saved, document.getElementById("dbscenario-editor-status").textContent).not.toBeNull();
+  expect(JSON.parse(saved.textContent).db_response_check.filters[0].lookup).toEqual(lookupRule);
+});
+
+
+test("参照結果のIN比較を、送信文字列の配列展開と混同しない", () => {
+  const scenarios = buildDbScenarios({ ...lookupForm, expandCombinations: true });
+  expect(scenarios).toHaveLength(1);
+  expect(scenarios[0].request.body.location_id).toBe("A");
+});
+
+test("Queryの別DB参照でも送信値を保持し、自動生成値で置換しない", () => {
+  const form = { ...lookupForm, requestBody: {}, queryParams: { location_id: "A" },
+    operation: { ...lookupOperation, requestSchema: {}, parameters: [{ in: "query", name: "location_id", required: true, schema: { type: "string" } }] },
+    readFilters: [{ ...lookupForm.readFilters[0], source: "query" }],
+  };
+  expect(buildDbScenario(form).request.query_params).toEqual({ location_id: "A" });
+  expect(() => buildDbScenario({ ...form, queryParams: {} })).toThrow("送信値");
 });

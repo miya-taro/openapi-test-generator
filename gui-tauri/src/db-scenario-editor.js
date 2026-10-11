@@ -367,6 +367,44 @@ function addReadFilterRow(container, parameter) {
   groupCell.append(group);
   row.append(groupCell);
 
+  const lookupCell = make("td");
+  const label = make("label", "checkbox-label");
+  const toggle = make("input"); toggle.type = "checkbox"; toggle.dataset.lookupEnabled = "true";
+  toggle.setAttribute("aria-label", `${parameter.name}を別DBで参照`);
+  label.append(toggle, document.createTextNode("別DBを参照して比較"));
+  const fields = make("div", "db-lookup-fields"); fields.hidden = true;
+  const controls = {};
+  const add = (key, title, options) => {
+    const holder = make("label", "form-field", title);
+    const input = make(options ? "select" : "input");
+    if (!options) input.type = "text";
+    input.dataset.lookupField = key;
+    input.setAttribute("aria-label", `${parameter.name}の${title}`);
+    if (options) for (const [value, text] of options) {
+      const option = make("option", "", text); option.value = value; input.append(option);
+    }
+    holder.append(input); fields.append(holder); controls[key] = input; return input;
+  };
+  add("engine", "参照元DB", [["postgres", "PostgreSQL"], ["influxdb", "InfluxDB 1.x"]]);
+  add("database", "参照DB名（空欄なら接続設定と同じ）");
+  add("table", "参照テーブル・measurement").placeholder = "t_site";
+  add("match_column", "送信値と比較する列").placeholder = "location_id";
+  add("value_column", "取得する列").placeholder = "site_id";
+  add("cardinality", "参照結果の件数", [["one", "1件を要求（複数は未確認）"], ["many", "取得した全件を使う"]]);
+  add("value_type", "取得値の型", [["as_is", "そのまま"], ["string", "文字列"], ["integer", "整数"], ["number", "数値"], ["boolean", "boolean"]]);
+  add("on_empty", "参照結果が0件のとき", [["unverified", "未確認として停止"], ["empty", "空配列の応答を期待"], ["status", "指定エラーを期待"]]);
+  const status = add("empty_status", "0件時の期待エラーステータス");
+  status.type = "number"; status.min = "400"; status.max = "499"; status.closest("label").hidden = true;
+  controls.on_empty.addEventListener("change", () => { status.closest("label").hidden = controls.on_empty.value !== "status"; });
+  const sync = () => {
+    fields.hidden = !toggle.checked; operator.disabled = toggle.checked;
+    if (toggle.checked) operator.value = controls.cardinality.value === "one" ? "=" : "in";
+    if (parameter.source !== "body") valueCell.textContent = toggle.checked ? "上のQuery/Path欄に送信値を入力" : "DBから選択";
+    syncMappedQueryParams();
+  };
+  toggle.addEventListener("change", sync); controls.cardinality.addEventListener("change", sync);
+  fields.append(make("p", "field-caption", "取得値をこの行のDB列に使います。APIへの送信値は変更しません。接続先・認証は詳細設定の同じDB種類の設定を使います。"));
+  lookupCell.append(label, fields); row.append(lookupCell);
   container.append(row);
 }
 
@@ -563,7 +601,7 @@ function renderReadFilters(operation) {
   if (!seen.size) {
     const row = make("tr", "db-scenario-map-empty");
     const cell = make("td", "field-caption", "OpenAPIに検索用のBody/Path/Queryパラメータがありません。");
-    cell.colSpan = 5;
+    cell.colSpan = 6;
     row.append(cell);
     holder.append(row);
   }
@@ -572,7 +610,7 @@ function renderReadFilters(operation) {
 function syncMappedQueryParams() {
   const mapped = new Set(
     [...byId("dbscenario-editor-read-filters").querySelectorAll('tr[data-parameter-source="query"]')]
-      .filter((row) => row.querySelector("input[data-db-column]")?.value.trim())
+      .filter((row) => row.querySelector("input[data-db-column]")?.value.trim() && !row.querySelector("[data-lookup-enabled]")?.checked)
       .map((row) => row.dataset.parameterName),
   );
   for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input[data-query-param-name]")) {
@@ -805,10 +843,14 @@ export function buildDbScenario(form) {
       if (!["query", "path", "body"].includes(source) || !parameter || !column) return null;
       requireDbIdentifier(column, "検索に使うDBカラム");
       if (!["=", ">", ">=", "<", "<=", "in"].includes(operator)) throw new Error("比較条件を選択してください");
-      if (operator === "in" && source !== "body") throw new Error("IN条件はBodyの配列項目で指定してください");
+      if (operator === "in" && source !== "body" && !item.lookup) throw new Error("IN条件はBodyの配列項目で指定してください");
       if (item.group && source !== "body") throw new Error("ORグループはBody項目で指定してください");
-      return { source, parameter, column, operator, auto: source !== "body", format: item.format || null,
-        ...(item.group ? { group: item.group } : {}) };
+      const lookup = item.lookup ? buildLookup(item.lookup, operator) : null;
+      if (lookup && source !== "body" && !Object.hasOwn(source === "query" ? scenario.request.query_params : scenario.request.path_params, parameter)) {
+        throw new Error(`別DB参照に使う${source}「${parameter}」の送信値を入力してください`);
+      }
+      return { source, parameter, column, operator, auto: source !== "body" && !lookup, format: item.format || null,
+        ...(item.group ? { group: item.group } : {}), ...(lookup ? { lookup } : {}) };
     }).filter(Boolean);
     const seenFilters = new Set();
     for (const filter of filters) {
@@ -838,8 +880,8 @@ export function buildDbScenario(form) {
       if (!mappedBodyParams.has(name)) throw new Error(`Body「${name}」の値をDB検索条件に対応付けてください`);
     }
     for (const filter of filters) {
-      if (filter.source === "query") delete scenario.request.query_params[filter.parameter];
-      else if (filter.source === "path") delete scenario.request.path_params[filter.parameter];
+      if (!filter.lookup && filter.source === "query") delete scenario.request.query_params[filter.parameter];
+      else if (!filter.lookup && filter.source === "path") delete scenario.request.path_params[filter.parameter];
     }
     const status = Number(form.responseStatus);
     if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("期待statusは100〜599の整数で指定してください");
@@ -943,6 +985,25 @@ export function buildDbScenario(form) {
   return scenario;
 }
 
+function buildLookup(raw, operator) {
+  for (const key of ["table", "match_column", "value_column"]) requireDbIdentifier(raw[key], `別DB参照の${key}`);
+  if (!["postgres", "influxdb"].includes(raw.engine)) throw new Error("参照元DBを選択してください");
+  if (!["one", "many"].includes(raw.cardinality) || operator !== (raw.cardinality === "one" ? "=" : "in")) {
+    throw new Error("別DB参照は1件なら=、全件ならINで比較してください");
+  }
+  if (!["as_is", "string", "integer", "number", "boolean"].includes(raw.value_type || "as_is")) throw new Error("取得値の型を選択してください");
+  if (!["unverified", "empty", "status"].includes(raw.on_empty)) throw new Error("参照結果が0件の場合の扱いを選択してください");
+  const lookup = { engine: raw.engine, table: raw.table, match_column: raw.match_column, value_column: raw.value_column,
+    cardinality: raw.cardinality, value_type: raw.value_type || "as_is", on_empty: raw.on_empty,
+    ...(raw.database?.trim() ? { database: raw.database.trim() } : {}) };
+  if (raw.on_empty === "status") {
+    const status = Number(raw.empty_status);
+    if (!Number.isInteger(status) || status < 400 || status > 499) throw new Error("参照結果0件の期待statusを400〜499で入力してください");
+    lookup.empty_status = status;
+  }
+  return lookup;
+}
+
 export function buildDbScenarios(form) {
   const base = buildDbScenario(form);
   if (form.mode === "unchanged" || form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
@@ -971,7 +1032,7 @@ export function buildDbScenarios(form) {
     }));
   }
   for (const filter of base.db_response_check.filters) {
-    if (filter.source !== "body" || filter.operator !== "in") continue;
+    if (filter.lookup || filter.source !== "body" || filter.operator !== "in") continue;
     const name = filter.parameter;
     const array = values[name];
     if (!Array.isArray(array)) throw new Error(`IN条件の「${name}」には配列値を入力してください`);
@@ -1342,6 +1403,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         operator: operatorSelect?.value || "",
         format: row.dataset.parameterFormat || null,
         group: row.querySelector('select[data-or-group]')?.value || null,
+        ...(row.querySelector("[data-lookup-enabled]")?.checked ? {
+          lookup: Object.fromEntries([...row.querySelectorAll("[data-lookup-field]")].map((input) => [input.dataset.lookupField, input.value.trim()])),
+        } : {}),
       };
     }).filter((item) => item.parameter && item.column.trim());
     return {

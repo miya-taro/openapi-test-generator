@@ -88,6 +88,7 @@ class DBResponseFilter:
     auto: bool = True
     parameter_format: str | None = None
     group: str | None = None
+    lookup: dict | None = None
 
 
 @dataclass
@@ -224,6 +225,7 @@ class DBScenario:
                         "auto": item.auto,
                         "format": item.parameter_format,
                         **({"group": item.group} if item.group else {}),
+                        **({"lookup": item.lookup} if item.lookup else {}),
                     }
                     for item in self.db_response_check.filters
                 ],
@@ -461,7 +463,14 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             if param_key in seen_params:
                 raise ScenarioError(f"db_response_check.filters[{i}] のAPIパラメータが重複しています: {source}.{parameter}")
             seen_params.add(param_key)
-            filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format, group))
+            lookup = filter_raw.get("lookup")
+            if "lookup" in filter_raw:
+                from src.db_lookup import validate_lookup
+                try:
+                    lookup = validate_lookup(lookup, operator, auto)
+                except ValueError as exc:
+                    raise ScenarioError(f"db_response_check.filters[{i}]: {exc}") from exc
+            filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format, group, lookup))
         engine = check_raw.get("engine", "postgres")
         if not isinstance(engine, str) or engine not in SUPPORTED_ENGINES:
             raise ScenarioError("db_response_check.engine はpostgresまたはinfluxdbです")
