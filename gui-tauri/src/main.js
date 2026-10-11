@@ -3,11 +3,16 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { buildProjectData } from "./project-config.js";
 import { COPILOT_OPENAPI_PROMPT } from "./copilot-openapi-prompt.js";
-import { buildCopilotScenarioPrompt } from "./copilot-scenario-prompt.js";
 import { createWorkflowClient } from "./workflow-client.js";
 import { builderNodeToSchema, renderSchemaBuilder, schemaToBuilderNode } from "./schema-builder.js";
+import { initDbScenarioEditor } from "./db-scenario-editor.js";
 
 const workflowClient = createWorkflowClient({ invoke, listen });
+const dbScenarioEditor = initDbScenarioEditor({
+  invoke,
+  saveDialog: save,
+  onSaved: async () => persistSettings(),
+});
 
 function $(id) {
   return document.getElementById(id);
@@ -85,10 +90,6 @@ async function loadSettingsIntoForm() {
 
   $("dbprep-sql-tables").value = settings.dbprep_sql_tables || "";
   $("dbprep-sql-output-dir").value = settings.dbprep_sql_output_dir || "";
-  $("dbprep-mapping-output").value = settings.dbprep_mapping_output || "";
-  $("dbprep-php-db-evidence-path").value = settings.dbprep_php_db_evidence_path || "";
-  $("dbprep-scenario-mapping-path").value = settings.dbprep_scenario_mapping_path || "";
-  $("dbprep-scenario-output").value = settings.dbprep_scenario_output || "";
   $("dbscenario-path").value = settings.dbscenario_path || "";
   $("dbscenario-dry-run").checked = !!settings.dbscenario_dry_run;
   $("dbscenario-cookie-jar").checked = !!settings.dbscenario_cookie_jar;
@@ -145,10 +146,6 @@ async function persistSettings() {
 
   settings.dbprep_sql_tables = $("dbprep-sql-tables").value.trim();
   settings.dbprep_sql_output_dir = $("dbprep-sql-output-dir").value.trim();
-  settings.dbprep_mapping_output = $("dbprep-mapping-output").value.trim();
-  settings.dbprep_php_db_evidence_path = $("dbprep-php-db-evidence-path").value.trim();
-  settings.dbprep_scenario_mapping_path = $("dbprep-scenario-mapping-path").value.trim();
-  settings.dbprep_scenario_output = $("dbprep-scenario-output").value.trim();
   settings.dbscenario_path = $("dbscenario-path").value.trim();
   settings.dbscenario_dry_run = $("dbscenario-dry-run").checked;
   settings.dbscenario_cookie_jar = $("dbscenario-cookie-jar").checked;
@@ -168,11 +165,6 @@ async function browseFile(inputId, filters, onPicked) {
 
 async function browseDir(inputId) {
   const picked = await open({ directory: true });
-  if (picked) $(inputId).value = picked;
-}
-
-async function browseSaveFile(inputId, filters, defaultPath) {
-  const picked = await save({ filters, defaultPath });
   if (picked) $(inputId).value = picked;
 }
 
@@ -803,6 +795,7 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
   if (!path) {
     container.innerHTML = '<div class="op-empty">「設定」画面でopenapi.jsonを選択すると一覧が表示されます</div>';
     lastOperations = [];
+    await dbScenarioEditor.load("");
     populateAuthLoginOpSelect();
     resetContractEditor();
     return;
@@ -817,12 +810,14 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
     message.textContent = `読み込みに失敗しました: ${e}`;
     container.replaceChildren(message);
     lastOperations = [];
+    await dbScenarioEditor.load("");
     populateAuthLoginOpSelect();
     resetContractEditor();
     return;
   }
 
   lastOperations = ops || [];
+  await dbScenarioEditor.load(path);
   populateAuthLoginOpSelect();
   const selectedContractOperation = populateContractOperationSelect();
   if (lastOperations.length === 0) {
@@ -967,9 +962,9 @@ export function dirName(path) {
   return idx >= 0 ? path.slice(0, idx) : "";
 }
 
-// ---------- 汎用: 1本のスクリプトを実行してログ欄に流し込む（DB準備の生成系スクリプト用） ----------
+// ---------- 1本のスクリプトを実行してログ欄に流し込む（DB準備用） ----------
 // テスト生成・実行/DBシナリオの「2段階・キャンセル可能」な実行とは別に、単発で終わる
-// 生成スクリプト（generate_mapping.py等）を使い回すための軽量な仕組み。同じ
+// SQL生成スクリプトを実行する軽量な仕組み。同じ
 // run_script/proc-line/proc-doneイベントを共有するため、下のリスナーでrunIdを見て振り分ける。
 
 const simpleRuns = new Map();
@@ -998,7 +993,7 @@ export function runSimpleScript(script, args, { logEl, statusEl, doneMessage } =
   });
 }
 
-// ---------- DB準備（setup.sql/teardown.sql・mapping.yaml・シナリオYAMLの生成） ----------
+// ---------- DB準備（setup.sql/teardown.sqlの生成） ----------
 
 function showDbPrepError(message) {
   const el = $("dbprep-error");
@@ -1011,49 +1006,9 @@ function hideDbPrepError() {
   $("dbprep-error").hidden = true;
 }
 
-async function ensureDirForOutput(outputPath, openapiPath) {
-  const dir = dirName(outputPath) || dirName(openapiPath);
-  if (!dir) return;
-  await invoke("ensure_output_dir", { path: dir });
-}
-
 $("dbprep-goto-settings").addEventListener("click", () => showPage("settings"));
+$("dbprep-goto-dbscenario").addEventListener("click", () => showPage("db-scenario"));
 $("dbprep-browse-sql-output-dir").addEventListener("click", () => browseDir("dbprep-sql-output-dir"));
-$("dbprep-browse-mapping-output").addEventListener("click", () =>
-  browseSaveFile("dbprep-mapping-output", [{ name: "YAML", extensions: ["yaml", "yml"] }], "mapping.yaml"),
-);
-$("dbprep-browse-scenario-mapping").addEventListener("click", () =>
-  browseFile("dbprep-scenario-mapping-path", [{ name: "YAML", extensions: ["yaml", "yml"] }]),
-);
-$("dbprep-browse-php-db-evidence").addEventListener("click", () =>
-  browseFile("dbprep-php-db-evidence-path", [{ name: "JSON", extensions: ["json"] }]),
-);
-$("dbprep-browse-scenario-output").addEventListener("click", () =>
-  browseSaveFile("dbprep-scenario-output", [{ name: "YAML", extensions: ["yaml", "yml"] }], "scenarios.yaml"),
-);
-
-$("dbprep-copilot-scenario-prompt-copy").addEventListener("click", async () => {
-  const status = $("dbprep-copilot-scenario-status");
-  try {
-    const openapiPath = $("openapi-path").value.trim();
-    const plannedScenarioPath = $("dbprep-scenario-output").value.trim()
-      || (openapiPath ? joinPath(dirName(openapiPath), "scenarios.yaml") : $("dbscenario-path").value);
-    const prompt = buildCopilotScenarioPrompt({
-      openapiPath,
-      mappingPath: $("dbprep-scenario-mapping-path").value || $("dbprep-mapping-output").value,
-      scenarioPath: plannedScenarioPath,
-      phpEvidencePath: $("dbprep-php-db-evidence-path").value,
-    });
-    await window.navigator.clipboard.writeText(prompt);
-    status.textContent = "依頼文をコピーしました。Copilot Chatへ貼り付け、選択ファイルを添付または #file で参照してください。";
-    status.classList.remove("error");
-    status.classList.add("ok");
-  } catch {
-    status.textContent = "コピーできませんでした。クリップボードの利用権限を確認してください。";
-    status.classList.remove("ok");
-    status.classList.add("error");
-  }
-});
 
 $("dbprep-gen-sql-button").addEventListener("click", async () => {
   hideDbPrepError();
@@ -1108,98 +1063,6 @@ $("dbprep-gen-sql-button").addEventListener("click", async () => {
     // 生成したファイルを「テスト生成・実行」の試験前SQL/試験後SQLへそのまま連携する。
     $("setup-sql-path").value = setupOutput;
     $("teardown-sql-path").value = teardownOutput;
-  }
-});
-
-$("dbprep-gen-mapping-button").addEventListener("click", async () => {
-  hideDbPrepError();
-  const openapiPath = $("openapi-path").value.trim();
-  if (!openapiPath) {
-    showDbPrepError("openapi.json を選択してください（「設定」画面）");
-    return;
-  }
-  if (!$("pg-enabled").checked) {
-    showDbPrepError("PostgreSQLのDB接続設定が必要です（「設定」画面。mapping.yamlの生成はPostgreSQLのみ対応）");
-    return;
-  }
-  let dbConfigData;
-  try {
-    dbConfigData = collectDbConfig();
-  } catch (e) {
-    showDbPrepError(e.message);
-    return;
-  }
-
-  const outputPath = $("dbprep-mapping-output").value.trim() || joinPath(dirName(openapiPath), "mapping.yaml");
-  try {
-    await ensureDirForOutput(outputPath, openapiPath);
-  } catch (e) {
-    showDbPrepError(String(e));
-    return;
-  }
-
-  let configPath;
-  try {
-    configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
-  } catch (e) {
-    showDbPrepError(`DB接続設定の準備に失敗しました: ${e}`);
-    return;
-  }
-
-  await persistSettings();
-
-  const schema = $("pg-schema").value.trim();
-  const phpEvidencePath = $("dbprep-php-db-evidence-path").value.trim();
-  const args = buildMappingArgs(openapiPath, configPath, outputPath, schema, phpEvidencePath);
-
-  $("dbprep-gen-mapping-button").disabled = true;
-  const code = await runSimpleScript("runner/generate_mapping.py", args, {
-    logEl: $("dbprep-mapping-log"),
-    statusEl: $("dbprep-mapping-status"),
-    doneMessage: `生成しました: ${outputPath}（確信度の低い項目は必ず確認してください）`,
-  });
-  $("dbprep-gen-mapping-button").disabled = false;
-  invoke("delete_file", { path: configPath }).catch(() => {});
-  if (code === 0) {
-    // 次のステップ（シナリオYAML生成）へそのまま連携する。
-    $("dbprep-scenario-mapping-path").value = outputPath;
-  }
-});
-
-$("dbprep-gen-scenario-button").addEventListener("click", async () => {
-  hideDbPrepError();
-  const openapiPath = $("openapi-path").value.trim();
-  if (!openapiPath) {
-    showDbPrepError("openapi.json を選択してください（「設定」画面）");
-    return;
-  }
-  const mappingPath = $("dbprep-scenario-mapping-path").value.trim();
-  if (!mappingPath) {
-    showDbPrepError("APIとDBテーブルの対応表（mapping.yaml）を指定してください（上の手順2で生成するか、既存のファイルを選んでください）");
-    return;
-  }
-
-  const outputPath = $("dbprep-scenario-output").value.trim() || joinPath(dirName(openapiPath), "scenarios.yaml");
-  try {
-    await ensureDirForOutput(outputPath, openapiPath);
-  } catch (e) {
-    showDbPrepError(String(e));
-    return;
-  }
-
-  await persistSettings();
-
-  const args = [openapiPath, mappingPath, "-o", outputPath];
-  $("dbprep-gen-scenario-button").disabled = true;
-  const code = await runSimpleScript("runner/generate_db_scenarios.py", args, {
-    logEl: $("dbprep-scenario-log"),
-    statusEl: $("dbprep-scenario-status"),
-    doneMessage: `生成しました: ${outputPath}（where/columns等は必ず確認・修正してください）`,
-  });
-  $("dbprep-gen-scenario-button").disabled = false;
-  if (code === 0) {
-    // 「DBシナリオ」タブへそのまま連携する。
-    $("dbscenario-path").value = outputPath;
   }
 });
 
@@ -1425,7 +1288,7 @@ function handleDbScenarioWorkflowEvent(event) {
 }
 
 function finishDbScenarioRunUi(code) {
-  const meaning = { 0: "OK：全シナリオ成功", 1: "NG：1件以上失敗", 2: "WARNING：1件以上警告", 3: "ERROR：実行エラー", 130: "キャンセルしました" }[code] || `終了コード ${code}`;
+  const meaning = { 0: "OK：すべてのDB確認に成功", 1: "NG：失敗したDB確認があります", 2: "WARNING：警告があります", 3: "ERROR：実行エラー", 130: "キャンセルしました" }[code] || `終了コード ${code}`;
   const state = { 0: "ok", 1: "ng", 2: "warn", 130: "warn" }[code] || "ng";
   setDbScenarioStatus(meaning, state);
   $("dbscenario-run-button").disabled = false;
@@ -1438,7 +1301,7 @@ function finishDbScenarioRunUi(code) {
 
 function finishDbScenarioPrepareUi(code) {
   const meaning = code === 0
-    ? { text: "DBシナリオ準備完了：内容を確認し、承認または予備実行を選んでください", state: "ok" }
+    ? { text: "実行前の確認を準備しました。内容を確認して実行してください", state: "ok" }
     : { text: `ケース準備に失敗しました（終了コード ${code}）`, state: "error" };
   setDbScenarioStatus(meaning.text, meaning.state);
   $("dbscenario-run-button").disabled = false;
@@ -1497,12 +1360,12 @@ async function writeDbScenarioRuntimeConfigs() {
 async function executePreparedDbScenarios(allowDraft) {
   const cases = currentDbScenarioCaseMaster?.cases || [];
   if (!dbScenarioPreparationCompleted || !dbScenarioPreparedRunId || !dbScenarioPreparedProjectData || !cases.length) {
-    showDbScenarioError("DBシナリオケースが準備されていません。先にケースを作成してください");
+    showDbScenarioError("実行前の確認内容がありません。先に準備してください");
     return;
   }
   const unapproved = cases.filter((item) => item.reviewStatus !== "approved");
   if (!allowDraft && unapproved.length) {
-    showDbScenarioError("承認されていないシナリオがあります。内容を確認して承認するか、予備実行を選んでください");
+    showDbScenarioError("未確認の試験があります。内容を確認してから実行してください");
     return;
   }
 
@@ -1573,7 +1436,7 @@ $("dbscenario-run-button").addEventListener("click", async () => {
     return;
   }
   if (!scenarioPath) {
-    showDbScenarioError("DB検証シナリオファイル（scenarios.yaml）を選択してください（「DB準備」タブで生成できます）");
+    showDbScenarioError("DB確認設定ファイルを選択してください。上の対応設定を保存するか、既存のYAMLを選んでください");
     return;
   }
 
@@ -1608,7 +1471,7 @@ $("dbscenario-run-button").addEventListener("click", async () => {
       $("dbscenario-run-button").disabled = true;
       $("dbscenario-cancel-button").disabled = false;
       $("dbscenario-open-result-button").disabled = true;
-      setDbScenarioStatus("ケース準備中...", "running");
+      setDbScenarioStatus("実行前の確認内容を準備中...", "running");
       try {
         const { code } = await workflowClient.prepareDb({
           projectPath: dbScenarioTempProjectPath,

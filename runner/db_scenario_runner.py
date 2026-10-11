@@ -12,6 +12,7 @@ import argparse
 import os
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import requests
@@ -153,6 +154,13 @@ def main() -> int:
                 },
                 "given": [item.fields for item in scenario.given],
                 "dbCheck": scenario.db_check.__dict__ if scenario.db_check else None,
+                "responseCheck": (
+                    {
+                        "body": scenario.response_check.expect_body,
+                        "contains": scenario.response_check.expect_contains,
+                    }
+                    if scenario.response_check else None
+                ),
             })
         ]
         if dependent:
@@ -248,7 +256,8 @@ def main() -> int:
                 profile_session.cookies.clear()
 
         has_fail = False
-        report_rows: list[tuple[str, str, bool, str, str]] = []
+        has_warning = False
+        report_rows: list[tuple[str, str, str, str, str]] = []
         all_cleanup_errors: list[str] = []
         # 直前のシナリオのAPIレスポンス。次のシナリオの path_params/body 内の
         # {{response.xxx}} を解決するのに使う（例: create シナリオで作ったIDを
@@ -263,19 +272,26 @@ def main() -> int:
                 scenario, openapi, args.base_url, db_config, previous_response,
                 case_session, args.cookie_jar, case_auth_header,
             )
-            verdict = "OK" if ok else "NG"
+            if ok:
+                verdict = "OK"
+            elif detail.startswith("[UNVERIFIED]"):
+                verdict = "未確認"
+                has_warning = True
+            else:
+                verdict = "NG"
+                has_fail = True
             role_label = f"（認証: {scenario.auth_profile}）" if scenario.auth_profile else ""
             report_name = f"{scenario.name}{role_label}"
             print(f"  [{verdict}] {scenario.case_id} {report_name} (API: {api_status})")
             if not ok:
                 print(f"         {detail}")
-                has_fail = True
-            report_rows.append((scenario.case_id, report_name, ok, api_status, detail))
+            report_rows.append((scenario.case_id, report_name, verdict, api_status, detail))
             all_cleanup_errors.extend(cleanup_errors)
 
         if all_cleanup_errors:
+            has_warning = True
             print(
-                f"[WARN] 前提データ（given）のクリーンアップに失敗した件数: {len(all_cleanup_errors)} 件"
+                f"[WARN] テストデータのクリーンアップに失敗した件数: {len(all_cleanup_errors)} 件"
                 "（DBにテストデータが残留している可能性があります。詳細は上記の各[WARN]行を参照）",
                 file=sys.stderr,
             )
@@ -288,7 +304,7 @@ def main() -> int:
             write_junit_xml_scenarios(report_rows, args.junit_xml)
             print(f"[INFO] JUnit XML を出力しました: {args.junit_xml}")
 
-        return 1 if has_fail else 0
+        return 1 if has_fail else 2 if has_warning else 0
 
 
 def _run_scenario(
@@ -313,8 +329,12 @@ def _run_scenario(
     """
     given_data: dict[str, dict] = {}
     created: list[tuple[str, dict]] = []
+    cleanup_where: dict | None = None
+    cleanup_primary_keys_before: list[object] | None = None
+    api_call_started = False
 
     def _execute() -> tuple[bool, str, str, dict]:
+        nonlocal cleanup_where, cleanup_primary_keys_before, api_call_started
         for item in scenario.given:
             try:
                 pg_config = get_postgres_config(db_config)
@@ -335,23 +355,80 @@ def _run_scenario(
 
         try:
             resolved_path_params = resolve_placeholders(scenario.request.path_params, previous_response, given_data)
+            resolved_query_params = resolve_placeholders(scenario.request.query_params, previous_response, given_data)
             resolved_body = resolve_placeholders(scenario.request.body, previous_response, given_data)
         except ScenarioError as e:
-            return False, f"path_params/bodyの値解決に失敗しました: {e}", "ERR", previous_response
+            return False, f"request値の解決に失敗しました: {e}", "ERR", previous_response
+
+        if scenario.cleanup is not None:
+            if method != "POST":
+                return False, "cleanupを指定できるのはPOSTシナリオだけです", "ERR", previous_response
+            try:
+                pg_config = get_postgres_config(db_config)
+                cleanup_where = resolve_placeholders(scenario.cleanup.where, previous_response, given_data)
+                cleanup_primary_keys_before = postgres_backend.matching_primary_keys(
+                    pg_config, scenario.cleanup.table, scenario.cleanup.primary_key, cleanup_where
+                )
+            except Exception as e:
+                return False, f"POST後のクリーンアップ準備に失敗しました: {e}", "ERR", previous_response
+
+        expected_db_rows = None
+        if scenario.db_response_check is not None:
+            try:
+                pg_config = get_postgres_config(db_config)
+                prepared = postgres_backend.prepare_db_response_check(
+                    scenario.db_response_check, pg_config, resolved_query_params, resolved_path_params
+                )
+            except postgres_backend.DBResponseCheckUnverified as e:
+                return False, f"[UNVERIFIED] {e}", "未実行", previous_response
+            except (ValueError, KeyError, postgres_backend.DBResponseCheckError) as e:
+                return False, f"DBから期待結果を作れません: {e}", "ERR", previous_response
+            except Exception as e:
+                return False, f"DBから期待結果を読む際にエラーが発生しました: {e}", "ERR", previous_response
+            resolved_query_params = prepared.query_params
+            resolved_path_params = prepared.path_params
+            expected_db_rows = prepared.expected_rows
+            source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
+            print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
 
         call_args = (base_url, path, method, resolved_path_params, resolved_body, session, persist_cookies)
-        status, response_json, error = (
-            _call_api(*call_args, auth_header=auth_header)
-            if auth_header is not None
-            else _call_api(*call_args)
-        )
+        call_kwargs = {"auth_header": auth_header} if auth_header is not None else {}
+        if resolved_query_params:
+            call_kwargs["query_params"] = resolved_query_params
+        api_call_started = True
+        status, response_json, error = _call_api(*call_args, **call_kwargs)
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
 
         failures: list[str] = []
 
         if scenario.response_check is not None:
-            ok, detail = response_check_module.check(scenario.response_check, status, response_json)
+            try:
+                resolved_response_check = replace(
+                    scenario.response_check,
+                    expect_body=resolve_placeholders(
+                        scenario.response_check.expect_body, previous_response, given_data
+                    ),
+                    expect_contains=[
+                        {
+                            **expected_item,
+                            "fields": resolve_placeholders(
+                                expected_item["fields"], previous_response, given_data
+                            ),
+                        }
+                        for expected_item in scenario.response_check.expect_contains
+                    ],
+                )
+            except ScenarioError as e:
+                return False, f"response_checkの値解決に失敗しました: {e}", str(status), response_json
+            ok, detail = response_check_module.check(resolved_response_check, status, response_json)
+            if not ok:
+                failures.append(detail)
+
+        if scenario.db_response_check is not None:
+            ok, detail = response_check_module.check_db_rows(
+                scenario.db_response_check, response_json, expected_db_rows or []
+            )
             if not ok:
                 failures.append(detail)
 
@@ -380,6 +457,30 @@ def _run_scenario(
         result = _execute()
     finally:
         cleanup_errors: list[str] = []
+        if (
+            scenario.cleanup is not None
+            and api_call_started
+            and cleanup_where is not None
+            and cleanup_primary_keys_before is not None
+        ):
+            try:
+                pg_config = get_postgres_config(db_config)
+                current_keys = postgres_backend.matching_primary_keys(
+                    pg_config, scenario.cleanup.table, scenario.cleanup.primary_key, cleanup_where
+                )
+                new_keys = [key for key in current_keys if key not in cleanup_primary_keys_before]
+                for key in new_keys:
+                    db_factory.delete(
+                        pg_config,
+                        scenario.cleanup.table,
+                        {scenario.cleanup.primary_key: key},
+                    )
+                if new_keys:
+                    print(f"  [INFO] POSTで新規作成されたDB行を{len(new_keys)}件片付けました")
+            except Exception as e:
+                msg = f"POSTで作成された行のクリーンアップに失敗しました（{scenario.cleanup.table}）: {e}"
+                print(f"[WARN] {msg}", file=sys.stderr)
+                cleanup_errors.append(msg)
         for table, primary_key in reversed(created):
             try:
                 pg_config = get_postgres_config(db_config)
@@ -405,7 +506,7 @@ def _resolve_operation(openapi: dict, operation_id: str) -> tuple[str, str]:
 def _call_api(
     base_url: str, path: str, method: str, path_params: dict, body: dict,
     session: requests.Session | None = None, persist_cookies: bool = False,
-    auth_header: tuple[str, str] | None = None,
+    auth_header: tuple[str, str] | None = None, query_params: dict | None = None,
 ) -> tuple[int, dict, str | None]:
     """requests でAPIを呼び出す。戻り値: (status, response_json, error)"""
     url_path = path
@@ -423,6 +524,8 @@ def _call_api(
         headers[auth_header[0]] = auth_header[1]
 
     kwargs: dict = {"headers": headers, "timeout": REQUEST_TIMEOUT}
+    if query_params:
+        kwargs["params"] = query_params
     if body:
         kwargs["json"] = body
 

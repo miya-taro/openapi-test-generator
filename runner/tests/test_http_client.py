@@ -100,6 +100,24 @@ def test_declared_cookie_parameter_is_sent_as_cookie_header():
     assert captured[0].headers["Cookie"] == "session_hint=abc123"
 
 
+def test_required_header_omission_marker_sends_no_header():
+    case = make_case(param_in="header", param_name="X-Client-Version", input_value="（フィールドを省略）")
+    captured = []
+    with patch("requests.Session.send", mock_send(400, capture=captured)):
+        execute_with_openapi(case, "http://localhost:8080", None)
+
+    assert "X-Client-Version" not in captured[0].headers
+
+
+def test_required_header_empty_marker_sends_empty_header_value():
+    case = make_case(param_in="header", param_name="X-Client-Version", input_value="（空文字）")
+    captured = []
+    with patch("requests.Session.send", mock_send(400, capture=captured)):
+        execute_with_openapi(case, "http://localhost:8080", None)
+
+    assert captured[0].headers["X-Client-Version"] == ""
+
+
 def test_operation_baseline_sends_required_parameters_and_body():
     case = make_case(
         param_in="operation",

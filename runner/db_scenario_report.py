@@ -22,6 +22,7 @@ _HEADER_FILL = PatternFill(fill_type="solid", fgColor=COLOR["headerBg"])
 _HEADER_FONT = Font(color=COLOR["headerFg"], bold=True)
 _OK_FILL = PatternFill(fill_type="solid", fgColor=COLOR["normalBg"])
 _NG_FILL = PatternFill(fill_type="solid", fgColor=COLOR["abnormalBg"])
+_WARNING_FILL = PatternFill(fill_type="solid", fgColor=COLOR["warningBg"] if "warningBg" in COLOR else "FFF2CC")
 _THIN_BORDER = Border(
     top=Side(style="thin", color=COLOR["border"]),
     left=Side(style="thin", color=COLOR["border"]),
@@ -48,16 +49,18 @@ def write_report(rows: list[tuple], output_path: str | Path) -> None:
 
     for i, row_data in enumerate(rows, start=1):
         if len(row_data) == 5:
-            case_id, name, ok, api_status, detail = row_data
+            case_id, name, result, api_status, detail = row_data
         elif len(row_data) == 4:
-            name, ok, api_status, detail = row_data
+            name, result, api_status, detail = row_data
             case_id = ""
         else:
             raise ValueError("DBシナリオ結果の行は4要素または5要素で指定してください")
-        row = [i, case_id, name, "OK" if ok else "NG", api_status, detail]
+        verdict = result if isinstance(result, str) else "OK" if result else "NG"
+        row = [i, case_id, name, verdict, api_status, detail]
         ws.append(row)
+        fill = _OK_FILL if verdict == "OK" else _WARNING_FILL if verdict == "未確認" else _NG_FILL
         for cell in ws[i + 2]:
-            cell.fill = _OK_FILL if ok else _NG_FILL
+            cell.fill = fill
             cell.border = _THIN_BORDER
             cell.alignment = Alignment(vertical="top", wrap_text=True)
 

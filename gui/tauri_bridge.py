@@ -11,6 +11,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import validators  # noqa: E402
@@ -20,6 +22,8 @@ from workflow.case_master import (  # noqa: E402
     load_case_master,
     save_case_master_reviews,
 )
+from src.parser import parse_openapi  # noqa: E402
+from db_scenario import parse_scenarios  # noqa: E402
 
 _SAFE_CASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
@@ -61,6 +65,86 @@ def _load_project(path: str) -> dict[str, object]:
     }
 
 
+def _json_media_content(content: object) -> dict:
+    if not isinstance(content, dict):
+        return {}
+    json_content = content.get("application/json")
+    if isinstance(json_content, dict):
+        return json_content
+    for media_type, value in content.items():
+        normalized = str(media_type).split(";", 1)[0].strip().lower()
+        if normalized.endswith("+json") and isinstance(value, dict):
+            return value
+    return {}
+
+
+def _list_db_scenario_operations(path: str) -> list[dict[str, object]]:
+    """Return operation details needed by the DB scenario editor."""
+    openapi = parse_openapi(path)
+    operations: list[dict[str, object]] = []
+    for route, path_item in (openapi.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"} or not isinstance(operation, dict):
+                continue
+            operation_id = operation.get("operationId")
+            if not operation_id:
+                continue
+            parameters_by_key: dict[tuple[str, str], dict] = {}
+            for parameter in [*(path_item.get("parameters") or []), *(operation.get("parameters") or [])]:
+                if isinstance(parameter, dict) and parameter.get("name") and parameter.get("in"):
+                    parameters_by_key[(parameter["in"], parameter["name"])] = parameter
+            responses = operation.get("responses") or {}
+            success_statuses = sorted(
+                (status for status in responses if str(status).startswith("2")),
+                key=lambda status: (str(status) not in {"200", "201", "202", "204"}, str(status)),
+            )
+            response_schema = None
+            for status in success_statuses:
+                response = responses.get(status) or {}
+                json_content = _json_media_content(response.get("content"))
+                if isinstance(json_content.get("schema"), dict):
+                    response_schema = json_content["schema"]
+                    break
+            success_status = next((str(status) for status in success_statuses if str(status).isdigit()), "200")
+            request_content = (operation.get("requestBody") or {}).get("content") or {}
+            json_request = _json_media_content(request_content)
+            operations.append({
+                "operationId": operation_id,
+                "method": method.upper(),
+                "path": route,
+                "successStatus": success_status,
+                "parameters": [
+                    {
+                        "name": parameter.get("name"),
+                        "in": parameter.get("in"),
+                        "required": bool(parameter.get("required")),
+                        "schema": parameter.get("schema") or {},
+                    }
+                    for parameter in parameters_by_key.values()
+                ],
+                "requestSchema": json_request.get("schema") if isinstance(json_request, dict) else None,
+                "responseSchema": response_schema,
+            })
+    return operations
+
+
+def _save_db_scenario_yaml(path: str, scenarios: list[dict]) -> str:
+    """Validate and save UI-authored scenarios in the runner's standard YAML format."""
+    if not isinstance(scenarios, list) or not scenarios or not all(isinstance(item, dict) for item in scenarios):
+        raise ValueError("保存するシナリオがありません")
+    document = {"scenarios": {"defaults": {"engine": "postgres"}, "list": scenarios}}
+    text = yaml.safe_dump(document, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    parsed = parse_scenarios(text)
+    if len(parsed) != len(scenarios):
+        raise ValueError("シナリオをすべて検証できませんでした")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    return str(target)
+
+
 def _dispatch(command: str, args: dict) -> object:
     if command == "servers_url":
         return _servers_url(args["path"])
@@ -74,6 +158,10 @@ def _dispatch(command: str, args: dict) -> object:
         return _load_failed_case_ids(args["path"])
     if command == "list_operations":
         return validators.list_operations(args["path"])
+    if command == "list_db_scenario_operations":
+        return _list_db_scenario_operations(args["path"])
+    if command == "save_db_scenario_yaml":
+        return _save_db_scenario_yaml(args["path"], args.get("scenarios"))
     if command == "load_operation_body_contract":
         return load_operation_body_contract(args["path"], args["operation_id"])
     if command == "save_operation_body_contract":

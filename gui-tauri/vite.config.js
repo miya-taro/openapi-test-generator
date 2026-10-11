@@ -13,7 +13,10 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     fs: {
-      allow: [fileURLToPath(new URL("../docs/", import.meta.url))],
+      allow: [
+        fileURLToPath(new URL("./src/", import.meta.url)),
+        fileURLToPath(new URL("../docs/", import.meta.url)),
+      ],
     },
     watch: {
       // src-tauri側の変更でフロントエンドを再読み込みしない。

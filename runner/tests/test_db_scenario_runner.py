@@ -18,6 +18,7 @@ MINIMAL_OPENAPI = {
             "post": {"operationId": "createUser", "responses": {"201": {"description": "Created"}}}
         },
         "/users/{id}": {
+            "get": {"operationId": "getUser", "responses": {"200": {"description": "OK"}}},
             "put": {"operationId": "updateUser", "responses": {"200": {"description": "OK"}}}
         },
     },
@@ -252,6 +253,44 @@ def test_scenario_pass_returns_0(monkeypatch, tmp_path, capsys):
     )
     assert code == 0
     assert "[OK]" in capsys.readouterr().out
+
+
+def test_post_cleanup_deletes_only_rows_created_after_the_snapshot(monkeypatch, tmp_path, capsys):
+    scenario_data = {"scenarios": [{
+        "name": "POST行を片付ける",
+        "request": {"operationId": "createUser", "body": {"email": "new@example.com"}},
+        "response_check": {"expect": {"status": 201}},
+        "db_check": {
+            "engine": "postgres", "table": "users", "where": {"email": "new@example.com"},
+            "expect": {"exists": True},
+        },
+        "cleanup": {
+            "table": "users", "primary_key": "id", "where": {"email": "new@example.com"},
+        },
+    }]}
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, scenario_data)
+    _patch_common(monkeypatch)
+    snapshots = iter([[4], [4, 9]])
+    monkeypatch.setattr(
+        dsr_module.postgres_backend,
+        "matching_primary_keys",
+        lambda *args: next(snapshots),
+    )
+    deleted = []
+    monkeypatch.setattr(
+        dsr_module.db_factory, "delete", lambda config, table, primary_key: deleted.append((table, primary_key))
+    )
+    monkeypatch.setattr(dsr_module, "_call_api", _fake_call_api(201, {"id": 9}))
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+
+    assert code == 0
+    assert deleted == [("users", {"id": 9})]
+    assert "新規作成されたDB行を1件片付けました" in capsys.readouterr().out
 
 
 def test_case_ids_runs_only_selected_self_contained_db_scenario(monkeypatch, tmp_path):
@@ -542,7 +581,7 @@ def test_path_params_placeholder_with_no_previous_scenario_marks_ng(monkeypatch,
     assert code == 1
     out = capsys.readouterr().out
     assert "[NG]" in out
-    assert "値解決に失敗" in out
+    assert "request値の解決に失敗" in out
 
 
 def test_previous_response_updates_to_most_recent_scenario_only(monkeypatch, tmp_path):
@@ -853,6 +892,59 @@ def test_given_data_referenced_in_request_body_and_db_check(monkeypatch, tmp_pat
     assert captured_check["where"] == {"id": 5}
 
 
+def test_get_response_check_resolves_values_from_given_db_row(monkeypatch, tmp_path):
+    data = {
+        "scenarios": [{
+            "name": "DBにあるユーザーをGETで読み取れる",
+            "given": [{
+                "table": "users",
+                "as": "user",
+                "fields": {"name": "Read User", "email": "read@example.com", "role": "member"},
+            }],
+            "request": {
+                "operationId": "getUser",
+                "path_params": {"id": "{{given.user.id}}"},
+            },
+            "response_check": {
+                "expect": {
+                    "status": 200,
+                    "body": {
+                        "id": "{{given.user.id}}",
+                        "name": "{{given.user.name}}",
+                        "email": "{{given.user.email}}",
+                    },
+                }
+            },
+        }]
+    }
+    scenario_path, openapi_path, config_path = _write_files(tmp_path, data)
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(
+        dsr_module.db_factory,
+        "create",
+        lambda pg_config, table, fields: (
+            {"id": 42, **fields},
+            {"id": 42},
+        ),
+    )
+    monkeypatch.setattr(dsr_module.db_factory, "delete", lambda pg_config, table, primary_key: None)
+    captured = {}
+
+    def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
+        captured.update({"path": path, "method": method, "path_params": path_params})
+        return 200, {"id": 42, "name": "Read User", "email": "read@example.com", "role": "member"}, None
+
+    monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
+
+    code = run_main(
+        monkeypatch,
+        [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
+    )
+
+    assert code == 0
+    assert captured == {"path": "/users/{id}", "method": "GET", "path_params": {"id": 42}}
+
+
 def test_given_cleanup_happens_even_on_scenario_failure(monkeypatch, tmp_path):
     scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_given_scenario())
     _patch_common(monkeypatch)
@@ -872,7 +964,7 @@ def test_given_cleanup_happens_even_on_scenario_failure(monkeypatch, tmp_path):
     assert deleted == [("products", {"id": 5})]  # それでもcleanupは実行される
 
 
-def test_given_cleanup_failure_does_not_flip_a_passing_scenario_but_warns(monkeypatch, tmp_path, capsys):
+def test_given_cleanup_failure_warns_and_returns_warning_exit_code(monkeypatch, tmp_path, capsys):
     scenario_path, openapi_path, config_path = _write_files(tmp_path, _one_given_scenario())
     _patch_common(monkeypatch)
 
@@ -889,8 +981,8 @@ def test_given_cleanup_failure_does_not_flip_a_passing_scenario_but_warns(monkey
         monkeypatch,
         [str(scenario_path), str(openapi_path), "--base-url", "http://x", "--config", str(config_path)],
     )
-    # クリーンアップの失敗はシナリオ自体の判定（既に確定した合否）を覆さない
-    assert code == 0
+    # シナリオの判定は成功のまま、片付け失敗を示すwarning exit codeを返す
+    assert code == 2
     err = capsys.readouterr().err
     assert "[WARN]" in err
     assert "クリーンアップ" in err

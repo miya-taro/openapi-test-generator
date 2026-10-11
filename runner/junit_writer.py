@@ -70,6 +70,7 @@ def write_junit_xml_scenarios(
     """
     testsuite = ET.Element("testsuite", name=suite_name)
     failures = 0
+    skipped = 0
 
     for row in rows:
         if len(row) == 5:
@@ -82,13 +83,18 @@ def write_junit_xml_scenarios(
         testcase = ET.SubElement(
             testsuite, "testcase", classname=suite_name, name=case_id, scenarioName=scenario_name
         )
-        if not ok:
+        if isinstance(ok, str) and ok == "未確認":
+            skipped += 1
+            skipped_el = ET.SubElement(testcase, "skipped", message="DB data is insufficient to verify this case")
+            skipped_el.text = detail
+        elif (ok == "NG") or (not isinstance(ok, str) and not ok):
             failures += 1
             failure_el = ET.SubElement(testcase, "failure", message=detail)
             failure_el.text = f"API status: {api_status}"
 
     testsuite.set("tests", str(len(rows)))
     testsuite.set("failures", str(failures))
+    testsuite.set("skipped", str(skipped))
 
     _write(testsuite, output_path)
 

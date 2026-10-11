@@ -115,6 +115,32 @@ def test_build_master_maps_db_scenario_and_uses_explicit_id(tmp_path):
     assert case["expected"]["response"]["status"] == 200
 
 
+def test_build_master_preserves_get_array_contains_expectation(tmp_path):
+    openapi = tmp_path / "openapi.json"
+    scenarios = tmp_path / "scenarios.yaml"
+    _write_openapi(openapi)
+    _write_scenarios(scenarios, """
+scenarios:
+  - id: users-list
+    name: 一覧からDBのユーザーを取得できる
+    request: {operationId: listUsers}
+    response_check:
+      expect:
+        status: 200
+        contains:
+          - path: "$"
+            fields:
+              id: "{{given.user.id}}"
+""")
+
+    master = build_case_master("sample", None, scenarios, openapi)
+
+    case = master["cases"][0]
+    assert case["expected"]["response"]["contains"] == [
+        {"path": "$", "fields": {"id": "{{given.user.id}}"}}
+    ]
+
+
 def test_named_auth_profile_is_reviewable_but_credentials_are_not_in_case_master(tmp_path):
     openapi = tmp_path / "openapi.json"
     scenarios = tmp_path / "scenarios.yaml"

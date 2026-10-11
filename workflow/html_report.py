@@ -15,7 +15,7 @@ _STATUS_LABELS = {
     "failed": "NG",
     "error": "ERROR",
     "warning": "WARNING",
-    "skipped": "SKIP",
+    "skipped": "未確認",
     "not-run": "未実行",
 }
 
@@ -126,7 +126,7 @@ h1{{margin-top:0}} .notice{{padding:.8rem 1rem;background:#fff4ce;border-left:4p
 .summary{{font-weight:600;margin:1.2rem 0}} table{{width:100%;border-collapse:collapse}}
 th,td{{text-align:left;padding:.65rem;border-bottom:1px solid #dfe5ec;vertical-align:top}}
 th{{background:#243b53;color:white;position:sticky;top:0}} .status-passed{{color:#147d45}}
-.status-failed,.status-error{{color:#b42318;font-weight:700}} .status-warning{{color:#9a6700}}
+.status-failed,.status-error{{color:#b42318;font-weight:700}} .status-warning,.status-skipped{{color:#9a6700;font-weight:700}}
 ul{{padding-left:1.2rem}}
 </style></head><body><main>
 <h1>API試験結果</h1><p>プロジェクト: {_e(master.get('project', {}).get('name', ''))}</p>

@@ -43,14 +43,17 @@ def build_url(base_url: str, case: RunCase, openapi: dict | None = None) -> str:
 
     url = base_url.rstrip("/") + path
 
+    query = _build_required_operation_query(
+        openapi,
+        case,
+        exclude_tested_parameter=case.param_in == "query",
+    ) if openapi is not None else {}
     if case.param_in == "query" and case.input_value not in OMIT_MARKERS:
         val = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
         query_val = _build_query_value(case, val, openapi) if openapi is not None else val
-        url += "?" + urlencode({case.param_name: query_val}, doseq=True)
-    elif case.param_in == "operation" and openapi is not None:
-        query = _build_required_operation_query(openapi, case)
-        if query:
-            url += "?" + urlencode(query, doseq=True)
+        query[case.param_name] = query_val
+    if query:
+        url += "?" + urlencode(query, doseq=True)
 
     return url
 
@@ -227,7 +230,11 @@ def _merged_operation_parameters(path_item: dict, operation: dict) -> list[dict]
     return list(merged.values())
 
 
-def _build_required_operation_query(openapi: dict, case: RunCase) -> dict[str, object]:
+def _build_required_operation_query(
+    openapi: dict,
+    case: RunCase,
+    exclude_tested_parameter: bool = False,
+) -> dict[str, object]:
     path_item = _resolve_path_item(openapi, case)
     operation = _resolve_operation(openapi, case)
     if path_item is None or operation is None:
@@ -236,6 +243,12 @@ def _build_required_operation_query(openapi: dict, case: RunCase) -> dict[str, o
     query: dict[str, object] = {}
     for param in _merged_operation_parameters(path_item, operation):
         if not param.get("required") or param.get("in") != "query":
+            continue
+        if (
+            exclude_tested_parameter
+            and case.param_in == "query"
+            and param.get("name") == case.param_name
+        ):
             continue
         value = _expand_value(param.get("schema") or {})
         name = param.get("name", "")
@@ -266,7 +279,7 @@ def _build_required_operation_query(openapi: dict, case: RunCase) -> dict[str, o
 def build_operation_header_and_cookie_values(
     case: RunCase, openapi: dict | None,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Build required header and cookie parameters for an operation baseline request."""
+    """Build other required header/cookie parameters around the current test input."""
     if not openapi:
         return {}, {}
     path_item = _resolve_path_item(openapi, case)
@@ -279,6 +292,14 @@ def build_operation_header_and_cookie_values(
     for param in _merged_operation_parameters(path_item, operation):
         location = param.get("in")
         if not param.get("required") or location not in {"header", "cookie"}:
+            continue
+        same_parameter = (
+            param.get("name", "").lower() == case.param_name.lower()
+            if location == "header"
+            else param.get("name") == case.param_name
+        )
+        if location == case.param_in and same_parameter:
+            # The case itself supplies, invalidates, or omits this one parameter.
             continue
         value = _expand_value(param.get("schema") or {})
         rendered = _serialize_simple_parameter_value(value, bool(param.get("explode", False)))
@@ -348,26 +369,12 @@ def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | No
         return PreparedBody(json_body=_expand_value(schema))
 
     if case.param_in == "operation":
-        operation = _resolve_operation(openapi, case) if openapi else None
-        request_body = (operation or {}).get("requestBody") or {}
-        if not request_body.get("required"):
-            return None
-        schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi) if openapi else None
-        if schema is None:
-            return None
-        content_type = _resolve_request_body_content_type(case.operation_id, case.path, case.method, openapi)
-        if content_type == "multipart/form-data":
-            fields = _expand_multipart_baseline(schema)
-            multipart_fields = {
-                key: ((_DUMMY_UPLOAD_FILENAME, _DUMMY_UPLOAD_CONTENT, _DUMMY_UPLOAD_CONTENT_TYPE)
-                      if isinstance(value, _FileUploadValue) else (None, str(value)))
-                for key, value in fields.items()
-            }
-            return PreparedBody(is_multipart=True, multipart_fields=multipart_fields)
-        return PreparedBody(json_body=_expand_value(schema))
+        return _build_required_operation_body(case, openapi)
 
     if case.param_in != "body":
-        return None
+        # A negative query/path/header/cookie case should differ from a valid request
+        # only in its target parameter. Keep any required request body valid as well.
+        return _build_required_operation_body(case, openapi)
     if case.param_name == "requestBody" and case.input_value in OMIT_MARKERS:
         # Omission of the entire requestBody is different from omission of a property.
         return None
@@ -382,6 +389,28 @@ def build_request_body(case: RunCase, openapi: dict | None) -> PreparedBody | No
 
     body = _build_body(case, openapi)
     return PreparedBody(json_body=body)
+
+
+def _build_required_operation_body(case: RunCase, openapi: dict | None) -> PreparedBody | None:
+    if not openapi:
+        return None
+    operation = _resolve_operation(openapi, case)
+    request_body = (operation or {}).get("requestBody") or {}
+    if not request_body.get("required"):
+        return None
+    schema = _resolve_request_body_schema(case.operation_id, case.path, case.method, openapi)
+    if schema is None:
+        return None
+    content_type = _resolve_request_body_content_type(case.operation_id, case.path, case.method, openapi)
+    if content_type == "multipart/form-data":
+        fields = _expand_multipart_baseline(schema)
+        multipart_fields = {
+            key: ((_DUMMY_UPLOAD_FILENAME, _DUMMY_UPLOAD_CONTENT, _DUMMY_UPLOAD_CONTENT_TYPE)
+                  if isinstance(value, _FileUploadValue) else (None, str(value)))
+            for key, value in fields.items()
+        }
+        return PreparedBody(is_multipart=True, multipart_fields=multipart_fields)
+    return PreparedBody(json_body=_expand_value(schema))
 
 
 def _resolve_request_body_content_type(operation_id: str, path: str, method: str, openapi: dict) -> str:
@@ -483,6 +512,7 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
             variant_value = _resolve_one_of_variant_value(schema, case.input_value)
             if variant_value is not _MISSING:
                 return variant_value
+            return baseline
         return _coerce_value(case.input_value, schema or {})
 
     field_path = case.param_name
@@ -508,6 +538,8 @@ def _build_body(case: RunCase, openapi: dict | None) -> object:
             if variant_value is not _MISSING:
                 _set_nested(body, field_path, variant_value, schema)
                 return body
+            # An invalid internal marker is not user input. Leave the valid baseline field intact.
+            return body
         _set_nested(body, field_path, _coerce_value(raw, field_schema), schema)
 
     return body
@@ -560,6 +592,18 @@ def _resolve_one_of_variant_value(schema: dict | None, input_value: str) -> obje
     return _expand_value(variants[index])
 
 
+def _normalize_array_path(dotted_path: str) -> str:
+    """Normalize both ``items[].field`` and ``items.[].field`` path spellings."""
+    parts = dotted_path.split(".")
+    normalized: list[str] = []
+    for part in parts:
+        if part == "[]" and normalized and normalized[-1] != "[]":
+            normalized[-1] += "[]"
+        else:
+            normalized.append(part)
+    return ".".join(normalized)
+
+
 def _navigate_to_parent(body: object, dotted_path: str, root_schema: dict | None) -> tuple[object, str]:
     """ドット区切りパスの最終セグメント手前まで辿り、(親コンテナ, 最終キー) を返す。
 
@@ -569,7 +613,7 @@ def _navigate_to_parent(body: object, dotted_path: str, root_schema: dict | None
     スキーマから有効なベースライン値を生成して埋める
     （そうしないと、そのコンテナの他の required フィールドが欠けたリクエストになってしまう）。
     """
-    parts = dotted_path.split(".")
+    parts = _normalize_array_path(dotted_path).split(".")
     container = body
     schema_node: dict | None = root_schema
     for part in parts[:-1]:
@@ -646,7 +690,7 @@ def _resolve_body_path(body: object, dotted_path: str, root_schema: dict | None)
     """Resolve a schema-aware body path, including array items, and seed missing containers."""
     container = body
     schema_node = root_schema
-    for part in dotted_path.split("."):
+    for part in _normalize_array_path(dotted_path).split("."):
         if part == "[]":
             item_schema = schema_node.get("items") if isinstance(schema_node, dict) else None
             if not isinstance(container, list):

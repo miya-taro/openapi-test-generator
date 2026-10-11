@@ -183,11 +183,13 @@ def _scenario_case(
                 {
                     "status": definition["responseCheck"]["expectedStatus"],
                     "body": definition["responseCheck"]["expectedBody"],
+                    "contains": definition["responseCheck"].get("expectedContains", []),
                 }
                 if definition["responseCheck"]
                 else None
             ),
             "database": definition["dbCheck"],
+            "databaseResponse": definition.get("dbResponseCheck"),
         },
         "reviewStatus": "draft",
     }

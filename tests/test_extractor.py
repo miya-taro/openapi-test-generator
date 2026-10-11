@@ -69,7 +69,7 @@ def test_array_item_field_required_flag_from_item_schema():
     assert sku_spec["required"] is True
 
 
-def test_array_of_primitives_not_flattened_further():
+def test_array_of_primitives_emits_an_item_schema_for_element_constraints():
     api = {
         "openapi": "3.1.0",
         "paths": {
@@ -94,7 +94,9 @@ def test_array_of_primitives_not_flattened_further():
     _, body_specs = extract_specs(api)
     field_paths = {s["fieldPath"] for s in body_specs}
     assert "tags" in field_paths
-    assert not any(p.startswith("tags[]") for p in field_paths)
+    item_spec = next(s for s in body_specs if s["fieldPath"] == "tags[]")
+    assert item_spec["schema"]["type"] == "string"
+    assert item_spec["schemaOnly"] is True
 
 
 def test_operation_level_parameter_overrides_path_level_parameter():

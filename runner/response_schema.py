@@ -14,6 +14,9 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
     expected_headers = _parse_expected_headers(case.expected_response_header)
     response_time_ms = _parse_time_ms(case.expected_response_time)
     expected_statuses: frozenset[int] = frozenset()
+    has_error_status_range = False
+    has_default_response = False
+    require_documented_status = False
     body_schemas_by_status: dict[int, dict | None] = {}
     content_types_by_status: dict[int, frozenset[str]] = {}
     header_schemas_by_status: dict[int, dict[str, dict]] = {}
@@ -23,6 +26,13 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
         operation = _find_operation(openapi, case)
         responses = operation.get("responses") or {} if operation else {}
         has_status_range = any(str(code).upper() == "2XX" for code in responses)
+        has_error_status_range = any(str(code).upper() == "4XX" for code in responses)
+        has_default_response = "default" in responses
+        documented_error_statuses = frozenset(
+            int(code) for code in responses
+            if str(code).isdigit() and 400 <= int(code) < 500
+        )
+        require_documented_status = status_class == 4
         if status_class == 2:
             expected_statuses = frozenset(
                 int(code) for code in responses
@@ -31,18 +41,20 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
             if has_status_range:
                 expected_statuses = frozenset()
         elif status_class == 4:
-            preferred = {400, 422}
-            if case.param_in == "path":
-                preferred.add(404)
-            expected_statuses = frozenset(
-                int(code) for code in responses
-                if str(code).isdigit() and int(code) in preferred
-            )
+            # Accept any explicitly documented 4xx code. A 4XX range or default response
+            # covers the class; OpenAPI does not map individual schema violations to a code.
+            expected_statuses = documented_error_statuses
+            if has_error_status_range or has_default_response:
+                expected_statuses = frozenset()
         status_codes = set(expected_statuses) or (
             set(range(200, 300)) if status_class == 2 and has_status_range else set()
         ) or (
-            frozenset({status}) if status is not None else frozenset()
+            {status} if status is not None else set()
         )
+        if status_class == 4:
+            status_codes.update(documented_error_statuses)
+            if has_error_status_range or has_default_response:
+                status_codes.update(range(400, 500))
         for code in status_codes:
             response = _response_for_status(responses, code)
             content = response.get("content") or {}
@@ -90,8 +102,16 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
         expected_content_type=content_type,
         expected_response_time_ms=response_time_ms,
         expected_body_schema=body_schema,
-        expected_status_class=status_class,
+        expected_status_class=(
+            None
+            if require_documented_status
+            and not expected_statuses
+            and not has_error_status_range
+            and not has_default_response
+            else status_class
+        ),
         expected_statuses=expected_statuses,
+        require_documented_status=require_documented_status,
         expected_body_schemas_by_status=body_schemas_by_status,
         expected_body_schemas_by_status_and_content_type=body_schemas_by_status_and_content_type,
         expected_content_types_by_status=content_types_by_status,

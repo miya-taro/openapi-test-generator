@@ -562,6 +562,14 @@ def test_array_item_field_is_set_inside_array_element():
     assert body["lines"][0]["qty"] == 1  # baseline (minimum)
 
 
+def test_array_item_field_with_separate_marker_is_set_inside_array_element():
+    # The generator writes nested array paths as "lines.[].qty".
+    case = _order_case(param_name="lines.[].qty", input_value="5")
+    body = build_request_body(case, NESTED_OPENAPI).json_body
+    assert body["lines"][0]["qty"] == 5
+    assert body["lines"][0]["sku"]
+
+
 def test_array_item_field_omit_removes_only_that_key():
     case = _order_case(param_name="lines[].qty", input_value="（フィールドを省略）")
     body = build_request_body(case, NESTED_OPENAPI).json_body
@@ -693,12 +701,10 @@ def test_nested_field_one_of_variant_marker_builds_that_variants_value():
     assert body["contact"] == "aaa"
 
 
-def test_nested_field_one_of_variant_marker_out_of_range_falls_back_to_coerce():
+def test_nested_field_one_of_variant_marker_out_of_range_falls_back_to_baseline():
     case = _order_one_of_case(param_name="contact", input_value="__ONE_OF_VARIANT__99")
     body = build_request_body(case, NESTED_ONE_OF_OPENAPI).json_body
-    # 解決できない場合は通常の _coerce_value 経路にフォールバックする
-    # （field_schemaはobject型なので、文字列マーカーがそのまま raw 文字列として入る）
-    assert body["contact"] == "__ONE_OF_VARIANT__99"
+    assert body["contact"] == {"email": "test@example.com"}
 
 
 def test_null_marker_sends_actual_json_null_not_string():

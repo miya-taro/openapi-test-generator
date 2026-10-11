@@ -19,6 +19,7 @@ _PLACEHOLDER = re.compile(r"^\{\{\s*(\w+)\.([\w.]+)\s*\}\}$")
 _EMBEDDED_PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\.([\w.]+)\s*\}\}")
 _SAFE_SCENARIO_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_AUTH_PROFILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
+_SAFE_DB_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class ScenarioError(Exception):
@@ -44,6 +45,7 @@ class ScenarioRequest:
     operation_id: str
     body: dict = field(default_factory=dict)
     path_params: dict = field(default_factory=dict)
+    query_params: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -66,6 +68,34 @@ class DBCheck:
 
 
 @dataclass
+class DBResponseFilter:
+    """Map an API path/query parameter to a database comparison rule."""
+    source: str
+    parameter: str
+    column: str
+    operator: str
+    auto: bool = True
+    parameter_format: str | None = None
+
+
+@dataclass
+class DBResponseCheck:
+    """Derive an API response expectation from existing PostgreSQL rows."""
+    table: str
+    fields: dict[str, str] = field(default_factory=dict)  # response path -> DB column
+    filters: list[DBResponseFilter] = field(default_factory=list)
+    array_path: str | None = "$"
+
+
+@dataclass
+class ScenarioCleanup:
+    """Delete only rows created by this POST call, identified by an explicit primary key."""
+    table: str
+    primary_key: str
+    where: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ResponseCheck:
     """APIレスポンス自体の内容を検証する（db_checkがDB側の状態を見るのに対し、
     こちらはAPI呼び出しの結果そのものを見る）。
@@ -76,6 +106,7 @@ class ResponseCheck:
     """
     expect_status: int | None = None
     expect_body: dict = field(default_factory=dict)
+    expect_contains: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -88,6 +119,8 @@ class DBScenario:
     auth_profile: str | None = None
     scenario_id: str | None = None
     case_id_override: str | None = field(default=None, repr=False, compare=False)
+    db_response_check: DBResponseCheck | None = None
+    cleanup: ScenarioCleanup | None = None
 
     @property
     def case_id(self) -> str:
@@ -109,12 +142,15 @@ class DBScenario:
 
     def case_definition(self) -> dict:
         """Return the normalized, runtime-secret-free test definition."""
+        request_definition = {
+            "operationId": self.request.operation_id,
+            "body": self.request.body,
+            "pathParams": self.request.path_params,
+        }
+        if self.request.query_params:
+            request_definition["queryParams"] = self.request.query_params
         definition = {
-            "request": {
-                "operationId": self.request.operation_id,
-                "body": self.request.body,
-                "pathParams": self.request.path_params,
-            },
+            "request": request_definition,
             "given": [
                 {"table": item.table, "as": item.as_name, "fields": item.fields}
                 for item in self.given
@@ -123,6 +159,10 @@ class DBScenario:
                 {
                     "expectedStatus": self.response_check.expect_status,
                     "expectedBody": self.response_check.expect_body,
+                    **(
+                        {"expectedContains": self.response_check.expect_contains}
+                        if self.response_check.expect_contains else {}
+                    ),
                 }
                 if self.response_check
                 else None
@@ -143,6 +183,29 @@ class DBScenario:
                 else None
             ),
         }
+        if self.db_response_check:
+            definition["dbResponseCheck"] = {
+                "table": self.db_response_check.table,
+                "fields": self.db_response_check.fields,
+                "filters": [
+                    {
+                        "source": item.source,
+                        "parameter": item.parameter,
+                        "column": item.column,
+                        "operator": item.operator,
+                        "auto": item.auto,
+                            "format": item.parameter_format,
+                    }
+                    for item in self.db_response_check.filters
+                ],
+                "arrayPath": self.db_response_check.array_path,
+            }
+        if self.cleanup:
+            definition["cleanup"] = {
+                "table": self.cleanup.table,
+                "primaryKey": self.cleanup.primary_key,
+                "where": self.cleanup.where,
+            }
         if self.auth_profile is not None:
             definition["authProfile"] = self.auth_profile
         return definition
@@ -231,10 +294,11 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         operation_id=req_raw["operationId"],
         body=req_raw.get("body") or {},
         path_params=req_raw.get("path_params") or {},
+        query_params=req_raw.get("query_params") or {},
     )
 
-    if "db_check" not in raw and "response_check" not in raw:
-        raise ScenarioError("db_check か response_check のどちらか一方は必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check")):
+        raise ScenarioError("db_check、response_check、db_response_check のいずれかは必須です")
 
     db_check = None
     if "db_check" in raw:
@@ -270,7 +334,93 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         response_check = ResponseCheck(
             expect_status=expect_raw.get("status"),
             expect_body=expect_raw.get("body") or {},
+            expect_contains=expect_raw.get("contains") or [],
         )
+        if not isinstance(response_check.expect_body, dict):
+            raise ScenarioError("response_check.expect.body はオブジェクトである必要があります")
+        if not isinstance(response_check.expect_contains, list):
+            raise ScenarioError("response_check.expect.contains はリストである必要があります")
+        for i, expected_item in enumerate(response_check.expect_contains):
+            if (
+                not isinstance(expected_item, dict)
+                or not isinstance(expected_item.get("fields"), dict)
+                or not isinstance(expected_item.get("path", "$"), str)
+            ):
+                raise ScenarioError(
+                    f"response_check.expect.contains[{i}] には文字列 path と fields オブジェクトが必要です"
+                )
+
+    db_response_check = None
+    if "db_response_check" in raw:
+        check_raw = raw["db_response_check"] or {}
+        if not isinstance(check_raw, dict):
+            raise ScenarioError("db_response_check はオブジェクトである必要があります")
+        fields = check_raw.get("fields") or {}
+        filters_raw = check_raw.get("filters") or []
+        array_path = check_raw.get("array_path", "$")
+        if not isinstance(check_raw.get("table"), str) or not check_raw["table"]:
+            raise ScenarioError("db_response_check.table は必須です")
+        if not isinstance(fields, dict) or not fields:
+            raise ScenarioError("db_response_check.fields はレスポンス項目とDB列の対応を1件以上指定してください")
+        if not all(isinstance(path, str) and path and isinstance(column, str) and column for path, column in fields.items()):
+            raise ScenarioError("db_response_check.fields のキーと値は空でない文字列にしてください")
+        if not isinstance(filters_raw, list):
+            raise ScenarioError("db_response_check.filters はリストである必要があります")
+        if array_path is not None and not isinstance(array_path, str):
+            raise ScenarioError("db_response_check.array_path は文字列または null で指定してください")
+        filters: list[DBResponseFilter] = []
+        seen_params: set[tuple[str, str]] = set()
+        for i, filter_raw in enumerate(filters_raw):
+            if not isinstance(filter_raw, dict):
+                raise ScenarioError(f"db_response_check.filters[{i}] はオブジェクトである必要があります")
+            source = filter_raw.get("source", "query")
+            parameter = filter_raw.get("parameter")
+            column = filter_raw.get("column")
+            operator = filter_raw.get("operator")
+            auto = filter_raw.get("auto", True)
+            parameter_format = filter_raw.get("format")
+            if not isinstance(source, str) or source not in {"query", "path"}:
+                raise ScenarioError(f"db_response_check.filters[{i}].source は query または path にしてください")
+            if not all(isinstance(value, str) and value for value in (parameter, column)):
+                raise ScenarioError(f"db_response_check.filters[{i}] に parameter と column が必要です")
+            if not isinstance(operator, str) or operator not in {"=", ">", ">=", "<", "<="}:
+                raise ScenarioError(f"db_response_check.filters[{i}].operator は =, >, >=, <, <= のいずれかにしてください")
+            if not isinstance(auto, bool):
+                raise ScenarioError(f"db_response_check.filters[{i}].auto は真偽値にしてください")
+            if parameter_format is not None and not isinstance(parameter_format, str):
+                raise ScenarioError(f"db_response_check.filters[{i}].format は文字列にしてください")
+            param_key = (source, parameter)
+            if param_key in seen_params:
+                raise ScenarioError(f"db_response_check.filters[{i}] のAPIパラメータが重複しています: {source}.{parameter}")
+            seen_params.add(param_key)
+            filters.append(DBResponseFilter(source, parameter, column, operator, auto, parameter_format))
+        db_response_check = DBResponseCheck(
+            table=check_raw["table"], fields=fields, filters=filters, array_path=array_path,
+        )
+
+    cleanup = None
+    if "cleanup" in raw:
+        cleanup_raw = raw["cleanup"]
+        if not isinstance(cleanup_raw, dict):
+            raise ScenarioError("cleanup はオブジェクトである必要があります")
+        table = cleanup_raw.get("table")
+        primary_key = cleanup_raw.get("primary_key")
+        where = cleanup_raw.get("where")
+        if not isinstance(table, str) or not table:
+            raise ScenarioError("cleanup.table は必須です")
+        if not _SAFE_DB_IDENTIFIER.fullmatch(table):
+            raise ScenarioError("cleanup.table は英字または_で始まる英数字・_で指定してください")
+        if not isinstance(primary_key, str) or not primary_key:
+            raise ScenarioError("cleanup.primary_key は必須です")
+        if not _SAFE_DB_IDENTIFIER.fullmatch(primary_key):
+            raise ScenarioError("cleanup.primary_key は英字または_で始まる英数字・_で指定してください")
+        if not isinstance(where, dict) or not where:
+            raise ScenarioError("cleanup.where は作成行を特定するDB列を1件以上指定してください")
+        if not all(isinstance(key, str) and _SAFE_DB_IDENTIFIER.fullmatch(key) for key in where):
+            raise ScenarioError("cleanup.where のDB列名は英字または_で始まる英数字・_で指定してください")
+        if not all(value is None or isinstance(value, (str, int, float, bool)) for value in where.values()):
+            raise ScenarioError("cleanup.where の値は文字列・数値・boolean・nullで指定してください")
+        cleanup = ScenarioCleanup(table=table, primary_key=primary_key, where=where)
 
     given: list[GivenItem] = []
     for i, g in enumerate(raw.get("given") or []):
@@ -283,9 +433,11 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         request=request,
         db_check=db_check,
         response_check=response_check,
+        db_response_check=db_response_check,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),
+        cleanup=cleanup,
     )
 
 

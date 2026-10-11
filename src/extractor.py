@@ -412,7 +412,10 @@ def _flatten_body_schema(
         # specs too, so item type/constraints and nested object properties are covered.
         items_schema = schema.get("items")
         if isinstance(items_schema, dict):
-            item_path = f"{parent_path}.[]" if parent_path else "[]"
+            # Use the conventional `items[].field` spelling in generated specifications.
+            # The request builder still accepts the older `items.[].field` form for cases
+            # created by earlier generator versions.
+            item_path = f"{parent_path}[]" if parent_path else "[]"
             results.append({
                 "operationId": operation_id,
                 "path": path,

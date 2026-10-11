@@ -125,7 +125,7 @@ jobs:
         run: python docs/apply_schema.py
 
       - name: Run E2E (generate -> execute -> DB scenario verification)
-        run: python docs/run_e2e.py
+        run: python docs/run_e2e.py --reset-db-between-layers
 
       - name: Run schemathesis (契約層の探索的ファジング。決定論的スイートとは別レーン、失敗してもブロックしない)
         run: python docs/run_schemathesis.py

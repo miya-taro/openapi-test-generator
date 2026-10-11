@@ -88,6 +88,36 @@ def test_check_rejects_invalid_column_identifier():
         postgres_backend._build_select("users", {"a; DROP TABLE users;--": "x"})
 
 
+def test_matching_primary_keys_requires_single_primary_key_and_binds_match_values():
+    mock_conn, mock_cur = make_mock_conn([])
+    mock_cur.fetchall.side_effect = [[("id",)], [(8,), (9,)]]
+
+    with patch("psycopg2.connect", return_value=mock_conn):
+        result = postgres_backend.matching_primary_keys(
+            DB_CONFIG, "users", "id", {"email": "test@example.com", "nickname": None}
+        )
+
+    assert result == [8, 9]
+    assert mock_cur.execute.call_count == 2
+    select_sql, select_params = mock_cur.execute.call_args[0]
+    assert '"email" = %s' in select_sql
+    assert '"nickname" IS NULL' in select_sql
+    assert select_params == ["test@example.com"]
+    mock_conn.close.assert_called_once()
+
+
+def test_matching_primary_keys_rejects_composite_primary_key():
+    mock_conn, mock_cur = make_mock_conn([])
+    mock_cur.fetchall.return_value = [("tenant_id",), ("id",)]
+
+    with patch("psycopg2.connect", return_value=mock_conn):
+        with pytest.raises(postgres_backend.DBResponseCheckError, match="単一カラム"):
+            postgres_backend.matching_primary_keys(DB_CONFIG, "users", "id", {"email": "x"})
+
+    assert mock_cur.execute.call_count == 1
+    mock_conn.close.assert_called_once()
+
+
 def test_check_no_table_and_no_raw_sql_fails_gracefully():
     mock_conn, mock_cur = make_mock_conn([])
     check = DBCheck(engine="postgres", expect={})

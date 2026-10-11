@@ -316,14 +316,63 @@ scenarios:
   抑えられる。`db_check` 側で明示すれば上書きできる
 - 旧形式（`scenarios:` の直下にシナリオのリストを書き、`db_check.engine` を毎回明示する形）も
   後方互換で引き続き動作する
-- `where`/`tags`/`columns`/`fields`（DB検証側）に加え、`request.path_params`/`request.body`
+- `where`/`tags`/`columns`/`fields`（DB検証側）に加え、`request.path_params`/`request.query_params`/`request.body`
   （APIリクエスト側）にも `{{response.xxx}}` と書ける。どちらも**直前のシナリオ**のAPIレスポンス
   JSONの値（作成されたIDなど）に置き換わる（ネストしたパスは `{{response.user.id}}` のように
   ドット区切り）。`request`側は文字通り「直前」（1つ前のシナリオ）のレスポンスを参照する点に注意
   （2つ前より前のレスポンスは参照できない）。1件目のシナリオで参照した場合は解決できずNGになる
+- `request.query_params` を使うとGET等のquery parameterを指定できる。`{{given.xxx.column}}` と書けば、
+  `given` で投入した行の値を検索条件に使える。空のquery値は送信されない
+- GET一覧の期待結果を既存DBから作る場合は、`db_response_check` を使う。DBへ行をINSERTせず、
+  `fields` のDB列とレスポンス項目の対応、および `filters` の検索条件からAPI入力値と期待行を作る
 - `table`/`where`/`columns`（PostgreSQL）、`measurement`/`tags`/`fields`（InfluxDB）を指定するだけで
   SQL/InfluxQLを書かずに検証できる。JOINや集計など複雑な検証が必要な場合のみ、PostgreSQL側で
   `raw_sql` を直接指定するエスケープハッチがある
+
+### db_response_check（既存DBからGETの期待レスポンスを作る）
+
+GETで期間検索を行う場合、試験用の行を画面やYAMLに手で用意する必要はない。APIパラメータとDB列の比較条件、
+レスポンス項目とDB列の対応を一度定義すると、実行時にPostgreSQLを読み取り専用で参照してAPI入力と期待結果を作る。
+
+```yaml
+scenarios:
+  list:
+    - name: 指定期間の予約一覧を返す
+      request:
+        operationId: listReservations
+      response_check:
+        expect:
+          status: 200
+      db_response_check:
+        table: reservations
+        array_path: data.items
+        fields:
+          id: id
+          startsAt: starts_at
+          status: status
+        filters:
+          - source: query
+            parameter: start
+            column: starts_at
+            operator: ">="
+            auto: true
+          - source: query
+            parameter: end
+            column: starts_at
+            operator: "<="
+            auto: true
+```
+
+- `fields` は「レスポンスの項目パス: DB列名」。配列要素内の `startsAt` のようなネストにも対応する。
+- `filters` の `source` は `query` または `path`。比較演算子は `=`, `>`, `>=`, `<`, `<=`。
+- `format` はOpenAPIのパラメータformat（`date` / `date-time`等）で、GUIからは自動で引き継ぐ。
+  `date-time` パラメータにDBのDATE列しかない場合は、時刻やタイムゾーンを推測せず未確認にする。
+- `auto: true` の入力値は既存DBの値から自動選択する。開始・終了の両方を同じ列に設定する期間検索では、
+  境界の内側・外側を試せる異なる値が4件以上必要。境界値の行がない、条件に一致する行がない、
+  または条件が結果を絞り込む証拠がない場合は合格にせず「未確認」（終了コード2）にする。
+- 期待レスポンスはDBの検索結果と項目・件数を完全照合し、配列の順番は問わない。`array_path: null` は単一オブジェクト用。
+- GET照合はSELECTのみを実行し、DBを書き換えない。ページング、JOIN、集計など、単一テーブルの比較条件だけで
+  期待値を表せないAPIはこの方式の対象外。
 
 ### given（前提データをDBへ直接投入する。factory）
 
@@ -422,6 +471,21 @@ scenarios:
 - `expect.status`: 期待するHTTPステータスコード（省略可）
 - `expect.body`: レスポンスJSON内のフィールドと期待値（辞書なので複数指定できる）。
   ネストしたパスはドット区切り（`user.name`）、配列要素は数字（`items.0.price`）で辿れる
+- `expect.contains`: 一覧レスポンスの配列に、指定したフィールド値を持つ項目が含まれることを確認する。
+  `path: "$"` はレスポンス自体、`path: items` はレスポンス内の `items` 配列を対象にする。
+- `{{given.<名前>.<カラム>}}` は `given` でDBに作成した行の値に置き換えられるため、採番IDを固定せずに
+  GETレスポンスとDBの値を照合できる
+
+```yaml
+response_check:
+  expect:
+    status: 200
+    contains:
+      - path: "$"
+        fields:
+          id: "{{given.user.id}}"
+          email: "{{given.user.email}}"
+```
 
 ### 使用例
 
@@ -456,6 +520,7 @@ DB検証は実際にデータを書き込む操作を伴うことが多いため
 |---|---|
 | 0 | 全シナリオOK |
 | 1 | 1件以上NG（該当データなし / カラム値不一致 / operationId不明 等）|
+| 2 | 未確認のシナリオ、またはテストデータの後片付けに失敗 |
 | 3 | 実行エラー（ファイル不在 / YAML不正 / DB接続失敗 / ヘルスチェック失敗）|
 
 ### シナリオYAMLの叩き台を自動生成する
@@ -487,6 +552,10 @@ python generate_db_scenarios.py openapi.json mapping.yaml -o scenarios.generated
 
 - `id` のようなサーバー側で自動採番されるフィールドは `where` から除外される（送信値と一致しない可能性が高いため）
 - ネストしたオブジェクト・配列（別テーブルへのリレーションの可能性がある）も `where` から除外される
+
+GUIでPOST後の片付けを有効にすると、試験前後のDB行を比較し、指定条件に一致する新規行だけを主キーで削除する。
+同じ条件を持つ行が並行して作成されると識別できないため、専用のテストDBで、試験ごとに一意となる値を使うこと。
+片付けに失敗した場合は警告を出し、終了コード2を返す。
 
 **シナリオの並び順・`{{response.id}}`の引き継ぎは自動で組み立てられる。**
 パス（例: `/orders`, `/orders/{id}`, `/orders/{id}/items`）から「リソースファミリー」を推定し、

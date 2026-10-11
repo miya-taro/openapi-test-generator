@@ -6,6 +6,7 @@ CI（.github/workflows/test.yml の e2e ジョブ）で、コンテナ起動直�
 """
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -20,7 +21,10 @@ DOCS = Path(__file__).resolve().parent
 
 
 def main() -> int:
-    config = get_postgres_config(load_config(str(DOCS / "config.json")))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=DOCS / "config.json")
+    args = parser.parse_args()
+    config = get_postgres_config(load_config(str(args.config)))
     schema_sql = (DOCS / "schema.sql").read_text(encoding="utf-8")
 
     last_error: Exception | None = None

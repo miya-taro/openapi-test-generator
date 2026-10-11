@@ -13,12 +13,20 @@ db_check（「APIを呼んだ結果DBが期待通り変化したか」の検証�
 from __future__ import annotations
 
 from contextlib import contextmanager
+import json
+import os
+from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException
 
 DB = dict(host="127.0.0.1", port=5432, dbname="apitester_test", user="postgres", password="testpass123")
+_test_config = os.environ.get("OPENAPI_TEST_DB_CONFIG")
+if _test_config:
+    # The repeatable verification script points this fixture API at its disposable PostgreSQL
+    # container. Normal manual use keeps the historical local defaults above.
+    DB = json.loads(Path(_test_config).read_text(encoding="utf-8"))["postgres"]
 
 app = FastAPI()
 

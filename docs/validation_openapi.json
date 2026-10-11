@@ -1,0 +1,263 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OpenAPI Test Generator Contract Validation API",
+    "version": "1.0.0",
+    "description": "No-business-logic local API for exercising generated request and response contract tests."
+  },
+  "servers": [{ "url": "http://127.0.0.1:8081" }],
+  "paths": {
+    "/validation/records": {
+      "post": {
+        "operationId": "createValidationRecord",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "enum": ["north"], "example": "north" }
+          },
+          {
+            "name": "X-Request-Source",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "enum": ["contract-test"], "example": "contract-test" }
+          },
+          {
+            "name": "session_id",
+            "in": "cookie",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^sess-[a-z0-9]{4,20}$", "example": "sess-ab12" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "quantity", "state", "profile", "items"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 2, "maxLength": 12, "pattern": "^[a-zA-Z][a-zA-Z0-9-]*$" },
+                  "quantity": { "type": "integer", "minimum": 1, "maximum": 10 },
+                  "state": { "type": "string", "enum": ["ready", "held"] },
+                  "profile": {
+                    "type": "object",
+                    "required": ["email", "address"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "email": { "type": "string", "format": "email" },
+                      "address": {
+                        "type": "object",
+                        "required": ["city", "postalCode"],
+                        "additionalProperties": false,
+                        "properties": {
+                          "city": { "type": "string", "minLength": 1, "maxLength": 40 },
+                          "postalCode": { "type": "string", "pattern": "^[0-9]{5}$" }
+                        }
+                      }
+                    }
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "object",
+                      "required": ["sku", "quantity"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "sku": { "type": "string", "minLength": 2, "maxLength": 10 },
+                        "quantity": { "type": "integer", "minimum": 1, "maximum": 5 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Request accepted",
+            "headers": {
+              "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } }
+            },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["id", "state", "items"],
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "integer", "minimum": 1 },
+                "state": { "type": "string", "enum": ["accepted"] },
+                "items": { "type": "array", "items": { "type": "object", "required": ["sku", "quantity"], "properties": { "sku": { "type": "string" }, "quantity": { "type": "integer", "minimum": 1 } } } }
+              },
+              "example": { "id": 1, "state": "accepted", "items": [{ "sku": "AB", "quantity": 1 }] }
+            } } }
+          },
+          "400": {
+            "description": "Request contract validation failed",
+            "headers": {
+              "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } }
+            },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["code", "message"],
+              "additionalProperties": false,
+              "properties": {
+                "code": { "type": "string", "enum": ["INVALID_REQUEST"] },
+                "message": { "type": "string", "minLength": 1 }
+              },
+              "example": { "code": "INVALID_REQUEST", "message": "Request does not match the OpenAPI contract" }
+            } } }
+          },
+          "422": {
+            "description": "Request values do not match the declared schema",
+            "headers": {
+              "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } }
+            },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["code", "message"],
+              "additionalProperties": false,
+              "properties": {
+                "code": { "type": "string", "enum": ["INVALID_REQUEST"] },
+                "message": { "type": "string", "minLength": 1 }
+              },
+              "example": { "code": "INVALID_REQUEST", "message": "Request values do not match the OpenAPI contract" }
+            } } }
+          },
+          "415": {
+            "description": "Unsupported request media type",
+            "headers": {
+              "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } }
+            },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "required": ["code", "message"],
+              "additionalProperties": false,
+              "properties": {
+                "code": { "type": "string", "enum": ["INVALID_REQUEST"] },
+                "message": { "type": "string", "minLength": 1 }
+              },
+              "example": { "code": "INVALID_REQUEST", "message": "Unsupported media type" }
+            } } }
+          }
+        }
+      }
+    },
+    "/validation/records/{recordId}": {
+      "get": {
+        "operationId": "getValidationRecord",
+        "parameters": [
+          { "name": "recordId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 999 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Record found",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["id", "state"], "additionalProperties": false,
+              "properties": { "id": { "type": "integer", "minimum": 1 }, "state": { "type": "string", "enum": ["accepted"] } },
+              "example": { "id": 1, "state": "accepted" }
+            } } }
+          },
+          "400": {
+            "description": "Invalid record identifier",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["code", "message"], "additionalProperties": false,
+              "properties": { "code": { "type": "string", "enum": ["INVALID_REQUEST"] }, "message": { "type": "string", "minLength": 1 } },
+              "example": { "code": "INVALID_REQUEST", "message": "Invalid record identifier" }
+            } } }
+          }
+        }
+      }
+    },
+    "/validation/page": {
+      "get": {
+        "operationId": "validatePageQuery",
+        "parameters": [
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 10, "example": 2 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page query accepted",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["page", "accepted"], "additionalProperties": false,
+              "properties": { "page": { "type": "integer", "minimum": 1, "maximum": 10 }, "accepted": { "type": "boolean", "enum": [true] } },
+              "example": { "page": 2, "accepted": true }
+            } } }
+          },
+          "400": {
+            "description": "Invalid page query",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["code", "message"], "additionalProperties": false,
+              "properties": { "code": { "type": "string", "enum": ["INVALID_REQUEST"] }, "message": { "type": "string", "minLength": 1 } },
+              "example": { "code": "INVALID_REQUEST", "message": "Invalid page query" }
+            } } }
+          }
+        }
+      }
+    },
+    "/validation/client": {
+      "get": {
+        "operationId": "validateClientHeader",
+        "parameters": [
+          { "name": "X-Client-Version", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+$", "example": "v1.0" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client header accepted",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["accepted"], "additionalProperties": false,
+              "properties": { "accepted": { "type": "boolean", "enum": [true] } },
+              "example": { "accepted": true }
+            } } }
+          },
+          "400": {
+            "description": "Invalid client header",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["code", "message"], "additionalProperties": false,
+              "properties": { "code": { "type": "string", "enum": ["INVALID_REQUEST"] }, "message": { "type": "string", "minLength": 1 } },
+              "example": { "code": "INVALID_REQUEST", "message": "Invalid client header" }
+            } } }
+          }
+        }
+      }
+    },
+    "/validation/session": {
+      "get": {
+        "operationId": "validateSessionCookie",
+        "parameters": [
+          { "name": "session_id", "in": "cookie", "required": true, "schema": { "type": "string", "pattern": "^sess-[a-z0-9]{4,20}$", "example": "sess-ab12" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session cookie accepted",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["accepted"], "additionalProperties": false,
+              "properties": { "accepted": { "type": "boolean", "enum": [true] } },
+              "example": { "accepted": true }
+            } } }
+          },
+          "400": {
+            "description": "Invalid session cookie",
+            "headers": { "X-Contract-Check": { "required": true, "schema": { "type": "string", "enum": ["pass", "reject"] } } },
+            "content": { "application/json": { "schema": {
+              "type": "object", "required": ["code", "message"], "additionalProperties": false,
+              "properties": { "code": { "type": "string", "enum": ["INVALID_REQUEST"] }, "message": { "type": "string", "minLength": 1 } },
+              "example": { "code": "INVALID_REQUEST", "message": "Invalid session cookie" }
+            } } }
+          }
+        }
+      }
+    }
+  }
+}

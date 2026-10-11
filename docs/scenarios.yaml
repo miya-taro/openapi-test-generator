@@ -273,7 +273,523 @@ scenarios:
       expect:
         exists: false
 
-  # deleteUser/deleteCategory/deleteProductは、上のシナリオで作成した注文・商品・
-  # カテゴリからまだ参照されている（外部キー制約）ため、この一連の流れの中では
-  # 安全に削除できない（実行すると正しくFKエラーで失敗する＝DB側の整合性は正常）。
-  # 削除の検証だけを行いたい場合は、他から参照されない行を別途用意してください。
+  # GET はDBに事前データを作成し、レスポンスがそのDB行を返すことと、
+  # GET後もDB行が変化していないことを両方確認する。
+  - name: getUser
+    given:
+    - table: users
+      as: user
+      fields:
+        name: get_user
+        email: get-user-db@example.com
+        role: member
+    request:
+      operationId: getUser
+      path_params:
+        userId: "{{given.user.id}}"
+    response_check:
+      expect:
+        status: 200
+        body:
+          id: "{{given.user.id}}"
+          name: "{{given.user.name}}"
+          email: "{{given.user.email}}"
+          role: "{{given.user.role}}"
+    db_check:
+      table: users
+      where:
+        id: "{{given.user.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.user.name}}"
+          email: "{{given.user.email}}"
+          role: "{{given.user.role}}"
+
+  - name: listUsers
+    given:
+    - table: users
+      as: user
+      fields:
+        name: list_users
+        email: list-users-db@example.com
+        role: member
+    request:
+      operationId: listUsers
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.user.id}}"
+            name: "{{given.user.name}}"
+            email: "{{given.user.email}}"
+            role: "{{given.user.role}}"
+    db_check:
+      table: users
+      where:
+        id: "{{given.user.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.user.name}}"
+          email: "{{given.user.email}}"
+          role: "{{given.user.role}}"
+
+  - name: listUserOrders
+    given:
+    - table: users
+      as: user
+      fields:
+        name: list_user_orders
+        email: list-user-orders-db@example.com
+        role: member
+    - table: orders
+      as: order
+      fields:
+        user_id: "{{given.user.id}}"
+        status: pending
+    request:
+      operationId: listUserOrders
+      path_params:
+        userId: "{{given.user.id}}"
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.order.id}}"
+            user_id: "{{given.user.id}}"
+            status: "{{given.order.status}}"
+    db_check:
+      table: orders
+      where:
+        id: "{{given.order.id}}"
+      expect:
+        exists: true
+        columns:
+          user_id: "{{given.user.id}}"
+          status: "{{given.order.status}}"
+
+  - name: listCategories
+    given:
+    - table: categories
+      as: category
+      fields:
+        name: list_categories
+    request:
+      operationId: listCategories
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.category.id}}"
+            name: "{{given.category.name}}"
+    db_check:
+      table: categories
+      where:
+        id: "{{given.category.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.category.name}}"
+
+  - name: getCategory
+    given:
+    - table: categories
+      as: category
+      fields:
+        name: get_category
+    request:
+      operationId: getCategory
+      path_params:
+        categoryId: "{{given.category.id}}"
+    response_check:
+      expect:
+        status: 200
+        body:
+          id: "{{given.category.id}}"
+          name: "{{given.category.name}}"
+    db_check:
+      table: categories
+      where:
+        id: "{{given.category.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.category.name}}"
+
+  - name: listProducts
+    given:
+    - table: categories
+      as: category
+      fields:
+        name: list_products_category
+    - table: products
+      as: product
+      fields:
+        name: list_products
+        description: list_products_db
+        price: 17.25
+        category_id: "{{given.category.id}}"
+        status: draft
+    request:
+      operationId: listProducts
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.product.id}}"
+            name: "{{given.product.name}}"
+            description: "{{given.product.description}}"
+            price: 17.25
+            category_id: "{{given.category.id}}"
+            status: "{{given.product.status}}"
+    db_check:
+      table: products
+      where:
+        id: "{{given.product.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.product.name}}"
+          description: "{{given.product.description}}"
+          price: 17.25
+          category_id: "{{given.category.id}}"
+          status: "{{given.product.status}}"
+
+  - name: getProduct
+    given:
+    - table: categories
+      as: category
+      fields:
+        name: get_product_category
+    - table: products
+      as: product
+      fields:
+        name: get_product
+        description: get_product_db
+        price: 23.5
+        category_id: "{{given.category.id}}"
+        status: published
+    request:
+      operationId: getProduct
+      path_params:
+        productId: "{{given.product.id}}"
+    response_check:
+      expect:
+        status: 200
+        body:
+          id: "{{given.product.id}}"
+          name: "{{given.product.name}}"
+          description: "{{given.product.description}}"
+          price: 23.5
+          category_id: "{{given.category.id}}"
+          status: "{{given.product.status}}"
+    db_check:
+      table: products
+      where:
+        id: "{{given.product.id}}"
+      expect:
+        exists: true
+        columns:
+          name: "{{given.product.name}}"
+          description: "{{given.product.description}}"
+          price: 23.5
+          category_id: "{{given.category.id}}"
+          status: "{{given.product.status}}"
+
+  - name: listOrders
+    given:
+    - table: users
+      as: user
+      fields:
+        name: list_orders
+        email: list-orders-db@example.com
+        role: member
+    - table: orders
+      as: order
+      fields:
+        user_id: "{{given.user.id}}"
+        status: delivered
+    request:
+      operationId: listOrders
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.order.id}}"
+            user_id: "{{given.user.id}}"
+            status: "{{given.order.status}}"
+    db_check:
+      table: orders
+      where:
+        id: "{{given.order.id}}"
+      expect:
+        exists: true
+        columns:
+          user_id: "{{given.user.id}}"
+          status: "{{given.order.status}}"
+
+  - name: getOrder
+    given:
+    - table: users
+      as: user
+      fields:
+        name: get_order
+        email: get-order-db@example.com
+        role: member
+    - table: orders
+      as: order
+      fields:
+        user_id: "{{given.user.id}}"
+        status: shipped
+    request:
+      operationId: getOrder
+      path_params:
+        orderId: "{{given.order.id}}"
+    response_check:
+      expect:
+        status: 200
+        body:
+          id: "{{given.order.id}}"
+          user_id: "{{given.user.id}}"
+          status: "{{given.order.status}}"
+    db_check:
+      table: orders
+      where:
+        id: "{{given.order.id}}"
+      expect:
+        exists: true
+        columns:
+          user_id: "{{given.user.id}}"
+          status: "{{given.order.status}}"
+
+  - name: listOrderItems
+    given:
+    - table: users
+      as: user
+      fields:
+        name: list_order_items
+        email: list-order-items-db@example.com
+        role: member
+    - table: products
+      as: product
+      fields:
+        name: list_order_items_product
+        price: 12.5
+    - table: orders
+      as: order
+      fields:
+        user_id: "{{given.user.id}}"
+        status: pending
+    - table: order_items
+      as: order_item
+      fields:
+        order_id: "{{given.order.id}}"
+        product_id: "{{given.product.id}}"
+        quantity: 4
+    request:
+      operationId: listOrderItems
+      path_params:
+        orderId: "{{given.order.id}}"
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.order_item.id}}"
+            order_id: "{{given.order.id}}"
+            product_id: "{{given.product.id}}"
+            quantity: "{{given.order_item.quantity}}"
+    db_check:
+      table: order_items
+      where:
+        id: "{{given.order_item.id}}"
+      expect:
+        exists: true
+        columns:
+          order_id: "{{given.order.id}}"
+          product_id: "{{given.product.id}}"
+          quantity: "{{given.order_item.quantity}}"
+
+  - name: listReviews
+    given:
+    - table: products
+      as: product
+      fields:
+        name: list_reviews_product
+        price: 5.75
+    - table: reviews
+      as: review
+      fields:
+        product_id: "{{given.product.id}}"
+        rating: 4
+        comment: list_reviews_db
+    request:
+      operationId: listReviews
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: "$"
+          fields:
+            id: "{{given.review.id}}"
+            product_id: "{{given.product.id}}"
+            rating: "{{given.review.rating}}"
+            comment: "{{given.review.comment}}"
+    db_check:
+      table: reviews
+      where:
+        id: "{{given.review.id}}"
+      expect:
+        exists: true
+        columns:
+          product_id: "{{given.product.id}}"
+          rating: "{{given.review.rating}}"
+          comment: "{{given.review.comment}}"
+
+  - name: getReview
+    given:
+    - table: products
+      as: product
+      fields:
+        name: get_review_product
+        price: 7.5
+    - table: reviews
+      as: review
+      fields:
+        product_id: "{{given.product.id}}"
+        rating: 5
+        comment: get_review_db
+    request:
+      operationId: getReview
+      path_params:
+        reviewId: "{{given.review.id}}"
+    response_check:
+      expect:
+        status: 200
+        body:
+          id: "{{given.review.id}}"
+          product_id: "{{given.product.id}}"
+          rating: "{{given.review.rating}}"
+          comment: "{{given.review.comment}}"
+    db_check:
+      table: reviews
+      where:
+        id: "{{given.review.id}}"
+      expect:
+        exists: true
+        columns:
+          product_id: "{{given.product.id}}"
+          rating: "{{given.review.rating}}"
+          comment: "{{given.review.comment}}"
+
+  - name: getCart
+    given:
+    - table: products
+      as: product
+      fields:
+        name: get_cart_product
+        price: 8.25
+    - table: cart_items
+      as: cart_item
+      fields:
+        product_id: "{{given.product.id}}"
+        quantity: 6
+    request:
+      operationId: getCart
+    response_check:
+      expect:
+        status: 200
+        contains:
+        - path: items
+          fields:
+            id: "{{given.cart_item.id}}"
+            product_id: "{{given.product.id}}"
+            quantity: "{{given.cart_item.quantity}}"
+    db_check:
+      table: cart_items
+      where:
+        id: "{{given.cart_item.id}}"
+      expect:
+        exists: true
+        columns:
+          product_id: "{{given.product.id}}"
+          quantity: "{{given.cart_item.quantity}}"
+
+  # 共有データを削除すると外部キー制約に当たるため、deleteUser/category/product は
+  # 各シナリオ専用の未参照行を given で作って削除し、DBから消えたことを確認する。
+
+  - name: deleteUser
+    given:
+    - table: users
+      as: user
+      fields:
+        name: delete_user
+        email: delete-user-db@example.com
+        role: member
+    request:
+      operationId: deleteUser
+      path_params:
+        userId: "{{given.user.id}}"
+    response_check:
+      expect:
+        status: 200
+    db_check:
+      table: users
+      where:
+        id: "{{given.user.id}}"
+      expect:
+        exists: false
+
+  - name: deleteCategory
+    given:
+    - table: categories
+      as: category
+      fields:
+        name: delete_category
+    request:
+      operationId: deleteCategory
+      path_params:
+        categoryId: "{{given.category.id}}"
+    response_check:
+      expect:
+        status: 200
+    db_check:
+      table: categories
+      where:
+        id: "{{given.category.id}}"
+      expect:
+        exists: false
+
+  - name: deleteProduct
+    given:
+    - table: products
+      as: product
+      fields:
+        name: delete_product
+        price: 3.5
+        status: draft
+    request:
+      operationId: deleteProduct
+      path_params:
+        productId: "{{given.product.id}}"
+    response_check:
+      expect:
+        status: 200
+    db_check:
+      table: products
+      where:
+        id: "{{given.product.id}}"
+      expect:
+        exists: false

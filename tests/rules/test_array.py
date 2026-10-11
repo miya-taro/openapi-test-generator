@@ -1,4 +1,7 @@
+import json
+
 from src.generator.rules.array import generate_array_cases
+from jsonschema import Draft202012Validator
 
 ALL_OPTS = {"includeNormal": True, "includeAbnormal": True, "enumFullCoverage": False}
 
@@ -9,8 +12,12 @@ def test_min_items():
     )
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
     abnormal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("異常系"))
-    assert normal["inputValue"] == '["a", "a"]'
-    assert abnormal["inputValue"] == '["a"]'
+    normal_value = json.loads(normal["inputValue"])
+    abnormal_value = json.loads(abnormal["inputValue"])
+    item_validator = Draft202012Validator({"type": "string"})
+    assert len(normal_value) == 2
+    assert len(abnormal_value) == 1
+    assert all(item_validator.is_valid(item) for item in normal_value + abnormal_value)
 
 
 def test_max_items():
@@ -19,8 +26,12 @@ def test_max_items():
     )
     normal = next(c for c in cases if c["keyword"] == "maxItems" and c["perspective"].startswith("正常系"))
     abnormal = next(c for c in cases if c["keyword"] == "maxItems" and c["perspective"].startswith("異常系"))
-    assert normal["inputValue"] == "[1, 1, 1]"
-    assert abnormal["inputValue"] == "[1, 1, 1, 1]"
+    normal_value = json.loads(normal["inputValue"])
+    abnormal_value = json.loads(abnormal["inputValue"])
+    item_validator = Draft202012Validator({"type": "integer"})
+    assert len(normal_value) == 3
+    assert len(abnormal_value) == 4
+    assert all(item_validator.is_valid(item) for item in normal_value + abnormal_value)
 
 
 def test_unique_items():
@@ -30,7 +41,10 @@ def test_unique_items():
     )
     abnormal = next(c for c in cases if c["keyword"] == "uniqueItems")
     assert "異常系" in abnormal["perspective"]
-    assert abnormal["inputValue"] == '["a", "a"]'
+    parsed = json.loads(abnormal["inputValue"])
+    assert len(parsed) == 2
+    assert parsed[0] == parsed[1]
+    assert all(Draft202012Validator({"type": "string"}).is_valid(item) for item in parsed)
 
 
 def test_min_items_zero_no_abnormal():
@@ -60,7 +74,8 @@ def test_min_items_with_object_array_fills_required_properties():
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
     parsed = json.loads(normal["inputValue"])
-    assert parsed == [{"product_name": "a", "quantity": 1}]
+    assert len(parsed) == 1
+    assert Draft202012Validator(schema["items"]).is_valid(parsed[0])
     # required にない任意項目(note)は含めない
     assert "note" not in parsed[0]
 
@@ -76,10 +91,11 @@ def test_max_items_with_object_array_produces_valid_json_elements():
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     abnormal = next(c for c in cases if c["keyword"] == "maxItems" and c["perspective"].startswith("異常系"))
     parsed = json.loads(abnormal["inputValue"])
-    assert parsed == [{"ok": True}, {"ok": True}, {"ok": True}]
+    assert len(parsed) == 3
+    assert all(Draft202012Validator(schema["items"]).is_valid(item) for item in parsed)
 
 
-def test_object_array_without_required_falls_back_to_all_properties():
+def test_object_array_without_required_uses_a_valid_minimal_object():
     import json
 
     schema = {
@@ -89,7 +105,9 @@ def test_object_array_without_required_falls_back_to_all_properties():
     }
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
-    assert json.loads(normal["inputValue"]) == [{"x": 1}]
+    parsed = json.loads(normal["inputValue"])
+    assert parsed == [{}]
+    assert Draft202012Validator(schema["items"]).is_valid(parsed[0])
 
 
 def test_object_array_without_explicit_type_still_inferred_as_object():
@@ -109,7 +127,9 @@ def test_object_array_without_explicit_type_still_inferred_as_object():
     }
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
-    assert json.loads(normal["inputValue"]) == [{"name": "a"}]
+    parsed = json.loads(normal["inputValue"])
+    assert len(parsed) == 1
+    assert Draft202012Validator(schema["items"]).is_valid(parsed[0])
 
 
 def test_object_array_nested_property_without_explicit_type_still_inferred_as_object():
@@ -128,7 +148,9 @@ def test_object_array_nested_property_without_explicit_type_still_inferred_as_ob
     }
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
-    assert json.loads(normal["inputValue"]) == [{"inner": {"id": 1}}]
+    parsed = json.loads(normal["inputValue"])
+    assert len(parsed) == 1
+    assert Draft202012Validator(schema["items"]).is_valid(parsed[0])
 
 
 def test_object_array_nested_object_property_recurses():
@@ -151,4 +173,6 @@ def test_object_array_nested_object_property_recurses():
     }
     cases = generate_array_cases(schema, {"paramName": "items", "opts": ALL_OPTS})
     normal = next(c for c in cases if c["keyword"] == "minItems" and c["perspective"].startswith("正常系"))
-    assert json.loads(normal["inputValue"]) == [{"inner": {"id": 1}}]
+    parsed = json.loads(normal["inputValue"])
+    assert len(parsed) == 1
+    assert Draft202012Validator(schema["items"]).is_valid(parsed[0])

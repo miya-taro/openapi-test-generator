@@ -34,7 +34,7 @@
             </div>
             <div class="tabs tabs-secondary">
               <button class="tab" data-page="db-prep">DB準備</button>
-              <button class="tab" data-page="db-scenario">DBシナリオ</button>
+              <button class="tab" data-page="db-scenario">DB確認</button>
             </div>
           </header>
 
@@ -65,17 +65,26 @@
                       <button class="secondary" id="contract-load-button" type="button">読み直す</button>
                     </div>
                   </div>
+                  <p class="field-caption contract-validation-note">
+                    bodyの制約違反ケースは自動生成し、期待statusは400固定ではなく4xxです。エラーボディschemaも検証する場合は、OpenAPIの400/422 responseに定義してください。
+                  </p>
                   <div class="contract-schema-grid">
-                    <div class="form-field">
-                      <label>リクエストbody（application/json）</label>
-                      <label class="checkbox"><input type="checkbox" id="contract-request-required" /> リクエストbodyを必須にする</label>
+                    <div class="form-field contract-schema-panel">
+                      <div class="contract-panel-heading">
+                        <label>リクエストbody（application/json）</label>
+                        <label class="checkbox"><input type="checkbox" id="contract-request-required" /> 必須</label>
+                      </div>
                       <div id="contract-request-schema-builder" class="schema-builder"></div>
                       <p class="field-caption">項目名、型、必須、最小・最大を入力します。objectの中にも項目を追加できます。</p>
                     </div>
-                    <div class="form-field">
-                      <label for="contract-response-status">成功response status</label>
-                      <input id="contract-response-status" type="text" value="200" placeholder="200 / 201 / 2XX" />
-                      <label class="contract-response-schema-label">レスポンスbody（application/json）</label>
+                    <div class="form-field contract-schema-panel">
+                      <div class="contract-panel-heading">
+                        <label>レスポンスbody（application/json）</label>
+                        <div class="contract-response-status">
+                          <label for="contract-response-status">成功status</label>
+                          <input id="contract-response-status" type="text" value="200" placeholder="200 / 201 / 2XX" />
+                        </div>
+                      </div>
                       <div id="contract-response-schema-builder" class="schema-builder"></div>
                       <p class="field-caption">レスポンス項目も同じフォームで設定します。schema未設定のまま保存すると既存定義を保ちます。</p>
                     </div>
@@ -120,7 +129,7 @@
                 <div class="form-field">
                   <label for="auth-profiles">役割別ログイン情報（任意）</label>
                   <textarea id="auth-profiles" rows="3" placeholder='{"read_only": {"username": "reader", "password": "..."}}'></textarea>
-                  <p class="field-caption">DBシナリオで <code>auth_profile: read_only</code> のように指定します。ログイン先・token設定は共通です。通常設定には保存されず、起動ごとに再入力します（「ファイルに保存」を押した場合は選択先に保存されます）。</p>
+                  <p class="field-caption">DB確認設定で <code>auth_profile: read_only</code> のように指定します。ログイン先・token設定は共通です。通常設定には保存されず、起動ごとに再入力します（「ファイルに保存」を押した場合は選択先に保存されます）。</p>
                 </div>
                 <div class="db-fields-grid">
                   <input id="auth-token-path" type="text" placeholder="token_path（既定: access_token。任意）" />
@@ -229,68 +238,14 @@
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">2. APIとDBテーブルの対応表を生成<span class="optional-tag">任意</span></h3>
+                <h3 class="form-section-title">2. APIとDBの対応を入力</h3>
                 <p class="form-section-desc">
-                  「どのAPI操作がDBのどのテーブルを更新するか」の対応表（mapping.yaml）の叩き台を、
-                  openapi.jsonのリクエストボディとDBカラム名から推定します。PHP SQLのCopilot調査結果も任意で照合できます。
-                  次の手順3で使います。確信度が「低」の項目は必ず確認・修正してください。
+                  「DB確認」画面でAPI操作を選ぶと、リクエスト項目・検索条件・レスポンス項目をOpenAPIから表示します。
+                  対象テーブルと各項目に対応するDB列は人が入力します。項目名からの自動推定は行いません。
                 </p>
-                <div class="form-field">
-                  <label for="dbprep-mapping-output">出力先</label>
-                  <div class="row">
-                    <input id="dbprep-mapping-output" type="text" placeholder="空欄可: mapping.yaml.generated として出力" />
-                    <button class="secondary" id="dbprep-browse-mapping-output">参照...</button>
-                  </div>
-                </div>
-                <details class="form-field">
-                  <summary>PHP SQLのCopilot調査結果を使う（任意）</summary>
-                  <p class="field-caption">CopilotがPHPソースから出した openapi.db-evidence.json を選ぶと、SQLの根拠行を接続先PostgreSQLのテーブル・カラムと照合します。一致しても候補のままです。</p>
-                  <div class="row">
-                    <input id="dbprep-php-db-evidence-path" type="text" placeholder="openapi.db-evidence.json（任意）" />
-                    <button class="secondary" id="dbprep-browse-php-db-evidence">参照...</button>
-                  </div>
-                </details>
                 <div class="btn-row">
-                  <button id="dbprep-gen-mapping-button">対応表を生成</button>
+                  <button class="secondary" id="dbprep-goto-dbscenario">APIとDBの対応を入力する</button>
                 </div>
-                <div id="dbprep-mapping-status" class="field-caption status-message"></div>
-                <div id="dbprep-mapping-log" class="mini-log" hidden></div>
-              </div>
-
-              <div class="form-section">
-                <h3 class="form-section-title">3. DB検証シナリオを生成<span class="optional-tag">任意</span></h3>
-                <p class="form-section-desc">
-                  「APIを呼び出した結果、DBが期待通り変化したか」を確認する検証シナリオ（scenarios.yaml）の叩き台を、
-                  openapi.jsonと手順2の対応表から自動生成します。生成後は「DBシナリオ」タブで実行できます。
-                  where/columns等の検証条件は必ず確認・修正してください。
-                </p>
-                <div class="form-field">
-                  <label for="dbprep-scenario-mapping-path">手順2で生成した対応表（mapping.yaml）</label>
-                  <div class="row">
-                    <input id="dbprep-scenario-mapping-path" type="text" placeholder="上で生成した対応表、または既存のファイル" />
-                    <button class="secondary" id="dbprep-browse-scenario-mapping">参照...</button>
-                  </div>
-                </div>
-                <div class="form-field">
-                  <label for="dbprep-scenario-output">出力先</label>
-                  <div class="row">
-                    <input id="dbprep-scenario-output" type="text" placeholder="空欄可: scenarios.generated.yaml として出力" />
-                    <button class="secondary" id="dbprep-browse-scenario-output">参照...</button>
-                  </div>
-                </div>
-                <div class="btn-row">
-                  <button id="dbprep-gen-scenario-button">検証シナリオを生成</button>
-                </div>
-                <div id="dbprep-scenario-status" class="field-caption status-message"></div>
-                <div id="dbprep-scenario-log" class="mini-log" hidden></div>
-                <details class="form-field">
-                  <summary>Copilotで業務シナリオ候補をレビュー（任意）</summary>
-                  <p class="field-caption">選択中のOpenAPI・対応表・シナリオ・PHP SQL根拠JSONのパスを依頼文に入れます。Copilot Chatから読めないファイルは、VS Codeで開くか添付してください。</p>
-                  <div class="btn-row">
-                    <button class="secondary" id="dbprep-copilot-scenario-prompt-copy">Copilot用の依頼文をコピー</button>
-                  </div>
-                  <div id="dbprep-copilot-scenario-status" class="field-caption status-message" aria-live="polite"></div>
-                </details>
               </div>
             </section>
 
@@ -304,17 +259,159 @@
               <div id="dbscenario-error" class="banner warning" hidden></div>
 
               <div class="form-section">
-                <h3 class="form-section-title">1. DB検証シナリオファイル</h3>
+                <h3 class="form-section-title">1. APIとDBの対応を登録</h3>
                 <p class="form-section-desc">
-                  「APIを呼び出した結果、DBが期待通り変化したか」を確認する検証シナリオです。
-                  「DB準備」タブの手順3で生成し、確認・修正したファイル（scenarios.yaml）を選んでください。
-                  認証設定は「テスト生成・実行」タブの内容を共有して使います
-                  （「テスト生成・実行」（openapi.jsonから自動生成したレスポンス検証）とは別レイヤーの試験です）。
+                  API項目はOpenAPIから表示します。対象テーブルと対応するDB列を人が指定すると、実行用の確認内容を作成します。項目名によるDB列の推測は行いません。
+                  POSTはAPIに送る値とDB列を対応付けます。PUT・PATCH・DELETEは対象行を指定し、GETは検索条件とレスポンス項目をDB列に対応付けます。GETでは既存DBを読み取るため、試験行を画面で用意する必要はありません。
+                  1件の設定で確認するDBテーブルは1つです。親子テーブルへの複数書き込みや集計値は、引き続きYAMLで個別に指定してください。
+                </p>
+                <div class="db-scenario-editor">
+                  <div id="dbscenario-editor-guidance" class="db-scenario-guidance" aria-live="polite">
+                    まずAPI操作を選択してください。操作に応じて必要な入力欄だけが表示されます。
+                  </div>
+                  <div class="db-scenario-editor-grid">
+                    <div class="form-field">
+                      <label for="dbscenario-editor-operation">API操作</label>
+                      <select id="dbscenario-editor-operation"><option value="">openapi.jsonを読み込み中...</option></select>
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-name">試験名（結果一覧に表示）</label>
+                      <input id="dbscenario-editor-name" type="text" placeholder="例: createUser のDB保存を確認" />
+                    </div>
+                    <div class="form-field">
+                      <label for="dbscenario-editor-table">確認するDBテーブル</label>
+                      <input id="dbscenario-editor-table" type="text" placeholder="例: users" />
+                    </div>
+                  </div>
+
+                  <div id="dbscenario-editor-path-params" class="form-field" hidden>
+                    <label>APIのパスに入れる値</label>
+                    <div id="dbscenario-editor-path-param-rows" class="db-scenario-editor-rows"></div>
+                    <p class="field-caption">URLの <code>{id}</code> などに入れる値です。PUT・PATCH・DELETEでは、DBの主キーを使う場合はチェックしてください。自動では選びません。</p>
+                  </div>
+
+                  <div id="dbscenario-editor-query-params" class="form-field" hidden>
+                    <label>APIに渡す検索条件（Query）</label>
+                    <div id="dbscenario-editor-query-param-rows" class="db-scenario-editor-rows"></div>
+                    <p class="field-caption">値を空欄にすると、その条件は送りません。GETで下の検索条件に対応付けた項目は、実行時に既存DBの値から自動で作ります。</p>
+                  </div>
+
+                  <div id="dbscenario-editor-write-panel" hidden>
+                    <div class="form-field db-scenario-editor-status-field">
+                      <label for="dbscenario-editor-write-status">API成功時のstatus</label>
+                      <input id="dbscenario-editor-write-status" type="number" min="100" max="599" value="200" />
+                      <p class="field-caption">OpenAPIの成功statusを初期値にします。実行時はstatusとDBへの反映を確認します。</p>
+                    </div>
+                    <div class="form-field" id="dbscenario-editor-request-body-field">
+                      <label for="dbscenario-editor-request-body">APIに送るテストデータ（body）</label>
+                      <textarea id="dbscenario-editor-request-body" rows="8" spellcheck="false" placeholder='{"name":"sample"}'></textarea>
+                      <p class="field-caption">OpenAPIに項目schemaがない操作だけ、body全体をJSONで入力してください。</p>
+                    </div>
+                    <div class="form-field">
+                      <div class="db-scenario-editor-heading">
+                        <label>APIの項目 → DBの列</label>
+                      </div>
+                      <div class="db-scenario-table-wrap">
+                        <table class="db-scenario-map-table">
+                          <thead><tr><th>API項目（OpenAPI）</th><th>APIへ送る値</th><th>DBの列（人が入力）</th><th>値の確認方法</th><th>固定値</th><th>保存行の特定に使う</th></tr></thead>
+                          <tbody id="dbscenario-editor-write-mappings"></tbody>
+                        </table>
+                      </div>
+                      <p class="field-caption">項目と型はOpenAPIから表示します。値は項目ごとに設定でき、必須/任意やschemaの制約も確認できます。配列・object項目はその値だけJSONで編集します。DBに保存される項目の列を人が指定してください。POSTでは行を特定する列を1つ以上選びます。</p>
+                    </div>
+                    <div id="dbscenario-editor-post-cleanup" class="form-field db-scenario-post-cleanup" hidden>
+                      <label class="checkbox"><input type="checkbox" id="dbscenario-editor-post-cleanup-enabled" /> POSTで作ったテスト行を試験後に削除する</label>
+                      <div id="dbscenario-editor-post-cleanup-fields" class="form-field" hidden>
+                        <label for="dbscenario-editor-post-cleanup-primary-key">作成テーブルの主キー列</label>
+                        <input id="dbscenario-editor-post-cleanup-primary-key" type="text" placeholder="例: user_id" />
+                        <p class="field-caption">試験前後のDB行を比較し、新しく作成された行だけ削除します。照合に使う値は試験専用にしてください。既存の試験行を消さないよう、専用のテストDBで使ってください。</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="dbscenario-editor-seed-panel" class="form-field" hidden>
+                    <label for="dbscenario-editor-seed-fields">API実行前にDBへ用意する1行（JSON）</label>
+                    <textarea id="dbscenario-editor-seed-fields" rows="5" spellcheck="false" placeholder='{"name":"sample","email":"sample@example.com"}'></textarea>
+                    <p class="field-caption">PUT・PATCHではこの行が更新されるか、DELETEではこの行が削除されるかを確認します。GETの試験データは入力不要です。</p>
+                    <div class="db-scenario-editor-grid db-scenario-editor-seed-options">
+                      <div class="form-field">
+                        <label for="dbscenario-editor-primary-key">DBの主キー列</label>
+                        <input id="dbscenario-editor-primary-key" type="text" placeholder="例: user_id" />
+                      </div>
+                      <div class="form-field" id="dbscenario-editor-soft-delete-option" hidden>
+                        <label class="checkbox"><input type="checkbox" id="dbscenario-editor-soft-delete" /> 行を残す論理削除として確認する</label>
+                      </div>
+                    </div>
+                    <div id="dbscenario-editor-soft-delete-fields" class="db-scenario-editor-grid" hidden>
+                      <div class="form-field"><label for="dbscenario-editor-soft-delete-column">削除状態のカラム</label><input id="dbscenario-editor-soft-delete-column" type="text" placeholder="例: deleted_at / is_deleted" /></div>
+                      <div class="form-field"><label for="dbscenario-editor-soft-delete-value">削除後の値（JSON）</label><input id="dbscenario-editor-soft-delete-value" type="text" placeholder='例: true または "deleted"' /></div>
+                    </div>
+                  </div>
+
+                  <div id="dbscenario-editor-get-panel" hidden>
+                    <div class="form-field">
+                      <div class="db-scenario-editor-heading">
+                        <label>APIの検索条件 → DBの列</label>
+                      </div>
+                      <div class="db-scenario-table-wrap">
+                        <table class="db-scenario-map-table">
+                          <thead><tr><th>APIパラメータ（OpenAPI）</th><th>DBの列（人が入力）</th><th>比較条件</th></tr></thead>
+                          <tbody id="dbscenario-editor-read-filters"></tbody>
+                        </table>
+                      </div>
+                      <p class="field-caption">検索パラメータの行はOpenAPIから表示します。DB列と比較条件を人が指定します。値はDBから自動で選び、境界と範囲外のデータがあるか確かめます。データ不足時は「未確認」になります。ページングや集計を含むAPIは、この自動照合の対象外です。</p>
+                    </div>
+                    <div class="db-scenario-editor-grid">
+                      <div class="form-field">
+                        <label for="dbscenario-editor-response-status">GET成功時のstatus</label>
+                        <input id="dbscenario-editor-response-status" type="number" min="100" max="599" value="200" />
+                      </div>
+                      <div class="form-field">
+                        <label for="dbscenario-editor-response-shape">レスポンス形式</label>
+                        <select id="dbscenario-editor-response-shape">
+                          <option value="">選択してください</option>
+                          <option value="object">単一オブジェクト</option>
+                          <option value="array">配列</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div id="dbscenario-editor-response-array-path-field" class="form-field" hidden>
+                      <label for="dbscenario-editor-response-array-path">レスポンス内の配列パス</label>
+                      <input id="dbscenario-editor-response-array-path" type="text" value="$" placeholder="$ または items / data.items" />
+                    </div>
+                    <div class="form-field">
+                      <div class="db-scenario-editor-heading">
+                        <label>APIレスポンス項目とDBの列の対応</label>
+                      </div>
+                      <div class="db-scenario-table-wrap">
+                        <table class="db-scenario-map-table">
+                          <thead><tr><th>APIレスポンス項目（OpenAPI）</th><th>DBの列（人が入力）</th></tr></thead>
+                          <tbody id="dbscenario-editor-read-mappings"></tbody>
+                        </table>
+                      </div>
+                      <p class="field-caption">レスポンス項目行はOpenAPIから表示します。DBと照合する項目のDB列を入力してください。実行時は既存DBから条件に合う行を読み、レスポンスの対応項目と件数まで照合します。順番は照合対象にしません。</p>
+                    </div>
+                  </div>
+
+                  <div id="dbscenario-editor-status" class="field-caption status-message" aria-live="polite"></div>
+                  <div class="btn-row">
+                    <button id="dbscenario-editor-add-scenario" type="button">この対応設定を追加</button>
+                    <button class="secondary" id="dbscenario-editor-save" type="button">対応設定を保存</button>
+                  </div>
+                  <div id="dbscenario-editor-scenario-list" class="db-scenario-editor-list"></div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title">2. 対応設定ファイル</h3>
+                <p class="form-section-desc">
+                  上で追加した対応設定はYAMLに保存して実行します。「対応設定を保存」を押すと、この欄に保存先が入ります。既存のYAMLファイルも選べます。
+                  ログイン認証は「テスト生成・実行」タブの設定を共有します。
                 </p>
                 <div class="form-field">
-                  <label for="dbscenario-path">検証シナリオファイル（scenarios.yaml）</label>
+                  <label for="dbscenario-path">DB確認設定ファイル</label>
                   <div class="row">
-                    <input id="dbscenario-path" type="text" placeholder="scenarios.yaml のパス" />
+                    <input id="dbscenario-path" type="text" placeholder="対応設定を保存すると自動で入力されます" />
                     <button class="secondary" id="dbscenario-browse">参照...</button>
                   </div>
                 </div>
@@ -325,23 +422,23 @@
                   <strong id="dbscenario-case-review-summary"></strong>
                   <span class="draft-badge">実行前レビュー</span>
                 </div>
-                <p class="field-caption">各シナリオの前提データ・API操作・DB確認内容を確認してください。内容を直す場合はシナリオYAMLを修正して再準備します。未承認での実行は予備扱いとして記録します。</p>
+                <p class="field-caption">実行前に、APIへ送る値・DBに用意する値・確認するDB列やレスポンス項目を確認してください。設定を直す場合は上の対応設定に戻ります。</p>
                 <p id="dbscenario-case-review-message" class="field-caption" aria-live="polite"></p>
                 <div id="dbscenario-case-review-list" class="case-review-list"></div>
               </div>
 
               <div class="form-section">
-                <h3 class="form-section-title">2. 実行設定</h3>
-                <label class="checkbox"><input type="checkbox" id="dbscenario-dry-run" /> dry-run（実際のHTTP送信・DB接続を行わない。シナリオ/openapi/configの読み込み確認用）</label>
-                <label class="checkbox"><input type="checkbox" id="dbscenario-cookie-jar" /> cookie-jar（セッションCookieをシナリオ実行全体で自動的に維持する）</label>
+                <h3 class="form-section-title">3. 実行オプション</h3>
+                <label class="checkbox"><input type="checkbox" id="dbscenario-dry-run" /> dry-run（API送信・DB接続をせず、設定の読み込みだけ確認する）</label>
+                <label class="checkbox"><input type="checkbox" id="dbscenario-cookie-jar" /> セッションCookieを試験全体で引き継ぐ</label>
               </div>
 
               <div id="dbscenario-run-panel" class="run-panel">
-                <h3 class="form-section-title">3. 実行</h3>
+                <h3 class="form-section-title">4. 試験を準備して実行</h3>
                 <div class="btn-row">
-                  <button id="dbscenario-run-button">シナリオケースを作成して確認</button>
-                  <button id="dbscenario-execute-approved-button" hidden>承認済みシナリオを実行</button>
-                  <button class="secondary" id="dbscenario-execute-draft-button" hidden>未承認で予備実行</button>
+                  <button id="dbscenario-run-button">実行前の確認内容を作る</button>
+                  <button id="dbscenario-execute-approved-button" hidden>確認済みの試験を実行</button>
+                  <button class="secondary" id="dbscenario-execute-draft-button" hidden>未確認の内容で予備実行</button>
                   <button class="secondary" id="dbscenario-cancel-button" disabled>キャンセル</button>
                   <button class="secondary" id="dbscenario-open-result-button" disabled>結果Excelを開く</button>
                   <button class="secondary" id="dbscenario-rerun-failed-button" hidden disabled>失敗ケースを再実行</button>
@@ -405,7 +502,7 @@
               <div class="form-section">
                 <h3 class="form-section-title">DB接続設定<span class="optional-tag">任意</span></h3>
                 <p class="form-section-desc">
-                  試験前SQL/試験後SQLの実行やDBシナリオ試験を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
+                  試験前SQL/試験後SQLの実行やDB確認を行う場合に必要です。ここに入力した内容がそのまま試験実行に使われるため、通常はファイルの作成・参照は不要です。
                 </p>
 
                 <label class="checkbox"><input type="checkbox" id="pg-enabled" /> PostgreSQLを使う</label>

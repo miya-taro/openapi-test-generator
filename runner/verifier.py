@@ -120,6 +120,9 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
     elif schema.expected_status_class is not None:
         status_matches = result.actual_status // 100 == schema.expected_status_class
         expected = f"{schema.expected_status_class}xx"
+    elif schema.require_documented_status:
+        status_matches = False
+        expected = "OpenAPIに定義された4xx応答"
     else:
         status_matches = result.actual_status == schema.expected_status
         expected = schema.expected_status

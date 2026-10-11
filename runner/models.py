@@ -49,6 +49,7 @@ class ResponseSchema:
     expected_body_schema: dict | None = None
     expected_status_class: int | None = None
     expected_statuses: frozenset[int] = frozenset()
+    require_documented_status: bool = False
     expected_body_schemas_by_status: dict[int, dict | None] = field(default_factory=dict)
     expected_body_schemas_by_status_and_content_type: dict[int, dict[str, dict]] = field(default_factory=dict)
     expected_content_types_by_status: dict[int, frozenset[str]] = field(default_factory=dict)

@@ -28,6 +28,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -423,6 +427,212 @@ label.checkbox input[type="checkbox"] {
   margin-top: 8px;
 }
 
+.db-scenario-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.db-scenario-guidance {
+  padding: 10px 12px;
+  border: 1px solid var(--info-border);
+  border-radius: 7px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.db-scenario-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.db-scenario-editor-grid .form-field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.db-scenario-editor-seed-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.db-scenario-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.db-scenario-editor-heading > label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.db-scenario-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.db-scenario-map-table {
+  width: 100%;
+  min-width: 850px;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.db-scenario-map-table th,
+.db-scenario-map-table td {
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  text-align: left;
+}
+
+.db-scenario-map-table th {
+  color: var(--text-muted);
+  background: #f7f8fa;
+  font-size: 8.5pt;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.db-scenario-map-table input[type="text"],
+.db-scenario-map-table select,
+.db-scenario-map-table input[type="number"],
+.db-scenario-map-table textarea {
+  width: 100%;
+  min-width: 100px;
+  padding: 6px 7px;
+}
+
+.db-scenario-request-value-cell {
+  min-width: 180px;
+}
+
+.db-scenario-request-value-cell > input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+
+.db-scenario-optional-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  color: var(--text-muted);
+  font-size: 8pt;
+  white-space: nowrap;
+}
+
+.db-scenario-constraint {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 8pt;
+}
+
+.db-scenario-api-field {
+  display: inline-block;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+}
+
+.db-scenario-map-empty td {
+  color: var(--text-muted, #667085);
+}
+
+.db-scenario-map-table .db-scenario-map-check-cell {
+  text-align: center;
+}
+
+.db-scenario-map-table .db-scenario-map-check-cell input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.db-scenario-path-param-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 180px) minmax(200px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.db-scenario-path-param-value {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(140px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.db-scenario-path-param-row label {
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.db-scenario-editor-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.db-scenario-editor-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.db-scenario-editor-list-item span {
+  overflow-wrap: anywhere;
+}
+
+.db-scenario-editor-list-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.db-scenario-editor-list-item > button {
+  flex: none;
+}
+
+.db-scenario-editor-preview {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 8.5pt;
+}
+
+.db-scenario-editor-preview pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 8pt;
+}
+
+.db-scenario-editor-status-field input {
+  max-width: 160px;
+}
+
 .optional-tag {
   font-size: 8pt;
   font-weight: 600;
@@ -500,11 +710,63 @@ label.checkbox input[type="checkbox"] {
 .contract-schema-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 14px;
 }
 
-.contract-response-schema-label {
-  margin-top: 12px;
+.contract-schema-panel {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.contract-panel-heading {
+  min-height: 38px;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.contract-panel-heading > label {
+  min-width: 0;
+  margin: 0;
+}
+
+.contract-panel-heading > label.checkbox {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.contract-response-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contract-response-status label {
+  margin: 0;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-size: 9pt;
+}
+
+.contract-response-status input {
+  width: 84px;
+}
+
+.contract-validation-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--accent-soft);
 }
 
 .schema-builder {
@@ -926,6 +1188,29 @@ label.checkbox input[type="checkbox"] {
 
   .contract-schema-grid {
     grid-template-columns: 1fr;
+  }
+
+  .db-scenario-editor-grid,
+  .db-scenario-editor-seed-options {
+    grid-template-columns: 1fr;
+  }
+
+  .db-scenario-editor-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .db-scenario-path-param-row {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-panel-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .contract-response-status {
+    margin-left: auto;
   }
 }
 

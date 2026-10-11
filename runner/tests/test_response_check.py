@@ -111,3 +111,31 @@ def test_array_index_non_numeric_segment_reports_missing():
     ok, detail = check(rc, 200, {"items": [{"price": 750}]})
     assert ok is False
     assert "存在しません" in detail
+
+
+def test_contains_matches_an_item_in_root_array():
+    rc = ResponseCheck(
+        expect_contains=[{"path": "$", "fields": {"id": 7, "email": "a@example.com"}}]
+    )
+    ok, detail = check(rc, 200, [
+        {"id": 3, "email": "old@example.com"},
+        {"id": 7, "email": "a@example.com", "role": "member"},
+    ])
+    assert ok is True
+    assert detail == ""
+
+
+def test_contains_fails_when_no_item_matches_all_fields():
+    rc = ResponseCheck(
+        expect_contains=[{"path": "items", "fields": {"id": 7, "quantity": 2}}]
+    )
+    ok, detail = check(rc, 200, {"items": [{"id": 7, "quantity": 1}]})
+    assert ok is False
+    assert "contains[0]" in detail
+
+
+def test_contains_fails_when_target_is_not_an_array():
+    rc = ResponseCheck(expect_contains=[{"path": "items", "fields": {"id": 7}}])
+    ok, detail = check(rc, 200, {"items": {"id": 7}})
+    assert ok is False
+    assert "配列ではありません" in detail

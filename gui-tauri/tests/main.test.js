@@ -124,9 +124,10 @@ describe("API試験の基本導線", () => {
     expect(document.getElementById("run-schemathesis-button")).not.toBeNull();
   });
 
-  test("DB準備画面でPHP SQLのCopilot根拠JSONを選べる", () => {
-    expect(document.getElementById("dbprep-php-db-evidence-path")).not.toBeNull();
-    expect(document.getElementById("dbprep-browse-php-db-evidence")).not.toBeNull();
+  test("DB準備画面から手動のAPI・DB対応画面へ進める", () => {
+    expect(document.getElementById("dbprep-goto-dbscenario")).not.toBeNull();
+    expect(document.getElementById("dbprep-php-db-evidence-path")).toBeNull();
+    expect(document.getElementById("dbprep-copilot-scenario-prompt-copy")).toBeNull();
   });
 
   test("権限試験用の認証プロファイル欄は詳細設定にあり、資格情報を設定へ保存しない", () => {
@@ -281,20 +282,12 @@ describe("API試験の基本導線", () => {
     expect(prompt).toContain("大量試行、総当たり、遅延ペイロード");
   });
 
-  test("DB準備画面からCopilot用のシナリオ依頼文をコピーできる", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText } });
-    document.getElementById("openapi-path").value = "C:\\api\\openapi.json";
-    document.getElementById("dbprep-scenario-mapping-path").value = "C:\\api\\mapping.yaml";
-    document.getElementById("dbprep-scenario-output").value = "C:\\api\\scenarios.yaml";
-    document.getElementById("dbprep-php-db-evidence-path").value = "C:\\api\\openapi.db-evidence.json";
-
-    document.getElementById("dbprep-copilot-scenario-prompt-copy").click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(writeText).toHaveBeenCalledTimes(1);
-    expect(writeText.mock.calls[0][0]).toContain("C:\\api\\openapi.json");
-    expect(document.getElementById("dbprep-copilot-scenario-status").textContent).toContain("コピーしました");
+  test("DBシナリオ画面に固定項目表と人が入力するDB列欄がある", () => {
+    expect(document.getElementById("dbscenario-editor-request-body")).not.toBeNull();
+    expect(document.getElementById("dbscenario-editor-write-mappings")).not.toBeNull();
+    expect(document.getElementById("dbscenario-editor-read-filters")).not.toBeNull();
+    expect(document.getElementById("dbscenario-editor-read-mappings")).not.toBeNull();
+    expect(document.querySelector("#dbscenario-editor-write-panel button[data-add-row]")).toBeNull();
   });
 
   test("PHP DB根拠JSONは任意引数として対応表生成へ渡せる", () => {
@@ -1072,7 +1065,7 @@ describe("統一ワークフローによるDBシナリオ試験", () => {
 
     expect(document.getElementById("dbscenario-open-result-button").disabled).toBe(false);
     expect(document.querySelector('#dbscenario-artifacts [data-artifact-kind="db_report_excel"]')).not.toBeNull();
-    expect(document.getElementById("dbscenario-status").textContent).toContain("全シナリオ成功");
+    expect(document.getElementById("dbscenario-status").textContent).toContain("すべてのDB確認に成功");
   });
 });
 

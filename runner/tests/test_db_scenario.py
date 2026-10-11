@@ -192,6 +192,46 @@ def test_load_multiple_scenarios(tmp_path):
     assert scenarios[0].case_id != scenarios[1].case_id
 
 
+def test_post_cleanup_is_parsed_and_included_in_case_definition(tmp_path):
+    data = {"scenarios": [{
+        "id": "post-cleanup",
+        "name": "POST行を片付ける",
+        "request": {"operationId": "createUser", "body": {"email": "test@example.com"}},
+        "db_check": {
+            "engine": "postgres", "table": "users", "where": {"email": "test@example.com"},
+            "expect": {"exists": True},
+        },
+        "cleanup": {
+            "table": "users", "primary_key": "id", "where": {"email": "test@example.com"},
+        },
+    }]}
+    scenario = load_scenarios(_write_yaml(tmp_path, data))[0]
+
+    assert scenario.cleanup.table == "users"
+    assert scenario.cleanup.primary_key == "id"
+    assert scenario.cleanup.where == {"email": "test@example.com"}
+    assert scenario.case_definition()["cleanup"] == {
+        "table": "users", "primaryKey": "id", "where": {"email": "test@example.com"},
+    }
+
+
+@pytest.mark.parametrize("cleanup", [
+    {"table": "users", "primary_key": "id", "where": {}},
+    {"table": "users", "primary_key": "id", "where": {"email": []}},
+    {"table": "users", "primary_key": "id; DROP TABLE users", "where": {"email": "x"}},
+])
+def test_post_cleanup_rejects_unsafe_or_unbounded_config(tmp_path, cleanup):
+    data = {"scenarios": [{
+        "name": "unsafe cleanup",
+        "request": {"operationId": "createUser"},
+        "response_check": {"expect": {"status": 201}},
+        "cleanup": cleanup,
+    }]}
+
+    with pytest.raises(ScenarioError, match="cleanup"):
+        load_scenarios(_write_yaml(tmp_path, data))
+
+
 # ---------- load_scenarios: defaults/list 形式（engineの重複記述を省略する） ----------
 
 
@@ -318,6 +358,28 @@ def test_load_scenario_with_response_check_only(tmp_path):
     assert s.db_check is None
     assert s.response_check.expect_status == 200
     assert s.response_check.expect_body == {"price": 99999999.99}
+
+
+def test_load_scenario_with_response_contains_check(tmp_path):
+    data = {
+        "scenarios": [{
+            "name": "一覧からユーザーを取得できる",
+            "request": {"operationId": "listUsers"},
+            "response_check": {
+                "expect": {
+                    "status": 200,
+                    "contains": [{"path": "$", "fields": {"id": "{{given.user.id}}"}}],
+                }
+            },
+        }]
+    }
+    scenario = load_scenarios(_write_yaml(tmp_path, data))[0]
+    assert scenario.response_check.expect_contains == [
+        {"path": "$", "fields": {"id": "{{given.user.id}}"}}
+    ]
+    assert scenario.case_definition()["responseCheck"]["expectedContains"] == [
+        {"path": "$", "fields": {"id": "{{given.user.id}}"}}
+    ]
 
 
 def test_load_scenario_with_both_db_check_and_response_check(tmp_path):

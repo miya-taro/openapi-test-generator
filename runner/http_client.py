@@ -10,6 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from models import DEFAULT_REQUEST_TIMEOUT, EXIT_ERROR, EXIT_OK, EXIT_TIMEOUT, RunCase, RunResult
 from request_builder import (
+    EMPTY_VALUE_MARKER,
+    OMIT_MARKERS,
     PreparedBody,
     build_operation_header_and_cookie_values,
     build_request_body,
@@ -87,28 +89,31 @@ def _send_request(
     # 記録用コマンド文字列（結果 Excel に保存される）からは機密値をマスクする
     secrets: list[str] = []
 
+    baseline_headers, baseline_cookies = build_operation_header_and_cookie_values(case, openapi)
+    headers.update(baseline_headers)
+    cookies.update(baseline_cookies)
+
     # OpenAPI認証プローブは明示した値だけを使い、ログイン認証や環境変数を加えない。
     # 通常のheaderケースも入力値を優先し、それ以外には設定済み認証を追加する。
     if security_payload is not None:
         headers.update(security_payload["headers"])
         cookies.update(security_payload["cookies"])
-    elif case.param_in == "header":
-        if case.input_value != AUTH_NONE_MARKER:
-            headers[case.param_name] = case.input_value
-        # （認証ヘッダなし）の場合は何も追加しない（auth なしケース）
     else:
-        if case.param_in == "cookie" and case.input_value not in {"（省略）", "（フィールドを省略）"}:
-            cookies[case.param_name] = "" if case.input_value == "（空文字）" else case.input_value
-        elif case.param_in == "operation":
-            baseline_headers, baseline_cookies = build_operation_header_and_cookie_values(case, openapi)
-            headers.update(baseline_headers)
-            cookies.update(baseline_cookies)
-        auth_header = _resolve_auth_header()
-        if auth_header:
-            header_name, _, header_value = auth_header.partition(": ")
-            headers[header_name] = header_value
-            if header_value:
-                secrets.append(header_value)
+        if case.param_in == "header":
+            if case.input_value not in OMIT_MARKERS and case.input_value != AUTH_NONE_MARKER:
+                headers[case.param_name] = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+            # （省略）の場合は対象ヘッダだけを送らず、他の必須ヘッダ/cookieは維持する。
+        elif case.param_in == "cookie":
+            if case.input_value not in OMIT_MARKERS and case.input_value != AUTH_NONE_MARKER:
+                cookies[case.param_name] = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
+
+        if case.param_in != "header":
+            auth_header = _resolve_auth_header()
+            if auth_header:
+                header_name, _, header_value = auth_header.partition(": ")
+                headers[header_name] = header_value
+                if header_value:
+                    secrets.append(header_value)
 
     kwargs: dict = {}
     if prepared_body is not None:
