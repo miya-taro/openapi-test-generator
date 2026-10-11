@@ -68,6 +68,8 @@ run-windows.bat
   {"kind": "together", "fields": ["start", "end"]}
 ]
 ```
+
+OpenAPIに `anyOf: [{"required":["site_id"]},{"required":["location_id"]}]` と書いた場合も「どちらか必須」のケースを生成する。OpenAPI 3.1の `dependentRequired: {"start":["end"],"end":["start"]}` からは「両方指定または両方省略」のケースを生成する。
 - 通常入力は `openapi.json`、Base URL、出力先だけ。認証・DB・並列実行は「詳細設定」から必要な場合だけ開く
 - 契約試験とDBシナリオ試験は同じ統一ワークフローで実行され、実行ごとのフォルダに試験仕様Excel、結果Excel、JUnit XML、JSONをまとめて出力する。DB試験は `db-scenario-evidence.json` に対応設定・期待値・実測値・判定も保存する（認証情報に該当する項目はマスクする）
 - Layer 1/Layer 2とも、最初はケースと試験仕様Excelを準備するだけでAPI・DBへ接続しない。GUIで入力・期待結果・出典を確認し、ケース単位で「レビュー済み」→「承認」にできる
