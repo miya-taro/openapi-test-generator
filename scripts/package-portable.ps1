@@ -6,6 +6,8 @@ $runtimeResources = Join-Path $buildRoot "python-runtime"
 $runtimeStaging = Join-Path $buildRoot "portable-runtime-staging"
 $portable = Join-Path $repo "dist\openapi-test-tool-portable"
 $installerOutput = Join-Path $repo "dist\openapi-test-tool-installers"
+$signingThumbprint = ($env:WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+$signingRequired = $env:WINDOWS_REQUIRE_SIGNING -eq "true"
 
 function Get-CheckedChildPath {
     param([string]$Path, [string]$Parent)
@@ -25,6 +27,47 @@ function Invoke-Check {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "[package] $Command failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Get-SignToolPath {
+    $command = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    $sdkRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+    if (Test-Path -LiteralPath $sdkRoot) {
+        $candidates = Get-ChildItem -LiteralPath $sdkRoot -Directory |
+            Sort-Object -Property Name -Descending
+        foreach ($candidate in $candidates) {
+            $path = Join-Path $candidate.FullName "x64\signtool.exe"
+            if (Test-Path -LiteralPath $path) { return $path }
+        }
+    }
+    throw "signtool.exe was not found in PATH or the Windows SDK."
+}
+
+function Sign-And-VerifyFile {
+    param([string]$Path)
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+        & $script:SignToolPath sign /fd SHA256 /sha1 $script:SigningThumbprint /tr https://timestamp.digicert.com /td SHA256 /v $Path
+        if ($LASTEXITCODE -ne 0) { throw "Code signing failed for $Path (exit code $LASTEXITCODE)." }
+    }
+
+    & $script:SignToolPath verify /pa /all /v $Path
+    if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $Path (exit code $LASTEXITCODE)." }
+}
+
+function Sign-GeneratedBinaries {
+    param([string]$Path)
+
+    if (-not $script:SigningThumbprint) { return }
+    $extensions = @(".exe", ".dll", ".pyd", ".msi")
+    foreach ($file in Get-ChildItem -LiteralPath $Path -File -Recurse) {
+        if ($extensions -contains $file.Extension.ToLowerInvariant()) {
+            Sign-And-VerifyFile $file.FullName
+        }
     }
 }
 
@@ -70,6 +113,22 @@ New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $runtimeResources -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $repo "dist") -Force | Out-Null
 
+if ($signingRequired -and -not $signingThumbprint) {
+    throw "This Windows package requires a code-signing certificate. Configure the GitHub Actions signing secrets before building."
+}
+if ($signingThumbprint) {
+    $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
+        Where-Object { $_.Thumbprint -eq $signingThumbprint -and $_.HasPrivateKey } |
+        Select-Object -First 1
+    if (-not $signingCertificate) {
+        throw "The configured code-signing certificate is not installed in the current user's certificate store."
+    }
+    $script:SigningThumbprint = $signingThumbprint
+    $script:SignToolPath = Get-SignToolPath
+} else {
+    Write-Warning "Building unsigned Windows files. Device Guard or another application-control policy may block them."
+}
+
 Remove-GeneratedDirectory $runtimeStaging $buildRoot "runtime-manifest.json"
 
 $env:CARGO_NET_OFFLINE = "true"
@@ -98,12 +157,33 @@ foreach ($entry in Get-ChildItem -LiteralPath $runtimeRoot -Force) {
 foreach ($entry in Get-ChildItem -LiteralPath $runtimeStaging -Force) {
     Copy-Item -LiteralPath $entry.FullName -Destination $runtimeResources -Recurse -Force
 }
+Sign-GeneratedBinaries $runtimeResources
 
 Push-Location (Join-Path $repo "gui-tauri")
+$tauriSigningConfig = $null
 try {
-    Invoke-Check "npm" @("run", "tauri", "--", "build")
+    $tauriBuildArguments = @("run", "tauri", "--", "build")
+    if ($signingThumbprint) {
+        $tauriSigningConfig = Join-Path $env:TEMP "openapi-test-tool-tauri-signing-$PID.json"
+        $tauriConfig = [ordered]@{
+            bundle = [ordered]@{
+                windows = [ordered]@{
+                    certificateThumbprint = $signingThumbprint
+                    digestAlgorithm = "sha256"
+                    timestampUrl = "https://timestamp.digicert.com"
+                }
+            }
+        }
+        $utf8WithoutBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($tauriSigningConfig, ($tauriConfig | ConvertTo-Json -Depth 8), $utf8WithoutBom)
+        $tauriBuildArguments += @("--config", $tauriSigningConfig)
+    }
+    Invoke-Check "npm" $tauriBuildArguments
 } finally {
     Pop-Location
+    if ($tauriSigningConfig -and (Test-Path -LiteralPath $tauriSigningConfig)) {
+        Remove-Item -LiteralPath $tauriSigningConfig -Force
+    }
 }
 
 $portableMarker = Join-Path $portable "portable-manifest.json"
@@ -151,6 +231,20 @@ $installers = @(
 if ($installers.Count -ne 2) { throw "Expected one MSI and one NSIS installer; found $($installers.Count)" }
 foreach ($installer in $installers) {
     Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path $installerOutput $installer.Name) -Force
+}
+Sign-GeneratedBinaries $portable
+Sign-GeneratedBinaries $installerOutput
+
+if ($signingRequired) {
+    foreach ($file in Get-ChildItem -LiteralPath $installerOutput -File) {
+        if ((Get-AuthenticodeSignature -LiteralPath $file.FullName).Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "Windows installer is not Authenticode-signed: $($file.FullName)"
+        }
+    }
+    $mainExecutable = Join-Path $portable "openapi-test-tool.exe"
+    if ((Get-AuthenticodeSignature -LiteralPath $mainExecutable).Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+        throw "Portable application executable is not Authenticode-signed: $mainExecutable"
+    }
 }
 
 $resolvedStaging = (Resolve-Path -LiteralPath $runtimeStaging).Path

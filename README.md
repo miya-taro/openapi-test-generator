@@ -89,6 +89,8 @@ powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1
 
 ポータブル版は `dist/openapi-test-tool-portable/` に生成される。exe単体ではなくフォルダ全体を配布する。MSIとNSISインストーラーは `dist/openapi-test-tool-installers/` に生成される。配布先にPython、Node.js、Rustの開発環境は不要。Tauriアプリの画面表示にはWindowsのWebView2が必要で、Windows 10 version 1803以降とWindows 11には通常含まれている。WebView2が未導入の環境では、既定のインストーラーがランタイム取得にネット接続を使う場合がある。
 
+Windowsで一般利用者へ配布する場合は、信頼されたコード署名証明書で署名したビルドを使う。未署名のビルドはDevice Guardなどのアプリ制御ポリシーで実行を拒否されることがある。GitHub Actionsで署名ビルドを有効にするには、公開されたコード署名証明書のPFXを用意し、リポジトリのActions変数 `WINDOWS_SIGNING_ENABLED` を `true` に設定する。さらにActions secretsに `WINDOWS_SIGNING_CERTIFICATE_PFX_BASE64`（PFXファイルのBase64）と `WINDOWS_SIGNING_CERTIFICATE_PASSWORD` を登録する。PFXとパスワードはリポジトリへコミットしない。署名情報が未設定ならWindowsパッケージworkflowは署名なし成果物を作らず、ビルドをスキップする。
+
 `npm run tauri build` は開発ビルド用であり、同梱Pythonを準備しない。配布物の作成には上記スクリプトを使う。
 
 ### ローカル検証
