@@ -4,7 +4,7 @@ import math
 import re
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 from sensitive_data import WRITE_ONLY_SCHEMA_MARKER
 
@@ -187,7 +187,7 @@ def validate_header_value(actual_value: str, header_definition: dict) -> list[st
     except ValueError:
         return ["ヘッダ値をOpenAPIの型として読み取れません"]
     try:
-        validator = Draft202012Validator(schema)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
     except SchemaError:
         return ["OpenAPIヘッダschemaが不正です"]
     errors = sorted(validator.iter_errors(value), key=lambda error: list(map(str, error.path)))
@@ -319,7 +319,7 @@ def _validate_against_any_variant(parsed: Any, variants: list[dict]) -> list[str
 
 def _validate_against_schema(parsed: Any, schema: dict) -> list[str]:
     try:
-        validator = Draft202012Validator(schema)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
     except SchemaError as e:
         return [f"スキーマが不正です（検証をスキップ）: {e}"]
 

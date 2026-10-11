@@ -371,6 +371,8 @@
 
                   <div id="dbscenario-editor-get-panel" hidden>
                     <p class="field-caption">GETのJSONボディもOpenAPIの項目から設定できます。任意項目は値を空欄にすると送信しません。</p>
+                    <label class="checkbox"><input type="checkbox" id="dbscenario-editor-expand-combinations" /> 条件付き必須とIN配列の正常な組み合わせを生成する</label>
+                    <p class="field-caption">組み合わせ生成時は、条件付き必須の各項目にDBにある試験値を入力してください。「どちらか必須」は片方ずつと両方、「同時指定」は両方あり／なし、IN配列は全指定と1項目ずつを作ります（最大64件）。期待statusは全ケース共通です。</p>
                     <div class="form-field">
                       <div class="db-scenario-editor-heading">
                         <label>APIの検索条件 → DBの列</label>

@@ -13,10 +13,11 @@ import json
 import os
 import re
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from pathlib import Path
+from time import perf_counter
 from uuid import UUID
 
 import requests
@@ -44,7 +45,9 @@ import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
 from junit_writer import write_junit_xml_scenarios
-from models import DEFAULT_REQUEST_TIMEOUT
+from models import DEFAULT_REQUEST_TIMEOUT, RunCase, RunResult
+from response_schema import from_run_case
+from verifier import verify
 from src.parser import parse_openapi, OpenAPIParseError
 
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
@@ -55,9 +58,38 @@ _SENSITIVE_KEYS = (
 )
 
 
+@dataclass
+class APIResponse:
+    """HTTP evidence while retaining the existing three-value unpacking interface."""
+    status: int
+    body: object
+    error: str | None
+    raw_body: str = ""
+    headers: dict = field(default_factory=dict)
+    elapsed_ms: float = 0
+
+    def __iter__(self):
+        return iter((self.status, self.body, self.error))
+
+
+def _verify_response_contract(scenario, openapi, path, method, response):
+    status, body, _error = response
+    expected = scenario.response_check.expect_status if scenario.response_check else status
+    case = RunCase(scenario.case_id, scenario.request.operation_id, path, method,
+                   "body", "requestBody", "", str(expected if expected is not None else status),
+                   "", "", "", "")
+    schema = from_run_case(case, openapi)
+    # Timing is a separate, explicitly configured test; do not invent an SLA here.
+    schema.expected_response_time_ms = float("inf")
+    result = RunResult(case, status, getattr(response, "raw_body", json.dumps(body)),
+                       getattr(response, "headers", None) or {}, getattr(response, "elapsed_ms", 0), 0)
+    verdict, detail = verify(result, schema)
+    return verdict, detail, result.report_body
+
+
 def _safe_evidence(value, key: str = ""):
     """Make comparison evidence JSON-compatible while hiding common credential fields."""
-    if any(marker in key.lower() for marker in _SENSITIVE_KEYS):
+    if any(marker in key.lower().replace("-", "_") for marker in _SENSITIVE_KEYS):
         return "[REDACTED]"
     if key == "detail" and isinstance(value, str):
         return re.sub(
@@ -481,6 +513,7 @@ def _run_scenario(
                     "query_params": resolved_query_params,
                     "path_params": resolved_path_params,
                     "expected_rows": expected_db_rows,
+                    "filter_coverage": prepared.filter_coverage,
                 }
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
@@ -490,7 +523,8 @@ def _run_scenario(
         if resolved_query_params:
             call_kwargs["query_params"] = resolved_query_params
         api_call_started = True
-        status, response_json, error = _call_api(*call_args, **call_kwargs)
+        api_response = _call_api(*call_args, **call_kwargs)
+        status, response_json, error = api_response
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
         if evidence is not None:
@@ -499,6 +533,17 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+
+        contract_verdict, contract_detail, report_body = _verify_response_contract(scenario, openapi, path, method, api_response)
+        if evidence is not None:
+            evidence["response_contract"] = {"verdict": contract_verdict, "detail": contract_detail}
+            evidence["response"]["headers"] = getattr(api_response, "headers", None) or {}
+            try:
+                evidence["response"]["body"] = json.loads(report_body)
+            except (TypeError, ValueError):
+                evidence["response"]["body"] = report_body
+        if contract_verdict != "OK":
+            failures.append(f"レスポンス契約: {contract_detail}")
 
         if scenario.response_check is not None:
             try:
@@ -628,7 +673,7 @@ def _call_api(
     base_url: str, path: str, method: str, path_params: dict, body: dict,
     session: requests.Session | None = None, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None, query_params: dict | None = None,
-) -> tuple[int, dict, str | None]:
+) -> APIResponse:
     """requests でAPIを呼び出す。戻り値: (status, response_json, error)"""
     url_path = path
     for name, value in path_params.items():
@@ -651,10 +696,11 @@ def _call_api(
         kwargs["json"] = body
 
     sender = session if session is not None else requests
+    started = perf_counter()
     try:
         response = sender.request(method, url, **kwargs)
     except requests.exceptions.RequestException as e:
-        return 0, {}, str(e)
+        return APIResponse(0, {}, str(e))
     finally:
         if session is not None and not persist_cookies:
             session.cookies.clear()
@@ -666,7 +712,8 @@ def _call_api(
         except ValueError:
             response_json = {}
 
-    return response.status_code, response_json, None
+    return APIResponse(response.status_code, response_json, None, response.text,
+                       dict(getattr(response, "headers", {}) or {}), (perf_counter() - started) * 1000)
 
 
 if __name__ == "__main__":

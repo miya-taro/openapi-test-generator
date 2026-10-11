@@ -52,13 +52,25 @@ function validateBodyValue(value, schema, label) {
             : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
               : true;
   if (!validType) throw new Error(`${label}は${type}型の値を入力してください`);
-  if (schema?.format === "date-time" &&
-      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value)))) {
+  if (schema?.format === "date-time" && !isDateTime(value)) {
     throw new Error(`${label}はタイムゾーンを含む日時で入力してください`);
   }
   if (type === "array" && schema?.items) {
     value.forEach((item, index) => validateBodyValue(item, schema.items, `${label}[${index}]`));
   }
+}
+
+function isDateTime(value) {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, y, m, d, h, minute, second, zone] = match;
+  const year = Number(y);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year > 0 && Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= days[Number(m) - 1]
+    && Number(h) <= 23 && Number(minute) <= 59 && Number(second) <= 59
+    && (zone.toLowerCase() === "z" || (Number(zone.slice(1, 3)) <= 23 && Number(zone.slice(4)) <= 59));
 }
 
 function sampleValue(schema = {}, propertyName = "value", depth = 0) {
@@ -648,6 +660,10 @@ export function buildDbScenario(form) {
         throw new Error(`Query「${parameter}」の値をDB検索条件に対応付けてください`);
       }
     }
+    const mappedBodyParams = new Set(filters.filter((item) => item.source === "body").map((item) => item.parameter));
+    for (const name of Object.keys(form.requestBody || {})) {
+      if (!mappedBodyParams.has(name)) throw new Error(`Body「${name}」の値をDB検索条件に対応付けてください`);
+    }
     for (const filter of filters) {
       if (filter.source === "query") delete scenario.request.query_params[filter.parameter];
       else if (filter.source === "path") delete scenario.request.path_params[filter.parameter];
@@ -750,6 +766,65 @@ export function buildDbScenario(form) {
     }
   }
   return scenario;
+}
+
+export function buildDbScenarios(form) {
+  const base = buildDbScenario(form);
+  if (form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
+  const schema = form.operation.requestSchema || {};
+  const rules = schema["x-otg-presence-rules"] || [];
+  const values = form.requestBody || {};
+  let bodies = [{ ...values }];
+  const expand = (variants) => {
+    if (bodies.length * variants.length > 64) {
+      throw new Error("組み合わせが64件を超えます。対応設定を分けるか、組み合わせ生成を外してください");
+    }
+    bodies = bodies.flatMap((body) => variants.map((mutate) => mutate({ ...body })));
+  };
+  for (const rule of rules) {
+    const [first, second] = rule.fields;
+    for (const name of rule.fields) {
+      if (!Object.hasOwn(values, name)) throw new Error(`組み合わせ用に「${name}」の値を入力してください。DBにある試験値を指定してください`);
+      validateBodyValue(values[name], schema.properties?.[name] || {}, name);
+    }
+    const choices = rule.kind === "atLeastOne" ? [[first], [second], [first, second]] : [[], [first, second]];
+    expand(choices.map((selected) => (body) => {
+      delete body[first];
+      delete body[second];
+      for (const name of selected) body[name] = values[name];
+      return body;
+    }));
+  }
+  for (const filter of base.db_response_check.filters) {
+    if (filter.source !== "body" || filter.operator !== "in") continue;
+    const name = filter.parameter;
+    const array = values[name];
+    if (!Array.isArray(array)) throw new Error(`IN条件の「${name}」には配列値を入力してください`);
+    const minimum = schema.properties?.[name]?.minItems || 0;
+    if (minimum > 1 || array.length < 2) continue;
+    const choices = [array, ...array.map((item) => [item])];
+    expand(choices.map((value) => (body) => {
+      if (Object.hasOwn(body, name)) body[name] = value;
+      return body;
+    }));
+  }
+  const seen = new Set();
+  bodies = bodies.filter((body) => {
+    const valid = rules.every((rule) => {
+      const sent = rule.fields.map((name) => Object.hasOwn(body, name));
+      return rule.kind === "atLeastOne" ? sent.some(Boolean) : sent[0] === sent[1];
+    });
+    const key = JSON.stringify(Object.keys(body).sort().map((name) => [name, body[name]]));
+    if (!valid || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!bodies.length) throw new Error("必須条件を満たす組み合わせがありません");
+  return bodies.map((body, index) => ({
+    ...base,
+    name: `${base.name}（組み合わせ${index + 1}: ${Object.keys(body).join("・")}）`,
+    request: { ...base.request, body },
+  }));
 }
 
 export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
@@ -889,6 +964,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     }[method] || "選択したAPI操作に合わせて、DBに確認用データを設定します。";
     byId("dbscenario-editor-guidance").textContent = guidance;
     if (operationChanged) {
+      byId("dbscenario-editor-expand-combinations").checked = false;
       byId("dbscenario-editor-name").value = `${operation.operationId} のDB検証`;
       byId("dbscenario-editor-table").value = "";
       byId("dbscenario-editor-request-body").value = "";
@@ -981,7 +1057,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
         source: row.dataset.parameterSource || "",
         parameter: row.dataset.parameterName || "",
         column: columnInput?.value || "",
-        operator: operatorSelect.value,
+        operator: operatorSelect?.value || "",
         format: row.dataset.parameterFormat || null,
         group: row.querySelector('select[data-or-group]')?.value || null,
       };
@@ -994,6 +1070,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       queryParams: collectQueryParams(),
       writeStatus: byId("dbscenario-editor-write-status").value,
       requestBody,
+      expandCombinations: byId("dbscenario-editor-expand-combinations").checked,
       seedFields,
       primaryKey: byId("dbscenario-editor-primary-key").value,
       responseStatus: byId("dbscenario-editor-response-status").value,
@@ -1060,11 +1137,13 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   });
   byId("dbscenario-editor-add-scenario").addEventListener("click", () => {
     try {
-      const scenario = buildDbScenario(currentForm());
-      if (scenarios.some((item) => item.name === scenario.name)) throw new Error(`試験名「${scenario.name}」はすでに登録されています`);
-      scenarios.push(scenario);
+      const generated = buildDbScenarios(currentForm());
+      for (const scenario of generated) {
+        if (scenarios.some((item) => item.name === scenario.name)) throw new Error(`試験名「${scenario.name}」はすでに登録されています`);
+      }
+      scenarios.push(...generated);
       renderScenarioList();
-      setStatus(`「${scenario.name}」の対応を追加しました。保存すると、この設定から実行内容を自動で作ります。`, "ok");
+      setStatus(`${generated.length}件の対応を追加しました。保存すると、この設定から実行内容を自動で作ります。`, "ok");
     } catch (error) {
       setStatus(error.message || String(error), "error");
     }

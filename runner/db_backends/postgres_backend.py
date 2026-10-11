@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -30,6 +30,7 @@ class PreparedDBResponse:
     query_params: dict
     path_params: dict
     expected_rows: list[dict]
+    filter_coverage: list[dict] = field(default_factory=list)
 
 
 def prepare_db_response_check(
@@ -161,31 +162,13 @@ def prepare_db_response_check(
                 raise DBResponseCheckUnverified(
                     f"照合対象が{_MAX_RESPONSE_ROWS}件を超えるため、自動照合できません"
                 )
-            advanced_filters = any(item.source == "body" or item.group or item.operator == "in" for item in filters)
-            if advanced_filters and not _has_more_rows(cur, table, [], len(rows)):
-                raise DBResponseCheckUnverified("既存データでは検索条件が結果を絞り込むことを確かめられません")
-            # Prove every configured condition changes the result and has a row exactly at its
-            # boundary. Without these, a passing response could be an unfiltered/static result.
-            for index, item in enumerate(filters):
-                if advanced_filters:
-                    continue
-                without_one = [spec for position, spec in enumerate(specs) if position != index]
-                if _has_more_rows(cur, table, without_one, len(rows)):
-                    boundary_specs = [*without_one, (item.column, "=", filter_values[index])]
-                    if not _has_any_row(cur, table, boundary_specs):
-                        raise DBResponseCheckUnverified(
-                            f"DB列「{item.column}」にAPI条件「{item.parameter}」の境界値と一致する行がありません"
-                        )
-                else:
-                    raise DBResponseCheckUnverified(
-                        f"既存データではAPI条件「{item.parameter}」が結果を絞り込むことを確かめられません"
-                    )
+            coverage = _prove_filter_coverage(cur, table, filters, specs, len(rows))
 
             expected_rows = [
                 {response_path: row[column] for response_path, column in db_response_check.fields.items()}
                 for row in rows
             ]
-            return PreparedDBResponse(effective_query, effective_path, expected_rows)
+            return PreparedDBResponse(effective_query, effective_path, expected_rows, coverage)
     finally:
         conn.rollback()
         conn.close()
@@ -316,6 +299,64 @@ def _has_any_row(cur, table: str, specs: list[tuple]) -> bool:
         sql += f" WHERE {where}"
     sql += " LIMIT 1"
     cur.execute(sql, params)
+    return cur.fetchone() is not None
+
+
+def _prove_filter_coverage(cur, table: str, filters: list, specs: list[tuple], count: int) -> list[dict]:
+    """Prove missing conditions, OR branches, IN members and wrong range ends are observable.
+
+    All witnesses satisfy the other AND conditions. OR branches are checked as a
+    group, then for an exclusive witness per branch; removing one OR branch must
+    not be confused with removing an AND constraint.
+    """
+    coverage = []
+    checked_groups = set()
+    for index, item in enumerate(filters):
+        member_indexes = [position for position, candidate in enumerate(filters)
+                          if item.group and candidate.group == item.group] if item.group else [index]
+        others = [spec for position, spec in enumerate(specs) if position not in member_indexes]
+        label = f"{item.source}.{item.parameter}"
+        unit = item.group or f"__{index}"
+        if unit not in checked_groups:
+            if not _has_more_rows(cur, table, others, count):
+                raise DBResponseCheckUnverified(
+                    f"既存データではAPI条件「{label}」{('のORグループ' if item.group else '')}の省略を検出できません"
+                )
+            checked_groups.add(unit)
+        single = (item.column, item.operator, specs[index][2])
+        branches = [(filters[position].column, filters[position].operator, specs[position][2])
+                    for position in member_indexes if position != index]
+        if branches and not _has_exclusive_witness(cur, table, others, single, branches):
+            raise DBResponseCheckUnverified(f"API条件「{label}」だけで一致するOR分岐の試験データがありません")
+        boundary = False
+        if item.operator in {">", ">=", "<", "<="}:
+            boundary_spec = (item.column, "=", specs[index][2])
+            if not _has_exclusive_witness(cur, table, others, boundary_spec, branches):
+                raise DBResponseCheckUnverified(
+                    f"DB列「{item.column}」にAPI条件「{label}」の境界値と一致する行がありません"
+                )
+            boundary = True
+        members = []
+        if item.operator == "in":
+            for value in specs[index][2]:
+                if value in members:
+                    continue
+                if not _has_exclusive_witness(cur, table, others, (item.column, "=", value), branches):
+                    raise DBResponseCheckUnverified(f"API条件「{label}」のIN指定値「{value}」に一致する試験データがありません")
+                members.append(value)
+        coverage.append({"parameter": label, "omission_detectable": True,
+                         "or_branch_detectable": bool(branches), "boundary_present": boundary,
+                         "in_members_present": members})
+    return coverage
+
+
+def _has_exclusive_witness(cur, table: str, others: list[tuple], required: tuple, excluded: list[tuple]) -> bool:
+    where, params = _where_sql([*others, required])
+    for spec in excluded:
+        clause, excluded_params = _where_sql([spec])
+        where += f" AND ({clause}) IS NOT TRUE"
+        params.extend(excluded_params)
+    cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", params)
     return cur.fetchone() is not None
 
 

@@ -127,6 +127,24 @@ jobs:
       - name: Run E2E (generate -> execute -> DB scenario verification)
         run: python docs/run_e2e.py --reset-db-between-layers
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify GET JSON body mappings against real HTTP and PostgreSQL
+        env:
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
+          OTG_MEASURE_EVIDENCE_DIR: docs/_ci_measure_evidence
+        run: python -m pytest runner/tests/test_measure_get_e2e.py runner/tests/test_db_scenario_e2e.py -q -s
+
+      - name: Upload GET JSON body comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-get-evidence
+          path: docs/_ci_measure_evidence/
+          if-no-files-found: error
+
       - name: Run schemathesis (契約層の探索的ファジング。決定論的スイートとは別レーン、失敗してもブロックしない)
         run: python docs/run_schemathesis.py
 
