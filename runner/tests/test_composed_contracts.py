@@ -5,6 +5,9 @@ import pytest
 from src.parser import parse_openapi
 from src.schema_example import find_schema_example, NoSchemaExample
 from response_validator import resolve_response_schema, validate_body
+from models import RunCase, RunResult
+from response_schema import from_run_case
+from verifier import verify
 
 
 def parsed_schema(tmp_path, schema):
@@ -48,3 +51,11 @@ def test_write_only_inside_combinator(tmp_path):
         "properties": {"password": {"type": "string", "writeOnly": True}}}]})
     assert validate_body("{}", schema) == []
     assert validate_body('{"password":"secret"}', schema)
+
+
+@pytest.mark.parametrize("schema,expected", [(False, "NG"), (True, "OK")])
+def test_boolean_response_schema_is_not_treated_as_missing(tmp_path, schema, expected):
+    api, _ = parsed_schema(tmp_path, schema)
+    case = RunCase("c", "test", "/test", "GET", "operation", "", "", "200", "", "", "", "")
+    result = RunResult(case, 200, "{}", {"Content-Type": "application/json"}, 1, 0)
+    assert verify(result, from_run_case(case, api))[0] == expected
