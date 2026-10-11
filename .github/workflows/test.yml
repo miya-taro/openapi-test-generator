@@ -11,7 +11,7 @@ jobs:
     # 実バグに直結する項目（未使用/未定義変数、raise-from漏れ等）に絞ったLintと、
     # gui-tauri（フロントエンド）のロジック単体テスト。
     # Windows依存が無いため、高速な ubuntu-latest で実行する。
-    name: Lint (ruff / eslint / clippy) & GUI unit tests
+    name: Lint (ruff / eslint) & GUI unit tests
     runs-on: ubuntu-latest
 
     steps:
@@ -46,24 +46,6 @@ jobs:
         run: npm test
         working-directory: gui-tauri
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Install Tauri Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: gui-tauri/src-tauri
-
-      - name: Run clippy (gui-tauri/src-tauri)
-        run: cargo clippy --all-targets -- -D warnings
-        working-directory: gui-tauri/src-tauri
-
   test:
     # os.startfile など、このツールセットはWindows専用の前提で作られているため
     # windows-latest で実行する。
@@ -92,6 +74,18 @@ jobs:
 
       - name: Run GUI logic tests
         run: python -m pytest gui/tests/ -v
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui-tauri/src-tauri
+
+      - name: Run clippy (gui-tauri/src-tauri)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: gui-tauri/src-tauri
 
   e2e:
     # docs/ のサンプルAPIとPostgreSQLを使い、契約試験とDBシナリオを検証する。
