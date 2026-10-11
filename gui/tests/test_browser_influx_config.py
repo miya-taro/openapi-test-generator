@@ -68,6 +68,32 @@ def test_influx_configuration_in_browser(tmp_path, monkeypatch):
             assert len(saved)==18
             assert all(x['db_response_check']['engine']=='influxdb' for x in saved)
             expect(page.locator('#dbscenario-editor-status')).to_contain_text('保存しました')
+            # Add a cross-DB mapping through the visible UI and verify saved provenance.
+            page.locator('#dbscenario-editor-expand-combinations').uncheck()
+            page.locator('#dbscenario-editor-name').fill('locationからPostgreSQLを参照してInfluxDBと照合')
+            page.locator('#dbscenario-editor-read-filters tr[data-parameter-name="site_id"] [data-request-value]').fill('')
+            lookup_row = page.locator('#dbscenario-editor-read-filters tr[data-parameter-name="location_id"]')
+            lookup_row.locator('[data-db-column]').fill('site')
+            lookup_row.locator('[data-or-group]').select_option('')
+            lookup_row.locator('[data-lookup-enabled]').check()
+            for key, value in {'table': 't_site', 'match_column': 'location_id', 'value_column': 'site_id'}.items():
+                lookup_row.locator(f'[data-lookup-field="{key}"]').fill(value)
+            lookup_row.locator('[data-lookup-field="cardinality"]').select_option('many')
+            lookup_row.locator('[data-lookup-field="value_type"]').select_option('integer')
+            lookup_row.locator('[data-lookup-field="on_empty"]').select_option('status')
+            lookup_row.locator('[data-lookup-field="empty_status"]').fill('400')
+            expect(lookup_row.locator('select[aria-label="DBとの比較条件"]')).to_have_value('in')
+            page.screenshot(path=str(output/'lookup-mapping.png'), full_page=True)
+            page.locator('#dbscenario-editor-add-scenario').click()
+            expect(page.locator('#dbscenario-editor-status')).to_contain_text('1件の対応を追加')
+            page.locator('#dbscenario-editor-save').click()
+            expect(page.locator('#dbscenario-editor-status')).to_contain_text('保存しました')
+            lookup_saved = yaml.safe_load(Path(page.locator('#dbscenario-path').input_value()).read_text())['scenarios']['list'][-1]
+            assert lookup_saved['request']['body']['location_id'] == 'B' and 'site_id' not in lookup_saved['request']['body']
+            reference = next(f for f in lookup_saved['db_response_check']['filters'] if f['parameter'] == 'location_id')
+            assert reference['lookup'] == {'engine': 'postgres', 'table': 't_site', 'match_column': 'location_id',
+                                           'value_column': 'site_id', 'cardinality': 'many', 'value_type': 'integer',
+                                           'on_empty': 'status', 'empty_status': 400}
             page.locator('[data-step="review"]').click()
             page.locator('#contract-operation').select_option(operation)
             expect(page.locator('#contract-editor-status')).to_contain_text('読み込みました')

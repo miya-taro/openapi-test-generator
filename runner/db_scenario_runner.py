@@ -39,8 +39,8 @@ from auth_login import (
 )
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
-from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario
-from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation
+from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario, ResponseCheck
+from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
@@ -98,6 +98,17 @@ def _safe_evidence(value, key: str = ""):
             value,
         )
     if isinstance(value, dict):
+        # Lookup values are stored beside their column names, rather than under
+        # them. Apply the same credential masking used for request/DB objects.
+        if isinstance(value.get("definition"), dict) and "input_value" in value:
+            definition = value["definition"]
+            value = dict(value)
+            value["input_value"] = _safe_evidence(value["input_value"],
+                                                  f'{value.get("parameter", "")} {definition.get("match_column", "")}')
+            for field_name in ("values", "comparison_value"):
+                if field_name in value:
+                    value[field_name] = _safe_evidence(value[field_name],
+                                                      f'{definition.get("value_column", "")} {value.get("target_column", "")}')
         return {str(k): _safe_evidence(v, str(k)) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_safe_evidence(item) for item in value]
@@ -419,7 +430,7 @@ def _run_scenario(
     influx_fixture: dict = {}
 
     def _execute() -> tuple[bool, str, str, dict]:
-        nonlocal cleanup_where, cleanup_primary_keys_before, api_call_started
+        nonlocal cleanup_where, cleanup_primary_keys_before, api_call_started, scenario
         for item in scenario.given:
             try:
                 pg_config = get_postgres_config(db_config)
@@ -486,11 +497,23 @@ def _run_scenario(
         expected_db_rows = None
         if scenario.db_response_check is not None:
             try:
-                backend = influx_response if scenario.db_response_check.engine == "influxdb" else postgres_backend
-                response_db_config = get_influxdb_config(db_config) if scenario.db_response_check.engine == "influxdb" else get_postgres_config(db_config)
-                prepared = backend.prepare_db_response_check(
-                    scenario.db_response_check, response_db_config, resolved_query_params, resolved_path_params, resolved_body
-                )
+                if any(item.lookup for item in scenario.db_response_check.filters):
+                    lookup_evidence = []
+                    if evidence is not None:
+                        evidence["db_lookups"] = lookup_evidence
+                    prepared, lookup_status = lookup_response.prepare(
+                        scenario.db_response_check, db_config, resolved_query_params, resolved_path_params,
+                        resolved_body, lookup_evidence,
+                    )
+                    if lookup_status is not None:
+                        scenario = replace(scenario, case_id_override=scenario.case_id,
+                                           response_check=ResponseCheck(expect_status=lookup_status))
+                else:
+                    backend = influx_response if scenario.db_response_check.engine == "influxdb" else postgres_backend
+                    response_db_config = get_influxdb_config(db_config) if scenario.db_response_check.engine == "influxdb" else get_postgres_config(db_config)
+                    prepared = backend.prepare_db_response_check(
+                        scenario.db_response_check, response_db_config, resolved_query_params, resolved_path_params, resolved_body
+                    )
             except postgres_backend.DBResponseCheckUnverified as e:
                 return False, f"[UNVERIFIED] {e}", "未実行", previous_response
             except (ValueError, KeyError, postgres_backend.DBResponseCheckError) as e:
@@ -510,7 +533,8 @@ def _run_scenario(
                     "fields": scenario.db_response_check.fields,
                     "filters": [
                         {"source": item.source, "parameter": item.parameter, "column": item.column,
-                         "operator": item.operator, "group": item.group}
+                         "operator": item.operator, "group": item.group,
+                         **({"lookup": item.lookup} if item.lookup else {})}
                         for item in scenario.db_response_check.filters
                     ],
                     "query_params": resolved_query_params,

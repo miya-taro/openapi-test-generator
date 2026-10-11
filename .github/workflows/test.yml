@@ -170,6 +170,13 @@ jobs:
           OTG_INFLUX_EVIDENCE_DIR: docs/_ci_measure_evidence/influxdb
         run: python -m pytest runner/tests/test_influx_response_e2e.py runner/tests/test_influx_mutation_e2e.py -q
 
+      - name: Verify cross-database lookup mappings and faulty APIs
+        env:
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
+          OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
+          OTG_LOOKUP_EVIDENCE_DIR: docs/_ci_measure_evidence/lookups
+        run: python -m pytest runner/tests/test_lookup_response_e2e.py -q
+
       - name: Upload GET JSON body comparison evidence
         if: always()
         uses: actions/upload-artifact@v4
