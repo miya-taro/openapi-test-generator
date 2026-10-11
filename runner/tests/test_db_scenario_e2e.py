@@ -204,6 +204,26 @@ def test_real_api_and_db_comparison(tmp_path):
         ], "empty-ok")
         assert empty_ok.returncode == 0, empty_ok.stdout + empty_ok.stderr
         assert cases[0]["db_response_comparison"]["actual_rows"] == []
+
+        # Follow the same workflow path as the GUI and verify the evidence is linked.
+        project_path = tmp_path / "project.json"
+        project_path.write_text(json.dumps({
+            "schemaVersion": 1, "name": "DB integration", "openapiPath": str(spec_path),
+            "baseUrl": f"http://127.0.0.1:{server.server_port}",
+            "outputDir": str(tmp_path / "artifacts"),
+            "dbScenariosPath": str(tmp_path / "empty-ok.yaml"),
+        }), encoding="utf-8")
+        workflow = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "workflow" / "cli.py"), "run-db-scenarios",
+             "--project", str(project_path), "--runtime-config", str(config_path)],
+            env={**os.environ, "TEST_AUTH_TOKEN": "integration-token"},
+            capture_output=True, text=True, timeout=30,
+        )
+        assert workflow.returncode == 0, workflow.stdout + workflow.stderr
+        run_dirs = list((tmp_path / "artifacts").iterdir())
+        assert len(run_dirs) == 1
+        assert (run_dirs[0] / "db-scenario-evidence.json").is_file()
+        assert "db-scenario-evidence.json" in (run_dirs[0] / "report.html").read_text(encoding="utf-8")
     finally:
         server.shutdown()
         server.server_close()
