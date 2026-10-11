@@ -39,19 +39,12 @@ api test generator/
 
 ---
 
-## Windows版インストーラー
-
-[Windowsインストーラー（v0.1.0）](downloads/openapi-test-tool_0.1.0_x64-setup.exe) をダウンロードして実行してください。
-この試験配布版は `codex/windows-build-20261007` の `f13a298` からビルドしています。
-
-## GUIアプリ（コマンドライン操作なしで使いたい場合）
+## WindowsでGUIアプリを起動する
 
 `gui-tauri/`（Tauri版）を使う。かつて `gui/`（PySide6版）のexeも配布していたが廃止し、
 `gui-tauri/` に一本化した。
 
-### Windowsでソースから起動
-
-Windowsではリポジトリ直下の `run-windows.bat` を実行する。初回はPython環境とnpm依存を準備し、Tauriアプリをローカルでビルドして起動する。2回目以降は依存の再インストールを省略する。
+リポジトリをcloneし、直下の `run-windows.bat` を実行する。初回はPython環境とnpm依存を準備し、Tauriアプリをローカルでビルドして起動する。2回目以降は依存の再インストールを省略する。
 
 初回起動前に、Python 3.10以降、Node.js 22以降、Rust、Visual Studio 2022 Build Toolsの「Desktop development with C++」を一度だけインストールする。Windows 10/11にはWebView2が通常含まれている。必要なビルドツールがない場合、起動スクリプトが不足項目を表示する。
 
@@ -86,7 +79,7 @@ python -m pip install -r docs/requirements-schemathesis.txt
 
 JUnit XMLとローカルHTMLレポートを実行ごとのフォルダへ保存します。VCR証跡は任意で、応答本文を含むことがあるため既定では作成しません。Schemathesisは通常のPython依存には含めませんが、配布版にはGUIの探索試験を使えるよう同梱します。GitHubや外部レポートサービスへの送信は行いません。
 
-### 配布用アプリを作る
+### 配布用アプリを作る（開発者向け）
 
 Python本体と実行依存（Schemathesisを含む）を同梱したポータブル版と、Windowsインストーラーを作成する。ビルドPCには必要なPython依存、Node.js依存、Rust/Cargo依存をあらかじめインストールしておく。配布ビルド時にネットワークから依存を取得しない。
 
