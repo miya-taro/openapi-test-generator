@@ -758,6 +758,11 @@ export function buildDbScenario(form) {
     scenario.request.body = form.requestBody || {};
     scenario.response_check = { expect: { status } };
     scenario.influx_mutation = { measurement: table, time, tags, fields, action, preserve_unmapped: !!form.influxPreserve };
+    if (form.influxFixture) {
+      const seeds = action === "insert" ? {} : (form.influxSeedFields || {});
+      if (action !== "insert" && !Object.keys(seeds).length) throw new Error("初期フィールドを1件以上入力してください");
+      scenario.influx_mutation.fixture = { fields: seeds };
+    }
     return scenario;
   }
   if (MUTATING_METHODS.has(method)) {
@@ -1001,6 +1006,41 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   let scenarios = [];
   let renderedOperationId = "";
 
+  function addInfluxSeed() {
+    const row = make("tr");
+    const name = make("input"); name.setAttribute("aria-label", "初期フィールド名"); name.dataset.seedName = "";
+    const type = make("select"); type.setAttribute("aria-label", "初期フィールドの型"); type.dataset.seedType = "";
+    for (const kind of ["float", "integer", "string", "boolean"]) {
+      const option = make("option", "", kind); option.value = kind; type.append(option);
+    }
+    const value = make("input"); value.setAttribute("aria-label", "初期値"); value.dataset.seedValue = "";
+    const remove = make("button", "secondary", "削除"); remove.type = "button"; remove.addEventListener("click", () => row.remove());
+    for (const control of [name, type, value, remove]) { const cell = make("td"); cell.append(control); row.append(cell); }
+    byId("dbscenario-editor-influx-seeds").append(row);
+  }
+
+  function collectInfluxSeeds() {
+    if (!byId("dbscenario-editor-influx-fixture").checked || byId("dbscenario-editor-influx-action").value === "insert") return {};
+    const fields = {};
+    for (const row of byId("dbscenario-editor-influx-seeds").querySelectorAll("tr")) {
+      const name = row.querySelector("[data-seed-name]").value.trim();
+      requireDbIdentifier(name, "初期フィールド名");
+      if (Object.hasOwn(fields, name)) throw new Error("初期フィールド名が重複しています");
+      const type = row.querySelector("[data-seed-type]").value;
+      const text = row.querySelector("[data-seed-value]").value;
+      let value = text;
+      if (type === "boolean") {
+        if (!["true", "false"].includes(text.trim())) throw new Error("booleanの初期値はtrueまたはfalseを入力してください");
+        value = text.trim() === "true";
+      } else if (type !== "string") {
+        value = Number(text);
+        if (!text.trim() || !Number.isFinite(value) || (type === "integer" && !Number.isSafeInteger(value))) throw new Error("初期値に型に合う数値を入力してください（整数は安全に扱える範囲）");
+      }
+      fields[name] = { type, value };
+    }
+    return fields;
+  }
+
   const setStatus = (message, state = "") => {
     const status = byId("dbscenario-editor-status");
     status.textContent = message;
@@ -1148,6 +1188,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       byId("dbscenario-editor-influx-tags").value = "{}";
       byId("dbscenario-editor-influx-delete-body").value = "{}";
       byId("dbscenario-editor-influx-preserve").checked = false;
+      byId("dbscenario-editor-influx-fixture").checked = false;
+      byId("dbscenario-editor-influx-seeds").replaceChildren();
       byId("dbscenario-editor-expand-combinations").checked = false;
       byId("dbscenario-editor-name").value = `${operation.operationId} のDB検証`;
       byId("dbscenario-editor-table").value = "";
@@ -1217,6 +1259,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     byId("dbscenario-editor-get-panel").hidden = unchanged || method !== "GET";
     const mutation = influx && !unchanged && MUTATING_METHODS.has(method);
     byId("dbscenario-editor-influx-mutation").hidden = !mutation;
+    byId("dbscenario-editor-influx-fixture-panel").hidden = !byId("dbscenario-editor-influx-fixture").checked;
+    byId("dbscenario-editor-influx-seeds-panel").hidden = byId("dbscenario-editor-influx-action").value === "insert";
     byId("dbscenario-editor-influx-delete-body-field").hidden = !mutation || method !== "DELETE";
     byId("dbscenario-editor-add-scenario").disabled = false;
     byId("dbscenario-editor-post-cleanup").hidden = influx || method !== "POST";
@@ -1311,6 +1355,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       influxFields: byId("dbscenario-editor-engine").value === "influxdb" && ["POST", "PUT", "PATCH"].includes(method)
         ? collectWriteMappings(requestBody).columns : {},
       influxPreserve: byId("dbscenario-editor-influx-preserve").checked,
+      influxFixture: byId("dbscenario-editor-influx-fixture").checked,
+      influxSeedFields: byId("dbscenario-editor-engine").value === "influxdb" && MUTATING_METHODS.has(method) ? collectInfluxSeeds() : {},
       name: byId("dbscenario-editor-name").value,
       table: byId("dbscenario-editor-table").value,
       pathParams: collectPathParams(),
@@ -1368,6 +1414,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   byId("dbscenario-editor-operation").addEventListener("change", renderForOperation);
   byId("dbscenario-editor-mode").addEventListener("change", updateMode);
   byId("dbscenario-editor-engine").addEventListener("change", updateMode);
+  byId("dbscenario-editor-influx-fixture").addEventListener("change", updateMode);
+  byId("dbscenario-editor-influx-action").addEventListener("change", updateMode);
+  byId("dbscenario-editor-influx-add-seed").addEventListener("click", addInfluxSeed);
   byId("dbscenario-editor-primary-key").addEventListener("change", () => {
     const operation = selectedOperation();
     if (operation) renderPathParams(operation);

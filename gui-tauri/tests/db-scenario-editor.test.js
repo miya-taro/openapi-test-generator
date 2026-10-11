@@ -1,5 +1,40 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { initDbScenarioEditor, buildDbScenario } from "../src/db-scenario-editor.js";
+
+const initialBody = document.body.innerHTML;
+beforeEach(() => { document.body.innerHTML = initialBody; });
+
+test("InfluxDBの更新用初期値を型付きで入力し準備・後片付けを設定する", async () => {
+  const operation = { ...createUserOperation, method: "PATCH" };
+  const invoke = vi.fn(async (_command, payload) => payload?.command === "list_db_scenario_operations" ? [operation] : "db-checks.yaml");
+  const editor = initDbScenarioEditor({ invoke, saveDialog: vi.fn(), onSaved: vi.fn() });
+  await editor.load("openapi.json"); selectOperation("createUser");
+  const engine = document.getElementById("dbscenario-editor-engine"); engine.value = "influxdb"; engine.dispatchEvent(new window.Event("change"));
+  document.getElementById("dbscenario-editor-table").value = "measure";
+  document.getElementById("dbscenario-editor-influx-time").value = "2026-01-01T00:00:00Z";
+  const mapping = document.querySelector('#dbscenario-editor-write-mappings tr[data-field-path="email"]');
+  mapping.querySelector('[data-api-value]').value = "new@example.com";
+  mapping.querySelector('input[aria-label="DBカラム"]').value = "email";
+  const fixture = document.getElementById("dbscenario-editor-influx-fixture");
+  expect(fixture.checked).toBe(false);
+  fixture.click();
+  expect(document.getElementById("dbscenario-editor-influx-fixture-panel").hidden).toBe(false);
+  expect(document.getElementById("dbscenario-editor-influx-seeds-panel").hidden).toBe(false);
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  expect(document.getElementById("dbscenario-editor-status").textContent).toContain("初期フィールドを1件以上");
+  for (const [name, type, value] of [["email", "string", "old@example.com"], ["reading", "float", "1.25"], ["enabled", "boolean", "false"]]) {
+    document.getElementById("dbscenario-editor-influx-add-seed").click();
+    const row = document.querySelector("#dbscenario-editor-influx-seeds tr:last-child");
+    row.querySelector("[data-seed-name]").value = name;
+    row.querySelector("[data-seed-type]").value = type;
+    row.querySelector("[data-seed-value]").value = value;
+  }
+  document.getElementById("dbscenario-editor-add-scenario").click();
+  const saved = JSON.parse(document.querySelector("#dbscenario-editor-scenario-list pre").textContent);
+  expect(saved.influx_mutation.fixture.fields).toEqual({
+    email: { type: "string", value: "old@example.com" }, reading: { type: "float", value: 1.25 }, enabled: { type: "boolean", value: false },
+  });
+});
 
 const createUserOperation = {
   operationId: "createUser",
