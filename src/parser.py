@@ -110,7 +110,8 @@ def _extract_presence_rules(schema: dict) -> None:
     """Preserve simple cross-field requirements before anyOf normalization chooses a variant."""
     rules = list(schema.get("x-otg-presence-rules") or [])
     fields = _simple_presence_anyof(schema.get("anyOf"))
-    if fields and not set(fields).intersection(schema.get("required") or []):
+    if (fields and set(fields).issubset(schema.get("properties") or {}) and
+            not set(fields).intersection(schema.get("required") or [])):
         rule = {"kind": "atLeastOne", "fields": fields}
         if not any(isinstance(item, dict) and item.get("kind") == "atLeastOne" and
                    isinstance(item.get("fields"), list) and
@@ -126,7 +127,8 @@ def _extract_presence_rules(schema: dict) -> None:
                 continue
             second = others[0]
             pair = frozenset({first, second})
-            if (len(pair) != 2 or pair in seen or dependencies.get(second) != [first] or
+            if (len(pair) != 2 or pair in seen or not pair.issubset(schema.get("properties") or {}) or
+                    dependencies.get(second) != [first] or
                     pair.intersection(schema.get("required") or [])):
                 continue
             seen.add(pair)
