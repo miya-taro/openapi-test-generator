@@ -1,10 +1,19 @@
-# 公開RESTサービスの試験準備
+# 公開RESTサービスの試験結果
 
 ## 状態
 
-**2026-10-11時点：18ケースの準備とリクエスト構築を確認。外部への送信は未実施です。**
+**2026-10-11 14:09 UTC：公開APIに18件を実送信し、18件すべて合格しました。**
 
-このクラウド環境の許可済み通信先に `jsonplaceholder.typicode.com` と `httpbin.org` が含まれていません。既存設定を保ち、2ドメインを追加する環境設定案を保存しました。環境設定のレビュー・保存・公開後に接続を確認し、以下の試験を実行します。保存済み下書きは実行環境への適用を意味しません。
+| サービス | 実行 | 合格 | 不合格・通信エラー |
+|---|---:|---:|---:|
+| JSONPlaceholder | 7 | 7 | 0 |
+| httpbin | 11 | 11 | 0 |
+
+通常のプロキシ経由で両サービスからHTTP 200が返ることを確認し、TLS検証を有効にして実行しました。環境設定の表示だけでは実際の接続可否を確定できませんでした。
+
+実測したstatusは200・201・204・400・401・404。ExcelとJUnitの件数・合否もHTTP結果と一致しました。今回の試験ではアプリケーションコードの追加修正は必要ありませんでした。
+
+ケース別の実行日時・URL・method・期待status・実測status・合否は [public-rest-validation-results.json](public-rest-validation-results.json) に記録しています。試験に使用したコミットは `75585ee`。OpenAPI、仕様・結果Excel、JUnit、実リクエスト・レスポンスを含むJSON証跡も保存しています。
 
 ## 対象と18ケース
 
@@ -32,7 +41,7 @@ JSONPlaceholderの更新は公式にシミュレーションされるため、DB
 python docs/run_public_rest_checks.py --output-dir .artifacts/public-rest
 ```
 
-通信設定が反映された後：
+公開サービスに接続できる環境で実行：
 
 ```bash
 python docs/run_public_rest_checks.py --execute --output-dir .artifacts/public-rest
