@@ -298,8 +298,11 @@ def main() -> int:
         # 次の update/delete シナリオの path_params に引き継ぐ）。
         previous_response: dict = {}
         for scenario in scenarios:
-            case_evidence: dict = {"case_id": scenario.case_id, "name": scenario.name,
-                                   "executed_at": datetime.now(timezone.utc).isoformat()}
+            case_evidence: dict | None = (
+                {"case_id": scenario.case_id, "name": scenario.name,
+                 "executed_at": datetime.now(timezone.utc).isoformat()}
+                if args.evidence_output else None
+            )
             case_session = session
             case_auth_header = None
             if scenario.auth_profile is not None:
@@ -322,8 +325,9 @@ def main() -> int:
             if not ok:
                 print(f"         {detail}")
             report_rows.append((scenario.case_id, report_name, verdict, api_status, detail))
-            case_evidence.update({"verdict": verdict, "api_status": api_status, "detail": detail})
-            evidence_rows.append(_safe_evidence(case_evidence))
+            if case_evidence is not None:
+                case_evidence.update({"verdict": verdict, "api_status": api_status, "detail": detail})
+                evidence_rows.append(_safe_evidence(case_evidence))
             all_cleanup_errors.extend(cleanup_errors)
 
         if all_cleanup_errors:
@@ -537,7 +541,10 @@ def _run_scenario(
                 if resolved_check.engine == "postgres":
                     pg_config = get_postgres_config(db_config)
                     db_evidence = {} if evidence is not None else None
-                    ok, detail = postgres_backend.check(resolved_check, pg_config, db_evidence)
+                    if db_evidence is None:
+                        ok, detail = postgres_backend.check(resolved_check, pg_config)
+                    else:
+                        ok, detail = postgres_backend.check(resolved_check, pg_config, db_evidence)
                     if evidence is not None:
                         evidence["db_check"] = db_evidence
                     if method == "POST" and post_count_before is not None:

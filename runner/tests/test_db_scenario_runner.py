@@ -47,6 +47,9 @@ def run_main(monkeypatch, argv: list[str]) -> int:
 
 def _patch_common(monkeypatch):
     monkeypatch.setattr(dsr_module, "health_check", lambda base_url, health_path: True)
+    # Orchestration tests replace DB verification, so replace the POST before/after read too.
+    counts = iter(range(100))
+    monkeypatch.setattr(dsr_module.postgres_backend, "matching_row_count", lambda *args: next(counts))
 
 
 def _fake_call_api(status: int, response_json: dict):

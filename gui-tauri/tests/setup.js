@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { vi } from "vitest";
 
+// main.test.js exercises the desktop bridge. Select that runtime before main.js
+// is imported so its startup listeners use the mocked Tauri APIs below.
+window.__TAURI_INTERNALS__ = {};
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const html = readFileSync(path.join(__dirname, "../src/index.html"), "utf-8");

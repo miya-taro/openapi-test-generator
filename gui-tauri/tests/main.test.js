@@ -104,7 +104,7 @@ describe("API試験の基本導線", () => {
 
     await loadAppVersion();
 
-    expect(mockInvoke).toHaveBeenCalledWith("app_version");
+    expect(mockInvoke).toHaveBeenCalledWith("app_version", {});
     expect(document.getElementById("app-version").textContent).toBe("v0.1.0");
   });
 
