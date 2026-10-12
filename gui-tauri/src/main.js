@@ -684,6 +684,7 @@ function setContractSchemaBuilder(kind, schema) {
       }
       else contractResponseSchemaNode = updated;
     },
+    { requestExamples: isRequest },
   );
 }
 

@@ -261,3 +261,15 @@ def test_new_operation_invalid_inputs(route, method, name, statuses):
     from openapi_editor import create_operation_document
     with pytest.raises(ValueError):
         create_operation_document('', route, method, name, statuses)
+
+
+def test_invalid_normal_example_rejected_without_exposing_secret(tmp_path):
+    from openapi_editor import create_operation_document
+    draft = tmp_path / 'draft.json'
+    draft.write_text(json.dumps(create_operation_document('', '/login', 'post', 'login', ['200'])), encoding='utf-8')
+    schema = {'type': 'object', 'properties': {'password': {'type': 'string', 'minLength': 30, 'example': 'private-value'}}}
+    output = tmp_path / 'out.json'
+    with pytest.raises(ValueError) as error:
+        save_operation_body_contract(str(draft), str(output), 'login', True, schema, '200', None)
+    assert 'private-value' not in str(error.value)
+    assert not output.exists()
