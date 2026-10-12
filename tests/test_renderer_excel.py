@@ -80,7 +80,8 @@ def test_write_excel_output_creates_sheet_with_expected_headers(tmp_path):
     write_excel_output(output, str(out_path))
 
     wb = openpyxl.load_workbook(str(out_path))
-    assert wb.sheetnames == ["test_spec"]
+    assert "試験仕様_001" in wb.sheetnames
+    assert wb["test_spec"].sheet_state == "hidden"
     ws = wb["test_spec"]
     header_row = [c.value for c in ws[4]]
     assert header_row == [col[0] for col in COLUMNS]

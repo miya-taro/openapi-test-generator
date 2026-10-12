@@ -109,6 +109,15 @@ def test_recorded_curl_replays_the_actual_http_payload(tmp_path, monkeypatch):
         workbook = openpyxl.load_workbook(spec)
         assert workbook['test_spec'].cell(5, 18).value == readable_curl(result.request_evidence)
         assert len(captured) == 1  # generating a workbook must never send a request
+        from excel_reader import read_excel
+        from excel_writer import write_results
+        assert read_excel(spec)[0].id == case.id
+        result_path = tmp_path / 'readable-result.xlsx'
+        write_results(spec, [(result, 'OK', '')], result_path)
+        report_wb = openpyxl.load_workbook(result_path)
+        assert report_wb['試験仕様_001'].cell(5, 7).value == 'OK'
+        assert report_wb.active.title == '試験仕様_001'
+        assert report_wb['test_spec'].sheet_state == 'hidden'
         tokens = shlex.split(readable_curl(result.request_evidence))
         tokens[0] = executable
         replay = subprocess.run(tokens, capture_output=True, timeout=10)
