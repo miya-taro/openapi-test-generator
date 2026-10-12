@@ -1,0 +1,2009 @@
+{
+  "scenarios": [
+    {
+      "name": "pwrco site / type=1 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-12T00:00:00+09:00",
+          "end_time": "2026-10-12T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-12T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco site / type=1 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-13T00:00:00+09:00",
+          "end_time": "2026-10-13T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-13T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-13T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco site / type=2 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-14T00:00:00+09:00",
+          "end_time": "2026-10-14T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-14T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco site / type=2 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-15T00:00:00+09:00",
+          "end_time": "2026-10-15T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-15T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-15T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101,
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco site / type=省略→NULL / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-16T00:00:00+09:00",
+          "end_time": "2026-10-16T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-16T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco site / type=省略→NULL / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-17T00:00:00+09:00",
+          "end_time": "2026-10-17T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-17T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-17T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=1 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-18T00:00:00+09:00",
+          "end_time": "2026-10-18T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-18T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "location_id": "HOME",
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=1 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-19T00:00:00+09:00",
+          "end_time": "2026-10-19T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-19T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-19T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "location_id": "HOME",
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=2 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-20T00:00:00+09:00",
+          "end_time": "2026-10-20T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-20T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "location_id": "HOME",
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=2 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-21T00:00:00+09:00",
+          "end_time": "2026-10-21T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-21T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-21T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "location_id": "HOME",
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=省略→NULL / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-22T00:00:00+09:00",
+          "end_time": "2026-10-22T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-22T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "location_id": "HOME"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco location / type=省略→NULL / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-23T00:00:00+09:00",
+          "end_time": "2026-10-23T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-23T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-23T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "location_id": "HOME"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=1 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-24T00:00:00+09:00",
+          "end_time": "2026-10-24T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-24T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER",
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=1 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-25T00:00:00+09:00",
+          "end_time": "2026-10-25T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-25T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-25T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER",
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=2 / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-26T00:00:00+09:00",
+          "end_time": "2026-10-26T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-26T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER",
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=2 / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-27T00:00:00+09:00",
+          "end_time": "2026-10-27T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-27T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-27T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER",
+          "type": 2
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=省略→NULL / 1行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-28T00:00:00+09:00",
+          "end_time": "2026-10-28T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-28T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco both-site-wins / type=省略→NULL / 2行",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-29T00:00:00+09:00",
+          "end_time": "2026-10-29T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-29T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-10-29T00:30:00+09:00",
+              "value": 27.125
+            }
+          ],
+          "site_id": 101,
+          "location_id": "OTHER"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "empty_body": true
+        }
+      },
+      "db_insert_check": {
+        "table": "y_pwrco",
+        "primary_key": [
+          "site_id",
+          "datetime"
+        ],
+        "rows_path": "schedule[]",
+        "columns": {
+          "site_id": {
+            "kind": "lookup",
+            "path": "location_id",
+            "preferred_path": "site_id",
+            "lookup": {
+              "engine": "postgres",
+              "table": "t_site",
+              "match_column": "location_id",
+              "value_column": "site_id",
+              "cardinality": "one",
+              "value_type": "integer",
+              "on_empty": "unverified"
+            }
+          },
+          "datetime": {
+            "kind": "request",
+            "path": "schedule[].time"
+          },
+          "rate": {
+            "kind": "request",
+            "path": "schedule[].value"
+          },
+          "start": {
+            "kind": "request",
+            "path": "start_datetime"
+          },
+          "end": {
+            "kind": "request",
+            "path": "end_time"
+          },
+          "type": {
+            "kind": "request",
+            "path": "type",
+            "missing": "null"
+          }
+        }
+      }
+    },
+    {
+      "name": "pwrco 400 / 必須欠落:start_datetime",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "end_time": "2026-10-30T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-30T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 必須欠落:end_time",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-10-31T00:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-10-31T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 必須欠落:schedule",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-01T00:00:00+09:00",
+          "end_time": "2026-11-01T02:00:00+09:00",
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 必須欠落:schedule.0.time",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-02T00:00:00+09:00",
+          "end_time": "2026-11-02T02:00:00+09:00",
+          "schedule": [
+            {
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 必須欠落:schedule.0.value",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-03T00:00:00+09:00",
+          "end_time": "2026-11-03T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-03T00:00:00+09:00"
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 拠点両方なし",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-04T00:00:00+09:00",
+          "end_time": "2026-11-04T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-04T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:site_id='101'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-05T00:00:00+09:00",
+          "end_time": "2026-11-05T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-05T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": "101",
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:location_id=123",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-06T00:00:00+09:00",
+          "end_time": "2026-11-06T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-06T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1,
+          "location_id": 123
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:type=3",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-07T00:00:00+09:00",
+          "end_time": "2026-11-07T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-07T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 3
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:type='1'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-08T00:00:00+09:00",
+          "end_time": "2026-11-08T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-08T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": "1"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:type=None",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-09T00:00:00+09:00",
+          "end_time": "2026-11-09T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-09T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": null
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:start_datetime='not-a-date'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "not-a-date",
+          "end_time": "2026-11-10T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-10T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:end_time='not-a-date'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-11T00:00:00+09:00",
+          "end_time": "not-a-date",
+          "schedule": [
+            {
+              "time": "2026-11-11T00:00:00+09:00",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 型・形式・enum:schedule={}",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-12T00:00:00+09:00",
+          "end_time": "2026-11-12T02:00:00+09:00",
+          "schedule": {},
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / schedule項目:time='not-a-date'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-13T00:00:00+09:00",
+          "end_time": "2026-11-13T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "not-a-date",
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / schedule項目:value='12.5'",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-14T00:00:00+09:00",
+          "end_time": "2026-11-14T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-14T00:00:00+09:00",
+              "value": "12.5"
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / schedule項目:value=None",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-15T00:00:00+09:00",
+          "end_time": "2026-11-15T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-15T00:00:00+09:00",
+              "value": null
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 2件目不正・部分保存なし:time欠落",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-16T00:00:00+09:00",
+          "end_time": "2026-11-16T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-16T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "value": 12.5
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 2件目不正・部分保存なし:value型違い",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-17T00:00:00+09:00",
+          "end_time": "2026-11-17T02:00:00+09:00",
+          "schedule": [
+            {
+              "time": "2026-11-17T00:00:00+09:00",
+              "value": 12.5
+            },
+            {
+              "time": "2026-11-17T00:30:00+09:00",
+              "value": "invalid"
+            }
+          ],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    },
+    {
+      "name": "pwrco 400 / 空schedule",
+      "request": {
+        "operationId": "setPwrco",
+        "body": {
+          "start_datetime": "2026-11-18T00:00:00+09:00",
+          "end_time": "2026-11-18T02:00:00+09:00",
+          "schedule": [],
+          "site_id": 101,
+          "type": 1
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 400
+        }
+      },
+      "db_unchanged": [
+        {
+          "table": "y_pwrco",
+          "columns": [
+            "site_id",
+            "datetime",
+            "rate",
+            "start",
+            "end",
+            "type"
+          ],
+          "where": {}
+        }
+      ]
+    }
+  ]
+}
