@@ -61,6 +61,7 @@ def execute_with_openapi(
     openapi: dict | None,
     session: requests.Session | None = None,
     persist_cookies: bool = False,
+    *, preview: bool = False,
 ) -> RunResult:
     url = build_url(base_url, case, openapi)
     try:
@@ -68,7 +69,7 @@ def execute_with_openapi(
     except ValueError as error:
         return RunResult(case=case, actual_status=0, actual_body="", actual_headers={}, elapsed_ms=0.0,
                          exit_code=EXIT_ERROR, error=f"リクエストを生成できません: {error}")
-    return _send_request(case, url, prepared_body, session, persist_cookies, openapi)
+    return _send_request(case, url, prepared_body, session, persist_cookies, openapi, preview=preview)
 
 
 def _send_request(
@@ -78,6 +79,7 @@ def _send_request(
     session: requests.Session | None = None,
     persist_cookies: bool = False,
     openapi: dict | None = None,
+    *, preview: bool = False,
 ) -> RunResult:
     headers: dict[str, str] = {}
     cookies: dict[str, str] = {}
@@ -157,6 +159,8 @@ def _send_request(
 
     request_evidence = capture_request(prepared, secrets)
     cmd_str = _mask_secrets(_curl_command_from_prepared(prepared), secrets)
+    if preview:
+        return RunResult(case, 0, "", {}, 0.0, EXIT_OK, request_evidence=request_evidence)
 
     # session を共有している場合は接続プーリングのため常に同一 Session.send() を使う。
     # cookie の永続化（--cookie-jar）はオプトインのため、非対象時はレスポンス受信後に

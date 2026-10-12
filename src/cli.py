@@ -46,6 +46,8 @@ def main() -> int:
     parser.add_argument("--fail-if-exists", action="store_true", help="出力先ファイルが存在する場合はエラー終了")
     parser.add_argument("--excel-output", help="Excel (.xlsx) ファイルも出力する場合にパスを指定")
 
+    parser.add_argument("--base-url", default="", help="送信予定curlの接続先URL")
+
     args = parser.parse_args()
 
     log.set_log_level(args.log_level)
@@ -128,7 +130,7 @@ def main() -> int:
         if args.excel_output:
             excel_path = Path(args.excel_output).resolve()
             log.info({"output": str(excel_path)}, "Excel 出力開始")
-            write_excel_output(output, str(excel_path))
+            write_excel_output(output, str(excel_path), api, args.base_url)
             log.info({"output": str(excel_path)}, "Excel 出力完了")
             print(f"✓ Excel を {excel_path} に出力しました")
 

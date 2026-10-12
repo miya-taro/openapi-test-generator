@@ -98,6 +98,17 @@ def test_recorded_curl_replays_the_actual_http_payload(tmp_path, monkeypatch):
         api = {'paths': {'/echo': {'post': {'operationId': 'echo', 'requestBody': {'content': {'application/json': {'schema': {'type': 'object'}}}}}}}}
         result = execute_with_openapi(case, f'http://127.0.0.1:{server.server_port}', api)
         assert result.actual_status == 200
+        from src.renderer.excel_output import write_excel_output
+        from src.renderer.json_output import build_output
+        tc = dict(id='live', operationId='echo', path='/echo', method='POST',
+                  paramName='requestBody', inputValue=json.dumps(payload), expectedStatus='200',
+                  perspective='正常系', **{'in': 'body'})
+        spec = tmp_path / 'spec.xlsx'
+        write_excel_output(build_output([tc], 'fixture.json'), str(spec), api,
+                           f'http://127.0.0.1:{server.server_port}')
+        workbook = openpyxl.load_workbook(spec)
+        assert workbook['test_spec'].cell(5, 18).value == readable_curl(result.request_evidence)
+        assert len(captured) == 1  # generating a workbook must never send a request
         tokens = shlex.split(readable_curl(result.request_evidence))
         tokens[0] = executable
         replay = subprocess.run(tokens, capture_output=True, timeout=10)

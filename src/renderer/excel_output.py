@@ -1,7 +1,7 @@
 """Excel 出力（test_spec シート）。openpyxl を使用。"""
 from __future__ import annotations
-import json
-from urllib.parse import quote, urlencode
+import sys
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -9,8 +9,6 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.utils import get_column_letter
 
-from src.cmd_escape import quote_cmd_arg as _quote_cmd
-from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
 from src.coverage import write_coverage_sheet
 
 # ── 列定義 ─────────────────────────────────────────────────────────
@@ -33,11 +31,8 @@ COLUMNS: list[tuple[str, str | None, object, int]] = [
     ("期待結果", "expectedResult", None, 30),
     ("判定", "verdict", None, 10),
     ("備考", "notes", None, 36),
-    ("curl コマンド", None, True, 80),
+    ("送信予定curl（Bash形式）", None, True, 80),
 ]
-
-_OMIT_MARKERS = {"（省略）", "（フィールドを省略）", AUTH_NONE_MARKER}
-_EMPTY_MARKER = "（空文字）"
 
 # Excel/CSV フォーミュラインジェクション対策: これらの文字で始まるセル値は
 # Excel が数式として評価しうるため、先頭にアポストロフィを付与して文字列扱いにする
@@ -50,54 +45,27 @@ def _sanitize_cell_value(value: object) -> object:
     return value
 
 
-def _encode_uri_component(value: str) -> str:
-    # JS の encodeURIComponent は A-Z a-z 0-9 - _ . ! ~ * ' ( ) をエスケープしない
-    return quote(value, safe="!~*'()")
+def _build_curl_command(tc: dict, openapi: dict | None = None, base_url: str = "") -> str:
+    if openapi is None or not base_url:
+        return "送信予定curlなし：OpenAPIとBase URLの指定が必要です"
+    # Runner scripts historically use sibling imports; use the same modules here.
+    runner_dir = str(Path(__file__).resolve().parents[2] / "runner")
+    if runner_dir not in sys.path:
+        sys.path.insert(0, runner_dir)
+    from models import RunCase
+    from http_client import execute_with_openapi
+    from request_evidence import readable_curl
 
-
-def _build_curl_command(tc: dict) -> str:
-    method = tc["method"].upper()
-    omit = tc["inputValue"] in _OMIT_MARKERS
-    raw_val = "" if tc["inputValue"] == _EMPTY_MARKER else tc["inputValue"]
-
-    url_val = raw_val[1:-1] if raw_val.startswith('"') and raw_val.endswith('"') and len(raw_val) >= 2 else raw_val
-
-    url = "{BASE_URL}" + tc["path"]
-    security_payload = None
-    if tc.get("paramName") == OPENAPI_SECURITY_PARAM and raw_val != AUTH_NONE_MARKER:
-        security_payload = parse_security_payload(raw_val)
-
-    if tc["in"] == "path" and not omit:
-        url = url.replace("{" + tc["paramName"] + "}", _encode_uri_component(url_val))
-
-    if tc["in"] == "query" and not omit:
-        url += f"?{tc['paramName']}={_encode_uri_component(url_val)}"
-
-    if security_payload and security_payload["query"]:
-        query = urlencode(security_payload["query"])
-        url += ("&" if "?" in url else "?") + query
-
-    cmd = f'curl.exe -s -v -X {method} {_quote_cmd(url)}'
-
-    if tc["in"] == "header" and not omit and tc.get("paramName") != OPENAPI_SECURITY_PARAM:
-        cmd += f' -H {_quote_cmd(f"{tc['paramName']}: {raw_val}")}'
-
-    if security_payload:
-        for name, value in security_payload["headers"].items():
-            cmd += f' -H {_quote_cmd(f"{name}: {value}")}'
-        if security_payload["cookies"]:
-            cookie_value = "; ".join(f"{name}={value}" for name, value in security_payload["cookies"].items())
-            cmd += f' -H {_quote_cmd(f"Cookie: {cookie_value}")}'
-
-    if tc["in"] == "body" and not omit:
-        try:
-            body_val = "" if raw_val == "" else json.loads(raw_val)
-        except (ValueError, TypeError):
-            body_val = raw_val
-        body = json.dumps({tc["paramName"]: body_val}, ensure_ascii=False)
-        cmd += f' -H "Content-Type: application/json" -d {_quote_cmd(body)}'
-
-    return cmd
+    case = RunCase(
+        str(tc.get("id", "")), tc["operationId"], tc["path"], tc["method"],
+        tc["in"], tc["paramName"], tc["inputValue"], str(tc["expectedStatus"]),
+        str(tc.get("expectedResponseBody", "")), str(tc.get("expectedResponseHeader", "")),
+        str(tc.get("expectedResponseTime", "")), str(tc.get("expectedResult", "")),
+    )
+    result = execute_with_openapi(case, base_url, openapi, preview=True)
+    if result.error:
+        return "送信予定curlを生成できません（URL・入力定義を確認してください）"
+    return readable_curl(result.request_evidence)
 
 
 # ── 色定数 ─────────────────────────────────────────────────────────
@@ -153,7 +121,7 @@ def _write_note_row(sheet, col_count: int) -> None:
     note_cell = sheet.cell(row=3, column=1)
     note_cell.value = (
         "※ 本シートはインターフェース観点のテストケースです。"
-        "Layer2以降のシナリオテストは別シートを参照してください。"
+        "curlは送信予定（Bash形式）です。認証情報は伏字で、実行時取得の認証は含みません。"
     )
     note_cell.font = Font(italic=True, color="FF555555", size=9)
     note_cell.alignment = Alignment(vertical="center")
@@ -172,7 +140,7 @@ def _write_header_row(sheet) -> None:
     sheet.row_dimensions[4].height = 20
 
 
-def _write_data_rows(sheet, cases: list[dict], verdict_col_idx: int) -> None:
+def _write_data_rows(sheet, cases: list[dict], verdict_col_idx: int, openapi=None, base_url="") -> None:
     verdict_values = ["OK", "NG", "未実施"]
 
     for row_offset, tc in enumerate(cases):
@@ -182,7 +150,7 @@ def _write_data_rows(sheet, cases: list[dict], verdict_col_idx: int) -> None:
 
         for col_idx, (_header, key, compute, _width) in enumerate(COLUMNS):
             cell = sheet.cell(row=row_num, column=col_idx + 1)
-            cell.value = _build_curl_command(tc) if compute else _sanitize_cell_value(tc.get(key) or "")
+            cell.value = _build_curl_command(tc, openapi, base_url) if compute else _sanitize_cell_value(tc.get(key) or "")
             cell.font = Font(size=10)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = _THIN_BORDER
@@ -218,7 +186,7 @@ def _configure_sheet(sheet) -> None:
     sheet.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
 
 
-def write_excel_output(output: dict, excel_path: str) -> None:
+def write_excel_output(output: dict, excel_path: str, openapi: dict | None = None, base_url: str = "") -> None:
     wb = Workbook()
     sheet = wb.active
     sheet.title = "test_spec"
@@ -228,7 +196,7 @@ def write_excel_output(output: dict, excel_path: str) -> None:
     _write_meta_rows(sheet, output["meta"], len(COLUMNS))
     _write_note_row(sheet, len(COLUMNS))
     _write_header_row(sheet)
-    _write_data_rows(sheet, output["cases"], verdict_col_idx)
+    _write_data_rows(sheet, output["cases"], verdict_col_idx, openapi, base_url)
     _configure_sheet(sheet)
 
     if "coverage" in output:
