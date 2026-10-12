@@ -131,5 +131,11 @@ def test_cli_login_contract_evidence(tmp_path):
         assert PASSWORD not in completed.stdout and TOKEN not in completed.stdout
         assert '[REDACTED]' in cells
         assert len(fixture.calls)==len(cases)+1
+        if os.environ.get('OTG_LOGIN_EVIDENCE_DIR'):
+            import shutil
+            evidence=Path(os.environ['OTG_LOGIN_EVIDENCE_DIR'])
+            evidence.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(result,evidence/'result.xlsx')
+            shutil.copy2(tmp_path/'result.xml',evidence/'result.xml')
     finally:
         fixture.close()
