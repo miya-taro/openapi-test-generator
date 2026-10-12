@@ -160,6 +160,16 @@ def _dispatch(command: str, args: dict) -> object:
         return validators.list_operations(args["path"])
     if command == "list_db_scenario_operations":
         return _list_db_scenario_operations(args["path"])
+    if command == "load_db_scenario_templates":
+        text = Path(args["path"]).read_text(encoding="utf-8")
+        parse_scenarios(text)
+        data = yaml.safe_load(text)["scenarios"]
+        items = data if isinstance(data, list) else data["list"]
+        defaults = {} if isinstance(data, list) else data.get("defaults", {})
+        for item in items:
+            if item.get("db_check") and not item["db_check"].get("engine"):
+                item["db_check"]["engine"] = defaults.get("engine", "postgres")
+        return items
     if command == "save_db_scenario_yaml":
         return _save_db_scenario_yaml(args["path"], args.get("scenarios"))
     if command == "load_operation_body_contract":

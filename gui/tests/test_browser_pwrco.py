@@ -48,6 +48,22 @@ def test_browser_pwrco_suite_workflow(tmp_path, monkeypatch):
                 scenario.write_text(json.dumps(build_suite('2026-10-12T00:00:00+09:00',api.table,api.site_table)))
                 with page.expect_file_chooser() as chooser: page.locator('#dbscenario-browse').click()
                 chooser.value.set_files(scenario)
+                page.get_by_role('button', name='選択したDB確認ファイルを編集用に読み込む').click()
+                cards=page.locator('#dbscenario-editor-scenario-list .db-scenario-editor-list-item')
+                expect(cards).to_have_count(38)
+                cards.first.locator('.scenario-template > summary').click()
+                cards.first.get_by_role('button', name='この設定を複製', exact=True).click()
+                expect(cards).to_have_count(39)
+                cards.last.get_by_role('button', name='削除', exact=True).click()
+                cards.first.locator('.scenario-template > summary').click()
+                cards.first.get_by_label('条件を変える項目').select_option(label='body.type')
+                cards.first.get_by_label('候補値（JSON配列）').fill('[3]')
+                cards.first.get_by_label('候補の期待status').fill('400')
+                cards.first.get_by_label('異常系ではDB変更なしを確認').check()
+                cards.first.get_by_role('button', name='条件別ケースを追加', exact=True).click()
+                expect(cards).to_have_count(39)
+                page.locator('#dbscenario-editor-save').click()
+                expect(page.locator('#dbscenario-editor-status')).to_contain_text('保存しました')
                 for fault in [None]:
                     api.fault=fault
                     before=len(api.calls)
@@ -57,7 +73,7 @@ def test_browser_pwrco_suite_workflow(tmp_path, monkeypatch):
                     review=page.locator('#dbscenario-case-review-panel')
                     expect(review).to_contain_text('dbInsertCheck')
                     if not fault:
-                        for index in range(38):
+                        for index in range(39):
                             card=review.locator('article').nth(index)
                             card.get_by_role('button',name='レビュー済みにする',exact=True).click()
                             card.get_by_role('button',name='承認する',exact=True).click()
@@ -73,7 +89,7 @@ def test_browser_pwrco_suite_workflow(tmp_path, monkeypatch):
                     workbook=load_workbook(destination,read_only=True)
                     assert any(('NG' if fault else 'OK') in row for sheet in workbook for row in sheet.values)
                     workbook.close()
-                assert len(api.calls)==38
+                assert len(api.calls)==39
                 assert not errors,errors
             finally:
                 (output/'page.txt').write_text(page.locator('body').inner_text(),encoding='utf-8')

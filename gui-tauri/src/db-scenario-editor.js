@@ -1,3 +1,4 @@
+import { templateControls } from "./scenario-templates.js";
 import { buildSqlResponseScenario, initSqlResponseEditor } from "./sql-response-editor.js";
 import { buildInsertScenario, initInsertEditor } from "./insert-editor.js";
 import { validateComparisonBody } from "./comparison-rules.js";
@@ -1490,6 +1491,11 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       details.append(make("summary", "", "自動生成される確認内容（詳細）"));
       details.append(make("pre", "", JSON.stringify(scenario, null, 2)));
       content.append(details);
+      content.append(templateControls(scenario, operations, (items) => {
+        scenarios.push(...items); renderScenarioList(); setStatus(`${items.length}件を追加しました。送信値・主キー・期待結果を確認して保存してください。`, "ok");
+      }, (replacement) => {
+        scenarios[index] = replacement; renderScenarioList(); setStatus("設定を変更しました。再保存・再レビューが必要です。", "ok");
+      }, (message) => setStatus(message, "error")));
       const remove = make("button", "secondary", "削除");
       remove.type = "button";
       remove.addEventListener("click", () => {
@@ -1565,6 +1571,18 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     }
   });
 
+  const importButton = make("button", "secondary", "選択したDB確認ファイルを編集用に読み込む");
+  importButton.type = "button";
+  importButton.addEventListener("click", async () => {
+    try {
+      const path = byId("dbscenario-path").value.trim();
+      if (!path) throw new Error("下のDB確認設定ファイルからファイルを選択してください");
+      if (scenarios.length) throw new Error("編集中の設定があります。先に保存し、一覧を削除してから読み込んでください");
+      scenarios = await invoke("bridge_call", {command:"load_db_scenario_templates", args:{path}});
+      renderScenarioList(); setStatus(`${scenarios.length}件を編集用に読み込みました。`, "ok");
+    } catch (error) { setStatus(error.message || String(error), "error"); }
+  });
+  byId("dbscenario-editor-save").before(importButton);
   renderScenarioList();
   return {
     async load(openapiPath) {

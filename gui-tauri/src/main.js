@@ -1227,7 +1227,7 @@ function renderCaseMasterView(master, masterPath, ids, rerender) {
     const coverage = document.createElement("details");
     coverage.className = "coverage-review";
     const heading = document.createElement("summary");
-    const gaps = master.coverage.filter((row) => ["未生成", "未対応", "一部対応"].includes(row.status));
+    const gaps = master.coverage.filter((row) => ["未生成", "未対応", "一部対応", "未照合", "ケース未設定", "要手動確認"].includes(row.status));
     heading.textContent = `仕様の対応状況：要確認 ${gaps.length}件 / ${master.coverage.length}項目（試験の合否とは別）`;
     coverage.open = gaps.length > 0;
     const table = document.createElement("table");
