@@ -72,6 +72,8 @@ def write_readable_sheets(wb, cases, api, base_url, commands):
     for case, command in zip(cases, commands, strict=True):
         groups.setdefault((case['path'], case['method']), []).append((case, command))
     for index, ((path, method), rows) in enumerate(groups.items(), 1):
+        # Stable display-only ordering; retain case/command pairs and execution IDs.
+        rows = sorted(rows, key=lambda row: not str(row[0]['expectedStatus']).strip().startswith('2'))
         ws = wb.create_sheet(f'試験仕様_{index:03}', index - 1)
         ws.append(['対象API', f'{method.upper()} {path}'])
         ws.append(['接続先', base_url or '未設定'])
