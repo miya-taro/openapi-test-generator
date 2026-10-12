@@ -19,6 +19,7 @@ from request_builder import (
 )
 from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
 from src.cmd_escape import quote_cmd_arg
+from sensitive_data import redact_sensitive_text
 
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
@@ -222,7 +223,7 @@ def _curl_command_from_prepared(prepared: requests.PreparedRequest) -> str:
                 body = body.decode("utf-8")
             except UnicodeDecodeError:
                 body = "<binary body>"
-        parts += ["-d", quote_cmd_arg(body)]
+        parts += ["-d", quote_cmd_arg(redact_sensitive_text(body))]
 
     parts += ["--", quote_cmd_arg(prepared.url)]
     return " ".join(parts)
