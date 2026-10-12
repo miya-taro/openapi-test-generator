@@ -39,7 +39,7 @@
           </header>
 
           <main id="content">
-            <section id="page-gen" class="page active">
+            <section id="page-gen" class="page">
               <div id="gen-error" class="banner warning" hidden></div>
 
               <div class="active-config-status">
@@ -53,9 +53,9 @@
                 <h3 class="form-section-title">2. 仕様と試験を確認</h3>
                 <p class="form-section-desc">左の「対象API」で実行対象を選びます。OpenAPI定義から、選択した操作の正常系・異常系ケースを生成します。</p>
                 <div id="body-contract-editor" class="contract-editor">
-                  <h4 class="form-section-title">リクエスト・レスポンスbody schemaを補正<span class="optional-tag">任意</span></h4>
+                  <h4 class="form-section-title">リクエスト・レスポンスの項目を設定<span class="optional-tag">任意</span></h4>
                   <p class="field-caption">
-                    PHPから作ったOpenAPIで不足しているJSON Schemaを操作ごとに補えます。入力するのはJSONの実例ではなく、許されるbodyのschemaです。
+                    新規登録したAPIや既存APIの項目名、型、必須条件、制約を設定します。
                     保存すると元のopenapi.jsonを残したまま、補正した別ファイルを作って試験対象に切り替えます。
                   </p>
                   <div class="form-field">
@@ -554,10 +554,22 @@
                 <div id="dbscenario-log" class="run-log"></div>
               </div>
             </section>
-            <section id="page-settings" class="page">
+            <section id="page-settings" class="page active">
               <div id="project-source" class="form-section">
                 <h3 class="form-section-title">1. 試験対象を登録</h3>
-                <p class="form-section-desc">通常は、この3項目だけを指定して試験を開始できます。</p>
+                <p class="form-section-desc">APIを画面で新規登録するか、既存のOpenAPIを選択してください。接続先はBase URLに入力します。</p>
+                <div class="form-section" id="new-api-form">
+                  <h3>APIを新規登録（OpenAPIファイル不要）</h3>
+                  <p class="field-caption">パスとメソッドを登録後、次の画面でリクエスト・レスポンスの項目、型、必須、制約を入力して保存します。</p>
+                  <label class="checkbox"><input type="checkbox" id="new-api-append" /> 選択中のOpenAPIにAPIを追加する（別名保存）</label>
+                  <div class="form-field"><label for="new-api-name">API名（英数字・例: login）</label><input id="new-api-name" placeholder="login" /></div>
+                  <div class="form-field"><label for="new-api-path">パス</label><input id="new-api-path" placeholder="/v1/auth/login" /></div>
+                  <div class="form-field"><label for="new-api-method">HTTPメソッド</label><select id="new-api-method"><option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></div>
+                  <label class="checkbox"><input type="checkbox" id="new-api-body" checked /> JSONリクエストボディあり</label>
+                  <div class="form-field"><label for="new-api-statuses">レスポンスステータス（仕様にあるものをカンマ区切り）</label><input id="new-api-statuses" value="200" placeholder="200,400,401" /></div>
+                  <button id="new-api-create">登録してボディの項目を設定</button>
+                  <p id="new-api-message" class="field-caption" role="status"></p>
+                </div>
                 <details id="copilot-openapi-guide">
                   <summary>openapi.jsonがない場合（素のPHP）</summary>
                   <p class="field-caption">VS CodeでPHPプロジェクトを開き、下の依頼文をCopilot Chatへ貼り付けてください。Copilotが作成した下書きと根拠・要確認事項を読み、修正してから取り込みます。</p>

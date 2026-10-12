@@ -223,3 +223,41 @@ def test_explicit_empty_body_removes_content_preserving_headers_and_source(tmp_p
     assert load_operation_body_contract(str(source), "createUser")["responseBodyEmpty"] is False
     response = json.loads(destination.read_text())["paths"]["/users"]["post"]["responses"]["201"]
     assert "content" not in response and "headers" in response
+
+
+def test_create_login_then_edit_and_append_without_losing_contract(tmp_path):
+    from openapi_editor import create_operation_document
+    draft = tmp_path / 'login.json'
+    doc = create_operation_document('', '/v1/auth/login', 'POST', 'login', ['200', '400', '401'])
+    draft.write_text(json.dumps(doc))
+    request = {'type': 'object', 'required': ['username', 'password'], 'properties': {
+        'username': {'type': 'string'}, 'password': {'type': 'string'}}}
+    response = {'type': 'object', 'required': ['id', 'created_datetime'], 'properties': {
+        'id': {'type': 'string'}, 'created_datetime': {'type': 'string', 'format': 'date-time'}}}
+    saved = tmp_path / 'edited.json'
+    save_operation_body_contract(str(draft), str(saved), 'login', True, request, '200', response)
+    loaded = load_operation_body_contract(str(saved), 'login')
+    assert loaded['requestBodySchema'] == request
+    assert loaded['responseBodySchema'] == response
+    added = create_operation_document(str(saved), '/v1/data', 'GET', 'getData', ['200'], False)
+    assert added['paths']['/v1/auth/login'] == json.loads(saved.read_text())['paths']['/v1/auth/login']
+    assert 'requestBody' not in added['paths']['/v1/data']['get']
+    assert set(added['paths']['/v1/auth/login']['post']['responses']) == {'200', '400', '401'}
+    with pytest.raises(ValueError, match='登録済み'):
+        create_operation_document(str(saved), '/v1/auth/login', 'post', 'another', ['200'])
+    with pytest.raises(ValueError, match='登録済み'):
+        create_operation_document(str(saved), '/other', 'post', 'login', ['200'])
+
+
+@pytest.mark.parametrize('route,method,name,statuses', [
+    ('https://example.com', 'post', 'login', ['200']),
+    ('/login?q=1', 'post', 'login', ['200']),
+    ('/login', 'set', 'login', ['200']),
+    ('/login', 'post', '', ['200']),
+    ('/login', 'post', 'login', ['400']),
+    ('/login', 'post', 'login', ['200', 'oops']),
+])
+def test_new_operation_invalid_inputs(route, method, name, statuses):
+    from openapi_editor import create_operation_document
+    with pytest.raises(ValueError):
+        create_operation_document('', route, method, name, statuses)

@@ -209,7 +209,7 @@ jobs:
           OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
           OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
           OTG_LOGIN_EVIDENCE_DIR: docs/_ci_release_evidence/login
-        run: python -m pytest runner/tests/test_release_candidate_matrix.py runner/tests/test_login_e2e.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py gui/tests/test_browser_pwrco.py gui/tests/test_browser_login.py -q
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py runner/tests/test_login_e2e.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py gui/tests/test_browser_pwrco.py gui/tests/test_browser_login.py gui/tests/test_browser_create_api.py -q
 
       - name: Upload first release qualification evidence
         if: always()

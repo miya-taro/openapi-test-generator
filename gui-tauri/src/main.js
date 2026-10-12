@@ -740,6 +740,45 @@ export function contractEditorDefaultPath(sourcePath) {
     : `${sourcePath}.ui-edited.json`;
 }
 
+$("new-api-create").addEventListener("click", async () => {
+  const button = $("new-api-create");
+  const message = $("new-api-message");
+  button.disabled = true;
+  try {
+    const sourcePath = $("new-api-append").checked ? $("openapi-path").value.trim() : "";
+    if ($("new-api-append").checked && !sourcePath) throw new Error("追加先のopenapi.jsonを選択してください");
+    const operationId = $("new-api-name").value.trim();
+    const data = await invoke("bridge_call", {
+      command: "create_operation_document",
+      args: { source_path: sourcePath, route: $("new-api-path").value.trim(),
+        method: $("new-api-method").value, operation_id: operationId,
+        statuses: $("new-api-statuses").value.split(",").map((s) => s.trim()),
+        request_body: $("new-api-body").checked },
+    });
+    const path = await save({ filters: [{ name: "OpenAPI JSON", extensions: ["json"] }],
+      defaultPath: sourcePath ? contractEditorDefaultPath(sourcePath) : `${operationId}.openapi.json` });
+    if (!path) { message.textContent = "保存をキャンセルしました"; return; }
+    if (sourcePath && path.replaceAll("\\", "/").toLowerCase() === sourcePath.replaceAll("\\", "/").toLowerCase()) {
+      throw new Error("元のOpenAPIとは別名で保存してください");
+    }
+    await invoke("write_config_file", { path, data });
+    $("openapi-path").value = path;
+    updateActiveOpenapiText();
+    await refreshOperationsList({ keepExcluded: true });
+    $("contract-operation").value = operationId;
+    await loadOperationBodyContract();
+    await persistSettings();
+    showPage("gen", document.querySelector('[data-step="spec"]'));
+    message.textContent = "APIを登録しました";
+    setContractEditorStatus("新規APIの下書きです。リクエスト・レスポンスの項目を入力し、下の保存ボタンで確定してください。", "ok");
+    $("contract-operation").scrollIntoView?.({ block: "start" });
+  } catch (error) {
+    message.textContent = `登録できませんでした: ${error.message || error}`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 async function loadOperationBodyContract() {
   const path = $("openapi-path").value.trim();
   const operationId = $("contract-operation").value;
@@ -817,7 +856,7 @@ async function saveOperationBodyContract() {
     await refreshOperationsList({ keepExcluded: true });
     await persistSettings();
     setContractEditorStatus(
-      `補正したOpenAPIを保存し、試験対象に設定しました: ${result.path}。続けて「試験ケースを作成して確認」を押してください。`,
+      `OpenAPIを保存し、試験対象に設定しました: ${result.path}。続けて「試験ケースを作成して確認」を押してください。`,
       "ok",
     );
   } catch (error) {
