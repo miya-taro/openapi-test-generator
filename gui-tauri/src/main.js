@@ -610,12 +610,12 @@ async function validateAuthAgainstOpenapi(data) {
       try {
         await invoke("bridge_call", { command: "validate_login_request_contract", args: { ...args, body } });
       } catch (error) {
-        throw new Error(`認証プロファイル「${name}」: ${error}`);
+        throw new Error(`認証プロファイル「${name}」: ${error}`, { cause: error });
       }
     }
     return true;
   } catch (error) {
-    throw new Error(`ログイン設定とAPI定義が一致しません: ${error}`);
+    throw new Error(`ログイン設定とAPI定義が一致しません: ${error}`, { cause: error });
   }
 }
 
