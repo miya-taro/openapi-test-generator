@@ -83,7 +83,12 @@ def write_results(
     write_request_sheet(wb, [
         {"case_id": result.case.id, "verdict": verdict, "status": result.actual_status,
          "request": result.request_evidence} for result, verdict, _ in results
-    ], first=True)
+    ], first=not any(s.title.startswith("試験仕様_") for s in wb.worksheets))
+    by_id = {result.case.id: verdict for result, verdict, _ in results}
+    for summary in wb.worksheets:
+        if summary.title.startswith("試験仕様_"):
+            for row in range(5, summary.max_row + 1):
+                summary.cell(row, 7, by_id.get(str(summary.cell(row, 9).value), "未実施"))
     wb.save(str(output_path))
 
 

@@ -201,4 +201,8 @@ def write_excel_output(output: dict, excel_path: str, openapi: dict | None = Non
 
     if "coverage" in output:
         write_coverage_sheet(wb, output["coverage"])
+    from src.renderer.readable_spec import write_readable_sheets
+    commands = [sheet.cell(row=i + 5, column=18).value for i in range(len(output["cases"]))]
+    write_readable_sheets(wb, output["cases"], openapi, base_url, commands)
+    sheet.sheet_state = "hidden"
     wb.save(excel_path)
