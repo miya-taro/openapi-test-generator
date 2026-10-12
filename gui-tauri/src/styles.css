@@ -1253,3 +1253,10 @@ label.checkbox input[type="checkbox"] {
 @media (max-width: 1000px) { .insert-mapping { grid-template-columns: 1fr 1fr; } }
 #dbscenario-insert-panel > label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; }
 #dbscenario-insert-panel input[type="checkbox"] { width: auto; margin: 0; }
+
+#dbscenario-sql-panel > label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+#dbscenario-sql-panel [data-response-path] label { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(160px, 1fr); gap: 12px; align-items: center; margin: 8px 0; overflow-wrap: anywhere; }
+#dbscenario-sql-panel .insert-mapping { grid-template-columns: 1fr 130px 1.5fr 160px auto; }
+@media (max-width: 1000px) {
+  #dbscenario-sql-panel .insert-mapping, #dbscenario-sql-panel [data-response-path] label { grid-template-columns: 1fr 1fr; }
+}

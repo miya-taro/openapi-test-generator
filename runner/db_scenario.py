@@ -140,6 +140,7 @@ class DBScenario:
     db_unchanged: list[DBUnchangedCheck] = field(default_factory=list)
     influx_mutation: dict | None = None
     db_insert_check: dict | None = None
+    db_sql_response_check: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -205,6 +206,8 @@ class DBScenario:
                 else None
             ),
         }
+        if self.db_sql_response_check is not None:
+            definition["dbSqlResponseCheck"] = self.db_sql_response_check
         if self.db_insert_check is not None:
             definition["dbInsertCheck"] = self.db_insert_check
         if self.influx_mutation is not None:
@@ -333,9 +336,18 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation", "db_insert_check")):
-        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation、db_insert_check のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation", "db_insert_check", "db_sql_response_check")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation、db_insert_check、db_sql_response_check のいずれかは必須です")
 
+    db_sql_response_check = raw.get("db_sql_response_check")
+    if "db_sql_response_check" in raw:
+        from src.sql_response_mapping import validate_sql_response
+        try:
+            validate_sql_response(db_sql_response_check)
+        except ValueError as exc:
+            raise ScenarioError(str(exc)) from exc
+        if any(k in raw for k in ("db_check", "db_response_check", "influx_mutation", "db_insert_check", "cleanup")):
+            raise ScenarioError("SQLレスポンス照合は他のDB照合・自動削除と同時指定できません")
     db_insert_check = raw.get("db_insert_check")
     if "db_insert_check" in raw:
         from src.insert_mapping import validate_insert
@@ -558,6 +570,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         db_unchanged=db_unchanged,
         influx_mutation=influx_mutation,
         db_insert_check=db_insert_check,
+        db_sql_response_check=db_sql_response_check,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

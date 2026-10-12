@@ -1,3 +1,4 @@
+import { buildSqlResponseScenario, initSqlResponseEditor } from "./sql-response-editor.js";
 import { buildInsertScenario, initInsertEditor } from "./insert-editor.js";
 import { validateComparisonBody } from "./comparison-rules.js";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -732,6 +733,7 @@ export function buildDbScenario(form) {
   const name = String(form.name || "").trim();
   const table = String(form.table || "").trim();
   if (!name) throw new Error("試験名を入力してください");
+  if (form.mode === "sql_response") return buildSqlResponseScenario({ ...form, name });
   if (!table) throw new Error("対象テーブルを入力してください");
   requireDbIdentifier(table, "対象テーブル");
 
@@ -1112,6 +1114,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   };
 
   const selectedOperation = () => operations.find((item) => item.operationId === byId("dbscenario-editor-operation").value);
+  const sqlEditor = initSqlResponseEditor(() => selectedOperation());
   const insertEditor = initInsertEditor(() => selectedOperation());
 
   function renderOperations() {
@@ -1213,6 +1216,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     renderedOperationId = operation?.operationId || "";
     if (operationChanged) {
       insertEditor.render();
+      sqlEditor.render();
       byId("dbscenario-editor-mode").value = "mapping";
       byId("dbscenario-editor-unchanged-body").value = "{}";
       byId("dbscenario-editor-unchanged-status").value = "";
@@ -1313,6 +1317,10 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   function updateMode() {
+    const sql = byId("dbscenario-editor-mode").value === "sql_response";
+    byId("dbscenario-sql-panel").hidden = !sql;
+    byId("dbscenario-editor-table").hidden = sql;
+    document.querySelector('label[for="dbscenario-editor-table"]').hidden = sql;
     const insert = byId("dbscenario-editor-mode").value === "insert_rows";
     byId("dbscenario-insert-panel").hidden = !insert;
     const unchanged = byId("dbscenario-editor-mode").value === "unchanged";
@@ -1321,10 +1329,10 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     byId("dbscenario-editor-influx-period").hidden = !influx || !unchanged;
     const method = selectedOperation()?.method;
     byId("dbscenario-editor-unchanged-panel").hidden = !unchanged;
-    byId("dbscenario-editor-write-panel").hidden = insert || unchanged || !["POST", "PUT", "PATCH"].includes(method);
-    byId("dbscenario-editor-seed-panel").hidden = insert || influx || unchanged || !SEEDED_METHODS.has(method);
-    byId("dbscenario-editor-get-panel").hidden = insert || unchanged || method !== "GET";
-    const mutation = influx && !insert && !unchanged && MUTATING_METHODS.has(method);
+    byId("dbscenario-editor-write-panel").hidden = sql || insert || unchanged || !["POST", "PUT", "PATCH"].includes(method);
+    byId("dbscenario-editor-seed-panel").hidden = sql || insert || influx || unchanged || !SEEDED_METHODS.has(method);
+    byId("dbscenario-editor-get-panel").hidden = sql || insert || unchanged || method !== "GET";
+    const mutation = influx && !sql && !insert && !unchanged && MUTATING_METHODS.has(method);
     byId("dbscenario-editor-influx-mutation").hidden = !mutation;
     byId("dbscenario-editor-influx-fixture-panel").hidden = !byId("dbscenario-editor-influx-fixture").checked;
     byId("dbscenario-editor-influx-seeds-panel").hidden = byId("dbscenario-editor-influx-action").value === "insert";
@@ -1339,20 +1347,26 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     }
     // Seed references are not available in the no-change mode.
     for (const checkbox of byId("dbscenario-editor-path-param-rows").querySelectorAll("input[data-auto-path-param]")) {
-      if ((unchanged || influx) && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
-      checkbox.disabled = unchanged || influx;
+      if ((sql || unchanged || influx) && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
+      checkbox.disabled = sql || unchanged || influx;
     }
-    if (unchanged) {
+    if (unchanged || sql) {
       for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input")) input.disabled = false;
       byId("dbscenario-editor-guidance").textContent = "実行前後のDBを比較します。送る値と期待statusを仕様に従って入力してください。DB列やエラー条件は推測しません。";
     } else {
       byId("dbscenario-editor-guidance").textContent = byId("dbscenario-editor-guidance").dataset.mappingGuidance || "API操作を選択してください";
       syncMappedQueryParams();
     }
+    if (sql) byId("dbscenario-editor-guidance").textContent = "SQLで期待値を取得し、設定した項目・配列を照合します。検索ルールは人が指定してください。";
     if (mutation) byId("dbscenario-editor-guidance").textContent = "InfluxDBの対象時刻・全タグ・期待する変更を指定してください。保存は事前なし、更新・削除は既存ポイントが必要です。";
   }
 
   function currentForm() {
+    if (byId("dbscenario-editor-mode").value === "sql_response") return {
+      mode: "sql_response", engine: byId("dbscenario-editor-engine").value,
+      operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
+      pathParams: collectPathParams(), queryParams: collectQueryParams(), ...sqlEditor.collect(),
+    };
     if (byId("dbscenario-editor-mode").value === "insert_rows") return {
       mode: "insert_rows", engine: byId("dbscenario-editor-engine").value,
       operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
