@@ -182,8 +182,9 @@ jobs:
           OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
           OTG_POST_EVIDENCE_DIR: docs/_ci_measure_evidence/post-array
           OTG_PWRCO_EVIDENCE_DIR: docs/_ci_measure_evidence/pwrco
+          OTG_THREE_AUTH_EVIDENCE_DIR: docs/_ci_measure_evidence/three-api-auth
           OTG_SQL_EVIDENCE_DIR: docs/_ci_measure_evidence/sql-response
-        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py -q
+        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py runner/tests/test_three_api_auth_e2e.py -q
 
       - name: Upload GET JSON body comparison evidence
         if: always()
