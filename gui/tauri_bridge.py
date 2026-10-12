@@ -191,6 +191,8 @@ def _dispatch(command: str, args: dict) -> object:
         )
     if command == "login_operation_hints":
         return validators.login_operation_hints(args["path"], args["operation_id"])
+    if command == "validate_login_request_contract":
+        return validators.validate_login_request_contract(args["path"], args["operation_id"], args.get("body"))
     if command == "health_check":
         return validators.health_check(args["base_url"], args.get("health_path") or "/health")
     if command == "validate_openapi":

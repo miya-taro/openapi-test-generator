@@ -598,6 +598,27 @@ function collectAuthConfig() {
   return data;
 }
 
+async function validateAuthAgainstOpenapi(data) {
+  try {
+    const args = {
+      path: $("openapi-path").value.trim(),
+      operation_id: $("auth-login-op").value,
+      body: data.body,
+    };
+    await invoke("bridge_call", { command: "validate_login_request_contract", args });
+    for (const [name, body] of Object.entries(data.auth_profiles || {})) {
+      try {
+        await invoke("bridge_call", { command: "validate_login_request_contract", args: { ...args, body } });
+      } catch (error) {
+        throw new Error(`認証プロファイル「${name}」: ${error}`);
+      }
+    }
+    return true;
+  } catch (error) {
+    throw new Error(`ログイン設定とAPI定義が一致しません: ${error}`);
+  }
+}
+
 function setAuthConfigStatus(text, state) {
   const el = $("auth-config-status");
   el.textContent = text;
@@ -616,6 +637,7 @@ $("auth-config-save").addEventListener("click", async () => {
   const savePath = await save({ filters: [{ name: "YAML/JSON", extensions: ["yaml", "yml", "json"] }], defaultPath: "auth_config.yaml" });
   if (!savePath) return;
   try {
+    await validateAuthAgainstOpenapi(data);
     await invoke("write_config_file", { path: savePath, data });
     setAuthConfigStatus(`保存しました: ${savePath}`, "ok");
   } catch (e) {
@@ -1456,6 +1478,7 @@ async function writeDbScenarioRuntimeConfigs() {
   let authConfigPath = "";
   if (authConfigEnabled()) {
     const authConfigData = collectAuthConfig();
+    await validateAuthAgainstOpenapi(authConfigData);
     authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
     dbScenarioTempAuthConfigPath = authConfigPath;
   }
@@ -1862,7 +1885,9 @@ async function runSchemathesisExploration() {
     await persistSettings();
     let authConfigPath = "";
     if (authConfigEnabled()) {
-      authConfigPath = await invoke("write_config_file", { path: null, data: collectAuthConfig() });
+      const authConfigData = collectAuthConfig();
+      await validateAuthAgainstOpenapi(authConfigData);
+      authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
       tempAuthConfigPath = authConfigPath;
     }
     tempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
@@ -1897,6 +1922,7 @@ async function writeContractRuntimeConfigs() {
   let authConfigPath = "";
   if (authConfigEnabled()) {
     const authConfigData = collectAuthConfig();
+    await validateAuthAgainstOpenapi(authConfigData);
     authConfigPath = await invoke("write_config_file", { path: null, data: authConfigData });
     tempAuthConfigPath = authConfigPath;
   }
@@ -2019,6 +2045,14 @@ $("run-button").addEventListener("click", async () => {
   }
 
   const outputDir = $("output-dir").value.trim() || dirName(openapiPath);
+  if (authConfigEnabled()) {
+    try {
+      await validateAuthAgainstOpenapi(collectAuthConfig());
+    } catch (error) {
+      showGenError(error.message);
+      return;
+    }
+  }
   try {
     await invoke("ensure_output_dir", { path: outputDir });
   } catch (e) {

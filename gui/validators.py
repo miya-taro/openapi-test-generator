@@ -217,6 +217,47 @@ def login_operation_hints(path: str, operation_id: str) -> dict:
     return {"body": body, "token_path": token_path}
 
 
+def validate_login_request_contract(path: str, operation_id: str, body: object) -> str:
+    """Check that the configured login request matches the selected OpenAPI operation.
+
+    Report property names only: the configured body may contain a password.
+    """
+    from jsonschema import Draft202012Validator, FormatChecker
+    from src.parser import parse_openapi
+    from src.schema_contract import validation_schema
+
+    openapi = parse_openapi(path)
+    operation = _find_operation(openapi, operation_id)
+    if operation is None:
+        raise ValueError("選択したログイン操作がOpenAPIにありません")
+    request_body = operation.get("requestBody") or {}
+    schema = _json_schema_for(request_body.get("content"))
+    if not isinstance(schema, dict) or not schema:
+        raise ValueError("ログイン操作のJSONリクエストschemaがありません。UIで必須項目を定義してください")
+    if not isinstance(body, dict):
+        raise ValueError("ログインリクエストのボディはJSONオブジェクトにしてください")
+
+    properties = schema.get("properties") or {}
+    if isinstance(properties, dict):
+        unknown = sorted(str(key) for key in body if key not in properties)
+        missing = sorted(set(schema.get("required", [])) - body.keys())
+        if unknown or missing:
+            details = []
+            if unknown:
+                details.append("OpenAPIの定義にない項目: " + ", ".join(unknown))
+            if missing:
+                details.append("ログイン設定に足りない必須項目: " + ", ".join(missing))
+            raise ValueError("ログイン設定とOpenAPIの項目が一致しません（" + " / ".join(details) + "）")
+    errors = sorted(
+        Draft202012Validator(validation_schema(schema), format_checker=FormatChecker()).iter_errors(body),
+        key=lambda error: (list(map(str, error.path)), error.message),
+    )
+    if errors:
+        field = ".".join(map(str, errors[0].path)) or "ボディ全体"
+        raise ValueError(f"ログイン設定の{field}がOpenAPIの型・制約に合いません")
+    return "OK（ログインリクエストはOpenAPIの定義に一致）"
+
+
 def health_check(base_url: str, health_path: str = "/health") -> bool:
     """base_url + health_path へGETし、2xxが返るかを確認する（GUIの「ヘルスチェック」画面用）。
 
