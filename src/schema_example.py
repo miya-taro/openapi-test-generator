@@ -82,7 +82,7 @@ def _candidate_values(schema: dict) -> list[object]:
         return [schema["const"]]
     enum = schema.get("enum")
     if isinstance(enum, list):
-        return list(enum)
+        return ([schema["example"]] if "example" in schema else []) + list(enum)
 
     candidates: list[object] = []
     for key in ("example", "default"):

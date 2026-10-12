@@ -98,6 +98,20 @@ export function builderNodeToSchema(node) {
   }
 
   const schema = { ...(node.extra || {}) };
+  if (node.exampleEnabled !== undefined) {
+    delete schema.example;
+    if (node.exampleEnabled) {
+      let value;
+      try { value = node.type === "string" ? node.exampleText : JSON.parse(node.exampleText); }
+      catch { throw new Error(`「${node.name || "body"}」の正常系の値を正しい形式で入力してください`); }
+      const valid = node.type === "string" ? typeof value === "string"
+        : node.type === "integer" ? Number.isInteger(value)
+          : node.type === "number" ? typeof value === "number" && Number.isFinite(value)
+            : node.type === "boolean" ? typeof value === "boolean" : value === null;
+      if (!valid) throw new Error(`「${node.name || "body"}」の正常系の値がデータ型と一致しません`);
+      schema.example = value;
+    }
+  }
   schema.type = node.typeChanged || node.originalType === undefined ? node.type : node.originalType;
   const constraints = CONSTRAINTS_BY_TYPE[node.type] || [];
   for (const constraint of constraints) {
@@ -274,12 +288,44 @@ function renderNode(node, context, refresh, notify) {
     card.appendChild(limits);
   }
 
+  if (context.requestExamples && !["object", "array"].includes(node.type)) {
+    const enabled = node.exampleEnabled ?? Object.hasOwn(node.extra || {}, "example");
+    const section = makeElement("div", "schema-example");
+    const label = makeElement("label", "checkbox");
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.dataset.role = "example-enabled";
+    toggle.checked = enabled;
+    label.append(toggle, document.createTextNode("正常系で使う値を指定"));
+    section.appendChild(label);
+    const input = document.createElement("input");
+    input.dataset.role = "example-value";
+    input.setAttribute("aria-label", "正常系で使う値");
+    input.type = /password|secret|token/i.test(node.name) ? "password" : "text";
+    input.autocomplete = "off";
+    input.disabled = !enabled;
+    input.value = node.exampleText ?? (Object.hasOwn(node.extra || {}, "example")
+      ? node.type === "string" ? node.extra.example : JSON.stringify(node.extra.example) : "");
+    input.placeholder = node.type === "boolean" ? "true または false" : "実際に受け付けられる値";
+    const update = () => {
+      node.exampleEnabled = toggle.checked;
+      node.exampleText = input.value;
+      input.disabled = !toggle.checked;
+      notify();
+    };
+    toggle.addEventListener("change", update);
+    input.addEventListener("input", update);
+    section.appendChild(input);
+    card.appendChild(section);
+  }
+
   if (node.type === "object") {
     const properties = makeElement("div", "schema-properties");
     properties.appendChild(makeElement("div", "schema-subheading", "中の項目"));
     for (const [index, child] of (node.properties || []).entries()) {
       properties.appendChild(renderNode(child, {
         kind: "property",
+        requestExamples: context.requestExamples,
         depth: context.depth + 1,
         onRemove: () => {
           node.properties.splice(index, 1);
@@ -307,6 +353,7 @@ function renderNode(node, context, refresh, notify) {
     if (node.items) {
       items.appendChild(renderNode(node.items, {
         kind: "item",
+        requestExamples: context.requestExamples,
         depth: context.depth + 1,
         title: "要素のデータ型と制約",
       }, refresh, notify));
@@ -334,7 +381,7 @@ function renderNode(node, context, refresh, notify) {
   return card;
 }
 
-export function renderSchemaBuilder(container, node, onChange = () => {}) {
+export function renderSchemaBuilder(container, node, onChange = () => {}, options = {}) {
   const render = () => {
     container.replaceChildren();
     if (!node) {
@@ -353,7 +400,7 @@ export function renderSchemaBuilder(container, node, onChange = () => {}) {
 
     const refresh = () => render();
     const notify = () => onChange(node);
-    container.appendChild(renderNode(node, { kind: "root", depth: 0 }, refresh, notify));
+    container.appendChild(renderNode(node, { kind: "root", depth: 0, requestExamples: options.requestExamples }, refresh, notify));
   };
   render();
 }

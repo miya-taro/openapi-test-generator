@@ -8,11 +8,12 @@ import re
 import tempfile
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 
 from src.parser import OpenAPIParseError, parse_openapi
 from src.db_scope import KEY as DB_KEY, validate_scopes
+from src.schema_contract import validation_schema
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 _SUCCESS_STATUS = re.compile(r"(?:2\d\d|2XX)", re.IGNORECASE)
@@ -262,6 +263,21 @@ def _validate_saved_schemas(document: dict, operation_id: str, status: str) -> N
     for schema in schemas:
         if isinstance(schema, dict):
             Draft202012Validator.check_schema(schema)
+    if isinstance(schemas[0], dict):
+        _validate_request_examples(schemas[0])
+
+
+def _validate_request_examples(schema: dict) -> None:
+    if "example" in schema and not Draft202012Validator(
+        validation_schema(schema), format_checker=FormatChecker()
+    ).is_valid(schema["example"]):
+        # Never include the example value in errors: it can contain credentials.
+        raise ValueError("正常系で使う値が項目の型・制約に一致しません")
+    for child in (schema.get("properties") or {}).values():
+        if isinstance(child, dict):
+            _validate_request_examples(child)
+    if isinstance(schema.get("items"), dict):
+        _validate_request_examples(schema["items"])
 
 
 def create_operation_document(source_path: str, route: str, method: str,

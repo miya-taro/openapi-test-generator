@@ -81,3 +81,7 @@ def test_enum_example_uses_value_that_meets_all_constraints():
 def test_unsatisfiable_schema_has_no_generated_example():
     with pytest.raises(NoSchemaExample):
         find_schema_example({"type": "string", "minLength": 10, "maxLength": 2})
+
+
+def test_explicit_enum_example_precedes_other_valid_enum_values():
+    assert find_schema_example({'type': 'integer', 'enum': [1, 2], 'example': 2}) == 2

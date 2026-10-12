@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import sys
 import threading
 from pathlib import Path
 
@@ -43,6 +44,10 @@ def test_create_login_in_browser(tmp_path, monkeypatch):
                         prop.locator('[data-role="property-name"]').fill(name)
                         prop.locator('[data-role="schema-type"]').select_option('string')
                         prop.get_by_label('必須', exact=True).check()
+                        if side == 'request':
+                            from docs.login_fixture_api import USERNAME, PASSWORD
+                            prop.locator('[data-role="example-enabled"]').check()
+                            prop.locator('[data-role="example-value"]').fill(USERNAME if name == 'username' else PASSWORD)
                         if name == 'created_datetime':
                             prop.get_by_label('形式', exact=True).select_option('date-time')
                 page.locator('#contract-save-button').click()
@@ -55,6 +60,35 @@ def test_create_login_in_browser(tmp_path, monkeypatch):
                 assert response['properties']['created_datetime']['format'] == 'date-time'
                 assert set(response['required']) == {'id', 'created_datetime'}
                 assert set(op['responses']) == {'200', '400', '401'}
+                from src.schema_example import find_schema_example
+                assert find_schema_example(op['requestBody']['content']['application/json']['schema']) == {
+                    'username': USERNAME, 'password': PASSWORD,
+                }
+                # Use the real generator and HTTP runner with the UI-created credentials.
+                sys.path.insert(0, str(root / 'runner'))
+                from src.parser import parse_openapi
+                from src.extractor import extract_specs
+                from src.generator import generate_test_cases
+                from src.id_assigner import assign_ids
+                from models import RunCase
+                from http_client import execute_with_openapi
+                from request_builder import _build_body
+                from docs.login_fixture_api import LoginFixture
+                parsed = parse_openapi(str(saved))
+                params, bodies = extract_specs(parsed)
+                cases = assign_ids(generate_test_cases(params, bodies, {'includeNormal': True, 'includeAbnormal': True}))
+                baseline = next(c for c in cases if c['paramName'] == '__valid_request__')
+                fields = ['id', 'operationId', 'path', 'method', 'in', 'paramName', 'inputValue', 'expectedStatus', 'expectedResponseBody', 'expectedResponseHeader', 'expectedResponseTime', 'expectedResult']
+                api = LoginFixture()
+                try:
+                    result = execute_with_openapi(RunCase(*(baseline[k] for k in fields)), api.url, parsed)
+                    assert result.actual_status == 200
+                    assert PASSWORD not in result.curl_command
+                    missing = RunCase('omit', 'login', '/v1/auth/login', 'POST', 'body', 'username', '（省略）', '400', '', '', '', '')
+                    assert _build_body(missing, parsed) == {'password': PASSWORD}
+                    assert execute_with_openapi(missing, api.url, parsed).actual_status == 400
+                finally:
+                    api.close()
                 assert page.locator('#auth-login-op option[value="login"]').count() == 1
                 # Duplicate registration must leave the saved contract unchanged.
                 page.locator('[data-step="target"]').click()
