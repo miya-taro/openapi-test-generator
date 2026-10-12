@@ -15,27 +15,22 @@ def test_additional_properties_false_generates_abnormal_case():
     assert case["perspective"] == "異常系_additionalProperties"
 
 
-def test_additional_properties_unspecified_generates_normal_case_allowing_extra_prop():
-    # additionalProperties が未指定の場合、JSON Schemaの既定は additionalProperties: true
-    # （制限なし）。「許可されているはずの追加プロパティを実装が誤って拒否していないか」は
-    # これまで一切検証されていなかった（正常系_additionalProperties制限なし、参照）。
+def test_additional_properties_unspecified_does_not_generate_extra_prop_case():
     cases = generate_object_cases(
         {"type": "object"}, {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True}
     )
-    case = next(c for c in cases if c["keyword"] == "additionalProperties")
-    assert case["perspective"] == "正常系_additionalProperties制限なし"
-    assert case["expectedStatus"] != "4xx"
+    assert not any(c["keyword"] == "additionalProperties" for c in cases)
 
 
-def test_additional_properties_unspecified_normal_only_generates_case():
+def test_additional_properties_unspecified_normal_only_does_not_generate_extra_prop_case():
     cases = generate_object_cases(
         {"type": "object"}, {"paramName": "requestBody", "opts": NORMAL_ONLY, "isRootBody": True}
     )
-    assert any(c["perspective"] == "正常系_additionalProperties制限なし" for c in cases)
+    assert not any(c["keyword"] == "additionalProperties" for c in cases)
 
 
 def test_additional_properties_unspecified_abnormal_only_generates_nothing():
-    # 「未指定/true」は許可されているケースの正常系のみが対象で、異常系は存在しない
+    # 未指定の場合は追加プロパティ用のケースを作らない。
     cases = generate_object_cases(
         {"type": "object"}, {"paramName": "requestBody", "opts": ABNORMAL_ONLY, "isRootBody": True}
     )
@@ -78,23 +73,12 @@ def test_normal_only_generates_nothing():
 # --- additionalProperties がスキーマ（型付き追加プロパティを許可）の場合 ---
 
 
-def test_additional_properties_schema_generates_normal_case_with_matching_type():
+def test_additional_properties_schema_does_not_generate_extra_prop_normal_case():
     cases = generate_object_cases(
         {"type": "object", "additionalProperties": {"type": "string"}},
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True, "successStatus": "201"},
     )
-    case = next(c for c in cases if c["perspective"] == "正常系_additionalProperties型適合")
-    assert case["expectedStatus"] == "201"
-    assert '"value"' in case["inputValue"]
-
-
-def test_additional_properties_schema_integer_uses_integer_sample():
-    cases = generate_object_cases(
-        {"type": "object", "additionalProperties": {"type": "integer"}},
-        {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
-    )
-    case = next(c for c in cases if c["perspective"] == "正常系_additionalProperties型適合")
-    assert '"__extra__": 1' in case["inputValue"]
+    assert not any(c["perspective"] == "正常系_additionalProperties型適合" for c in cases)
 
 
 def test_additional_properties_schema_generates_abnormal_case_with_mismatched_type():
@@ -112,8 +96,7 @@ def test_additional_properties_schema_normal_only_skips_abnormal_case():
         {"type": "object", "additionalProperties": {"type": "integer"}},
         {"paramName": "requestBody", "opts": NORMAL_ONLY, "isRootBody": True},
     )
-    assert any(c["perspective"] == "正常系_additionalProperties型適合" for c in cases)
-    assert not any(c["perspective"] == "異常系_additionalProperties型不適合" for c in cases)
+    assert not any(c["keyword"] == "additionalProperties" for c in cases)
 
 
 def test_additional_properties_schema_abnormal_only_skips_normal_case():
@@ -134,10 +117,9 @@ def test_additional_properties_string_rejects_numeric_value():
     assert ": 123" in abnormal["inputValue"]
 
 
-def test_additional_properties_true_generates_normal_case_allowing_extra_prop():
+def test_additional_properties_true_does_not_generate_extra_prop_case():
     cases = generate_object_cases(
         {"type": "object", "additionalProperties": True},
         {"paramName": "requestBody", "opts": ALL_OPTS, "isRootBody": True},
     )
-    case = next(c for c in cases if c["keyword"] == "additionalProperties")
-    assert case["perspective"] == "正常系_additionalProperties制限なし"
+    assert not any(c["keyword"] == "additionalProperties" for c in cases)
