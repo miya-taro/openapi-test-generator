@@ -56,6 +56,8 @@ def build_generate_command(
         str(paths.cases_json),
         "--excel-output",
         str(paths.spec_excel),
+        "--base-url",
+        config.base_url,
     ]
     if config.selected_operations:
         command.extend(["--operations", ",".join(config.selected_operations)])

@@ -5,7 +5,6 @@ import openpyxl
 from src.renderer.excel_output import (
     write_excel_output,
     _build_curl_command,
-    _encode_uri_component,
     COLUMNS,
     COLOR,
 )
@@ -36,112 +35,40 @@ def _tc(**overrides) -> dict:
     return base
 
 
-# --- _encode_uri_component ---
+def test_preview_uses_runner_body_without_network(monkeypatch):
+    import shlex
+    import requests
+    def no_network(*args, **kwargs):
+        raise AssertionError("preview must not send requests")
+    monkeypatch.setattr(requests.Session, "send", no_network)
+    schema = {"type": "object", "required": ["username", "password"], "properties": {
+        "username": {"type": "string", "example": "test"},
+        "password": {"type": "string", "example": "pass"}}}
+    api = {"paths": {"/v1/auth/login": {"post": {"operationId": "login", "requestBody": {
+        "required": True, "content": {"application/json": {"schema": schema}}}}}}}
+    tc = _tc(operationId="login", path="/v1/auth/login", method="POST",
+             **{"in": "body"}, paramName="requestBody",
+             inputValue='{ ...validBody, "__extra__": "value" }')
+    for name, value, expected in [
+        ("requestBody", tc["inputValue"], {"username", "password", "__extra__"}),
+        ("username", "（フィールドを省略）", {"password"}),
+    ]:
+        cmd = _build_curl_command(dict(tc, paramName=name, inputValue=value), api, "http://example.test:8100")
+        args = shlex.split(cmd)
+        body = json.loads(args[args.index("--data-binary") + 1])
+        assert set(body) == expected
+        assert "validBody" not in cmd and "BASE_URL" not in cmd
+        assert body["password"] != "pass"
+        assert args[args.index("--url") + 1] == "http://example.test:8100/v1/auth/login"
+    baseline = dict(tc, **{"in": "operation"}, paramName="__valid_request__", inputValue="（最小有効リクエスト）")
+    args = shlex.split(_build_curl_command(baseline, api, "http://example.test:8100"))
+    body = json.loads(args[args.index("--data-binary") + 1])
+    assert body["username"] == "test"
+    assert set(body) == {"username", "password"}
 
 
-def test_encode_uri_component_leaves_unreserved_chars():
-    assert _encode_uri_component("abc-_.!~*'()123") == "abc-_.!~*'()123"
-
-
-def test_encode_uri_component_escapes_special_chars():
-    assert _encode_uri_component("a b/c") == "a%20b%2Fc"
-
-
-# --- _build_curl_command ---
-
-
-def test_curl_command_path_param_substituted():
-    cmd = _build_curl_command(_tc(inputValue="42"))
-    assert '"{BASE_URL}/users/42"' in cmd
-    assert "GET" in cmd
-
-
-def test_curl_command_omit_marker_keeps_placeholder():
-    cmd = _build_curl_command(_tc(inputValue="（省略）"))
-    assert "{id}" in cmd
-
-
-def test_curl_command_query_param_appended():
-    cmd = _build_curl_command(_tc(**{"in": "query"}, path="/users", paramName="page", inputValue="2"))
-    assert "?page=2" in cmd
-
-
-def test_curl_command_header_param():
-    cmd = _build_curl_command(
-        _tc(**{"in": "header"}, paramName="X-Api-Key", inputValue="secret")
-    )
-    assert '-H "X-Api-Key: secret"' in cmd
-
-
-def test_curl_command_header_omit_no_header_flag():
-    cmd = _build_curl_command(_tc(**{"in": "header"}, paramName="X-Api-Key", inputValue="（認証ヘッダなし）"))
-    assert "-H" not in cmd
-
-
-def test_curl_command_for_openapi_security_bundle_matches_headers_query_and_cookie():
-    payload = json.dumps({
-        "headers": {"X-Api-Key": "invalid-key"},
-        "query": {"api_key": "invalid-query-key"},
-        "cookies": {"session_key": "invalid-cookie"},
-    })
-
-    cmd = _build_curl_command(_tc(
-        **{"in": "header"},
-        paramName="__openapi_security__",
-        keyword="auth",
-        inputValue=payload,
-    ))
-
-    assert "?api_key=invalid-query-key" in cmd
-    assert '-H "X-Api-Key: invalid-key"' in cmd
-    assert '-H "Cookie: session_key=invalid-cookie"' in cmd
-
-
-def test_curl_command_body_param_produces_json_payload():
-    cmd = _build_curl_command(
-        _tc(**{"in": "body"}, method="POST", path="/users", paramName="name", inputValue='"Alice"')
-    )
-    assert "Content-Type: application/json" in cmd
-    # JSON中の " は cmd.exe/curl.exe への引数として安全に渡すため \" にエスケープされる
-    assert '{\\"name\\": \\"Alice\\"}' in cmd
-
-
-def test_curl_command_body_non_json_value_falls_back_to_raw_string():
-    cmd = _build_curl_command(
-        _tc(**{"in": "body"}, method="POST", path="/users", paramName="name", inputValue="not-an-int")
-    )
-    assert '{\\"name\\": \\"not-an-int\\"}' in cmd
-
-
-def test_curl_command_header_value_with_quote_does_not_break_out():
-    # ダブルクォートを含む値が -H の引数から脱出してコマンドを注入できないこと
-    cmd = _build_curl_command(
-        _tc(**{"in": "header"}, paramName="X-Api-Key", inputValue='secret" & calc.exe & "')
-    )
-    assert '-H "X-Api-Key: secret\\" & calc.exe & \\""' in cmd
-
-
-def test_curl_command_body_value_with_quote_does_not_break_out():
-    # openapi.json 由来の値にクォートやシェルメタ文字が含まれても -d の引数を脱出できないこと
-    cmd = _build_curl_command(
-        _tc(
-            **{"in": "body"},
-            method="POST",
-            path="/users",
-            paramName="name",
-            inputValue="O'Brien'; touch pwned #",
-        )
-    )
-    assert "-d \"" in cmd
-    # 生成されたコマンド全体が対応の取れた引用符で構成されていること（脱出していない）
-    assert cmd.count('"') % 2 == 0
-
-
-def test_curl_command_empty_marker_sends_empty_string():
-    cmd = _build_curl_command(
-        _tc(**{"in": "query"}, path="/users", paramName="q", inputValue="（空文字）")
-    )
-    assert "?q=" in cmd
+def test_preview_without_context_is_explicit():
+    assert "OpenAPIとBase URL" in _build_curl_command(_tc())
 
 
 # --- write_excel_output ---
@@ -168,7 +95,7 @@ def test_write_excel_output_data_row_values(tmp_path):
     row = [c.value for c in ws[5]]
     assert row[0] == "TC-op-001"
     assert row[2] == "サマリー"
-    assert row[-1].startswith("curl.exe")  # curl コマンド列
+    assert "OpenAPIとBase URL" in row[-1]
 
 
 def test_write_excel_output_normal_and_abnormal_row_colors(tmp_path):

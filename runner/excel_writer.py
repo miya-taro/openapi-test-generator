@@ -50,7 +50,7 @@ def write_results(
         if cell_val is not None:
             id_to_row[str(cell_val)] = row_idx
 
-    preview_col = next((cell.column for cell in ws[header_row_idx] if cell.value in {"curl コマンド", "送信curl（Bash形式）"}), None)
+    preview_col = next((cell.column for cell in ws[header_row_idx] if cell.value in {"curl コマンド", "送信予定curl（Bash形式）", "送信curl（Bash形式）"}), None)
     if preview_col:
         ws.cell(row=header_row_idx, column=preview_col, value="送信curl（Bash形式）")
         for row_idx in range(header_row_idx + 1, ws.max_row + 1):
