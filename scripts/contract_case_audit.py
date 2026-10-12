@@ -158,13 +158,16 @@ for c in cases:
     valid = bool(prepared) and Draft202012Validator(
         SCHEMAS[c["operationId"]], format_checker=FormatChecker()
     ).is_valid(body)
+    request_valid = valid
+    if c["in"] == "header" and c["paramName"].lower() == "content-type":
+        request_valid = valid and c["inputValue"].split(";")[0].strip().lower() == "application/json"
     records.append(
         {
             **c,
             "body": body,
             "body_present": prepared is not None,
             "oracle_valid": valid,
-            "label_correct": valid == str(c["expectedStatus"]).startswith("2"),
+            "label_correct": request_valid == str(c["expectedStatus"]).startswith("2"),
         }
     )
 
@@ -371,6 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             and len(value) >= 2
         ):
             valid = True
+        valid = valid and self.headers.get("Content-Type", "").split(";")[0].strip().lower() == "application/json"
         status = 200 if valid else 400
         calls.append({"mode": mode, "operation": op, "body": body, "status": status})
         payload = json.dumps({"ok": valid}).encode()
