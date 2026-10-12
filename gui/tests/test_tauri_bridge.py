@@ -213,3 +213,18 @@ def test_main_writes_error_json_on_unknown_command(monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is False
     assert "nope" in output["error"]
+
+
+def test_import_templates_preserves_runtime_definition(tmp_path):
+    from docs.pwrco_suite import build_suite
+    from db_scenario import parse_scenarios
+    import yaml
+    data = build_suite('2026-10-12T00:00:00+09:00')
+    path = tmp_path / 'source.json'
+    original = json.dumps(data, ensure_ascii=False)
+    path.write_text(original, encoding='utf-8')
+    loaded = tauri_bridge._dispatch('load_db_scenario_templates', {'path': str(path)})
+    before = parse_scenarios(original)
+    after = parse_scenarios(yaml.safe_dump({'scenarios': loaded}))
+    assert [s.case_definition() for s in before] == [s.case_definition() for s in after]
+    assert path.read_text(encoding='utf-8') == original

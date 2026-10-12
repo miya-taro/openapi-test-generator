@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.parser import parse_openapi
+from src.db_coverage import build_db_coverage
 
 
 
@@ -250,7 +251,7 @@ def build_case_master(
         "project": {"name": project_name, "sources": source_files},
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cases": cases,
-        "coverage": (contract_output or {}).get("coverage", []),
+        "coverage": (contract_output or {}).get("coverage", []) + (build_db_coverage(parse_openapi(str(openapi_path)), cases) if db_scenarios_path is not None else []),
     }
 
 

@@ -1260,3 +1260,8 @@ label.checkbox input[type="checkbox"] {
 @media (max-width: 1000px) {
   #dbscenario-sql-panel .insert-mapping, #dbscenario-sql-panel [data-response-path] label { grid-template-columns: 1fr 1fr; }
 }
+
+.scenario-template { margin: 12px 0; }
+.scenario-template > label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.scenario-template textarea { width: 100%; }
+.scenario-template button { margin: 6px; }

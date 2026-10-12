@@ -1,6 +1,7 @@
 """Build a local HTML report from the reviewed case master and JUnit evidence."""
 from __future__ import annotations
 
+from src.db_coverage import execution_summary
 import html
 import json
 import xml.etree.ElementTree as ET
@@ -117,11 +118,11 @@ def write_html_report(
     ) or "ケースなし"
     coverage_rows = "".join(
         "<tr>" + "".join(f"<td>{_e(row.get(key, ''))}</td>" for key in
-                         ("operationId", "location", "field", "keyword", "status", "detail")) + "</tr>"
+                         ("operationId", "location", "field", "keyword", "status", "detail")) + f"<td>{_e(execution_summary(row, statuses))}</td></tr>"
         for row in master.get("coverage", [])
     )
     coverage_html = ("<details><summary>仕様の対応状況（実行済み・合格を意味しません）</summary>"
-                     "<table><thead><tr><th>API操作</th><th>場所</th><th>項目</th><th>制約</th><th>対応状況</th><th>補足</th></tr></thead>"
+                     "<table><thead><tr><th>API操作</th><th>場所</th><th>項目</th><th>制約</th><th>対応状況</th><th>補足</th><th>今回の実行状況</th></tr></thead>"
                      f"<tbody>{coverage_rows}</tbody></table></details>") if coverage_rows else ""
 
     document = f"""<!doctype html>
