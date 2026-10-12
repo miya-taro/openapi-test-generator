@@ -43,6 +43,7 @@ from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, 
 from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert, sql_response
 import response_check as response_check_module
 import db_scenario_report
+from request_evidence import capture_request
 from http_client import health_check, _resolve_auth_header
 from junit_writer import write_junit_xml_scenarios
 from models import DEFAULT_REQUEST_TIMEOUT, RunCase, RunResult
@@ -67,6 +68,7 @@ class APIResponse:
     raw_body: str = ""
     headers: dict = field(default_factory=dict)
     elapsed_ms: float = 0
+    request_evidence: dict = field(default_factory=dict)
 
     def __iter__(self):
         return iter((self.status, self.body, self.error))
@@ -344,7 +346,7 @@ def main() -> int:
             case_evidence: dict | None = (
                 {"case_id": scenario.case_id, "name": scenario.name,
                  "executed_at": datetime.now(timezone.utc).isoformat()}
-                if args.evidence_output else None
+                if args.evidence_output or args.report_output else None
             )
             case_session = session
             case_auth_header = None
@@ -382,7 +384,7 @@ def main() -> int:
             )
 
         if args.report_output:
-            db_scenario_report.write_report(report_rows, args.report_output)
+            db_scenario_report.write_report(report_rows, args.report_output, evidence_rows)
             print(f"[INFO] レポートを {args.report_output} に出力しました")
 
         if args.evidence_output:
@@ -622,6 +624,8 @@ def _run_scenario(
         api_response = _call_api(*call_args, **call_kwargs)
         insert_ended = datetime.now(timezone.utc)
         status, response_json, error = api_response
+        if evidence is not None:
+            evidence["sent_request"] = getattr(api_response, "request_evidence", {})
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
         if evidence is not None:
@@ -866,7 +870,7 @@ def _call_api(
     try:
         response = sender.request(method, url, **kwargs)
     except requests.exceptions.RequestException as e:
-        return APIResponse(0, {}, str(e))
+        return APIResponse(0, {}, str(e), request_evidence=capture_request(getattr(e, "request", None), headers.values()))
     finally:
         if session is not None and not persist_cookies:
             session.cookies.clear()
@@ -879,7 +883,8 @@ def _call_api(
             response_json = {}
 
     return APIResponse(response.status_code, response_json, None, response.text,
-                       dict(getattr(response, "headers", {}) or {}), (perf_counter() - started) * 1000)
+                       dict(getattr(response, "headers", {}) or {}), (perf_counter() - started) * 1000,
+                       capture_request(getattr(response, "request", None), headers.values()))
 
 
 if __name__ == "__main__":

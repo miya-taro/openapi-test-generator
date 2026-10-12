@@ -39,6 +39,7 @@ class RunResult:
     error: str | None = None
     # Excel証跡用。verify() が OpenAPI writeOnly 定義も含めて伏せた本文を設定する。
     report_body: str | None = None
+    request_evidence: dict = field(default_factory=dict)
 
 
 @dataclass

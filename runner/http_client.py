@@ -20,6 +20,7 @@ from request_builder import (
 from src.security_payload import AUTH_NONE_MARKER, OPENAPI_SECURITY_PARAM, parse_security_payload
 from src.cmd_escape import quote_cmd_arg
 from sensitive_data import redact_sensitive_text
+from request_evidence import capture_request
 
 REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
@@ -154,6 +155,7 @@ def _send_request(
             exit_code=EXIT_ERROR, curl_command="", error=f"リクエストの組み立てに失敗しました: {e}",
         )
 
+    request_evidence = capture_request(prepared, secrets)
     cmd_str = _mask_secrets(_curl_command_from_prepared(prepared), secrets)
 
     # session を共有している場合は接続プーリングのため常に同一 Session.send() を使う。
@@ -176,12 +178,12 @@ def _send_request(
         except requests.exceptions.Timeout:
             return RunResult(
                 case=case, actual_status=0, actual_body="", actual_headers={}, elapsed_ms=0.0,
-                exit_code=EXIT_TIMEOUT, curl_command=cmd_str, error="タイムアウトしました",
+                exit_code=EXIT_TIMEOUT, curl_command=cmd_str, error="タイムアウトしました", request_evidence=request_evidence,
             )
         except requests.exceptions.RequestException as e:
             return RunResult(
                 case=case, actual_status=0, actual_body="", actual_headers={}, elapsed_ms=0.0,
-                exit_code=EXIT_ERROR, curl_command=cmd_str, error=str(e),
+                exit_code=EXIT_ERROR, curl_command=cmd_str, error=str(e), request_evidence=request_evidence,
             )
     finally:
         if not isolated_session and not persist_cookies:
@@ -198,6 +200,7 @@ def _send_request(
         exit_code=EXIT_OK,
         curl_command=cmd_str,
         error=None,
+        request_evidence=request_evidence,
     )
 
 

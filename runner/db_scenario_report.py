@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.renderer.excel_output import COLOR
+from request_evidence import write_request_sheet
 
 HEADERS = ["No", "試験ID", "シナリオ名", "判定", "APIステータス", "詳細"]
 
@@ -32,7 +33,7 @@ _THIN_BORDER = Border(
 _COL_WIDTHS = [6, 22, 30, 8, 16, 60]
 
 
-def write_report(rows: list[tuple], output_path: str | Path) -> None:
+def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict] | None = None) -> None:
     """Accept legacy 4-field rows and case-ID-aware 5-field rows."""
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -70,4 +71,8 @@ def write_report(rows: list[tuple], output_path: str | Path) -> None:
     ws.freeze_panes = "A3"  # 実行日時行・ヘッダ行を固定し、シナリオ数が多くてもスクロール時に見失わないようにする
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    if evidence is not None:
+        write_request_sheet(wb, [{"case_id": row.get("case_id"), "verdict": row.get("verdict"),
+                                 "status": row.get("api_status"), "request": row.get("sent_request", {})}
+                                for row in evidence])
     wb.save(str(output_path))
