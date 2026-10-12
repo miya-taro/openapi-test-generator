@@ -840,6 +840,34 @@ describe("runSimpleScript", () => {
 // ---------- 統一ワークフロー ----------
 
 describe("統一ワークフローによる契約試験", () => {
+  test("ログイン設定とOpenAPIの項目が違う場合は試験ケースを作らない", async () => {
+    document.getElementById("gen-error").scrollIntoView = vi.fn();
+    mockInvoke.mockImplementation(async (command, payload) => {
+      if (command === "bridge_call" && payload.command === "list_operations") {
+        return [{ operationId: "login", method: "POST", path: "/v1/auth/login" }];
+      }
+      if (command === "bridge_call" && payload.command === "validate_login_request_contract") {
+        throw new Error("ログイン設定の項目がOpenAPIのリクエスト定義にありません: password, username");
+      }
+      return {};
+    });
+    document.getElementById("openapi-path").value = "C:\\work\\openapi.json";
+    document.getElementById("base-url").value = "http://vm.local";
+    document.getElementById("output-dir").value = "C:\\work\\results";
+    document.getElementById("openapi-path").dispatchEvent(new window.Event("change"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    document.getElementById("auth-enabled").checked = true;
+    document.getElementById("auth-login-op").value = "login";
+    document.getElementById("auth-body").value = '{"username":"alice","password":"secret-value"}';
+    document.getElementById("run-button").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.getElementById("gen-error").textContent).toContain("password, username");
+    expect(document.getElementById("gen-error").textContent).not.toContain("secret-value");
+    expect(mockInvoke.mock.calls.some(([command]) => command === "write_config_file")).toBe(false);
+    document.getElementById("auth-enabled").checked = false;
+  });
+
   test("試験ケース準備後に内容を確認でき、未承認実行を明示的に選べる", async () => {
     document.getElementById("openapi-path").value = "C:\\work\\openapi.json";
     document.getElementById("base-url").value = "http://vm.local/api";

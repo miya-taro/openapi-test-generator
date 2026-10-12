@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import validators
@@ -110,6 +112,30 @@ def test_json_schema_for_falls_back_to_first_content_type_when_no_json():
 
 
 # --- login_operation_hints ---
+
+
+def test_validate_login_request_contract_rejects_mismatched_credentials(tmp_path):
+    path = tmp_path / "login.json"
+    path.write_text(json.dumps({
+        "openapi": "3.1.0", "info": {"title": "login", "version": "1"},
+        "paths": {"/v1/auth/login": {"post": {
+            "operationId": "login",
+            "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                "type": "object", "required": ["user"],
+                "properties": {"user": {"type": "string"}},
+            }}}},
+            "responses": {"200": {"description": "OK"}},
+        }}},
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="username, password|password, username") as error:
+        validators.validate_login_request_contract(str(path), "login", {
+            "username": "alice", "password": "secret-value",
+        })
+    assert "secret-value" not in str(error.value)
+    with pytest.raises(ValueError, match="必須項目.*user"):
+        validators.validate_login_request_contract(str(path), "login", {})
+    assert validators.validate_login_request_contract(str(path), "login", {"user": "alice"}).startswith("OK")
 
 
 def test_login_operation_hints_blank_returns_none():
