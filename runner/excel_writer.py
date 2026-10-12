@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import openpyxl
 from models import RunResult
+from request_evidence import readable_curl, write_request_sheet
 from sensitive_data import redact_header_value, redact_sensitive_text
 
 RESULT_HEADERS = [
@@ -49,6 +50,12 @@ def write_results(
         if cell_val is not None:
             id_to_row[str(cell_val)] = row_idx
 
+    preview_col = next((cell.column for cell in ws[header_row_idx] if cell.value in {"curl コマンド", "送信curl（Bash形式）"}), None)
+    if preview_col:
+        ws.cell(row=header_row_idx, column=preview_col, value="送信curl（Bash形式）")
+        for row_idx in range(header_row_idx + 1, ws.max_row + 1):
+            ws.cell(row=row_idx, column=preview_col).value = "未実行"
+
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     verdict_col = next((cell.column for cell in ws[header_row_idx] if cell.value == "判定"), None)
     if verdict_col is None:
@@ -70,7 +77,13 @@ def write_results(
         ws.cell(row=row_idx, column=start_col + 4, value=round(result.elapsed_ms, 1))
         ws.cell(row=row_idx, column=start_col + 5, value=detail)
         ws.cell(row=row_idx, column=start_col + 6, value=result.curl_command)
+        if preview_col:
+            ws.cell(row=row_idx, column=preview_col, value=readable_curl(result.request_evidence) or result.curl_command or "送信内容なし")
 
+    write_request_sheet(wb, [
+        {"case_id": result.case.id, "verdict": verdict, "status": result.actual_status,
+         "request": result.request_evidence} for result, verdict, _ in results
+    ], first=True)
     wb.save(str(output_path))
 
 

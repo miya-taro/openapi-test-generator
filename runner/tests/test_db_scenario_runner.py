@@ -388,7 +388,7 @@ def test_report_output_writes_excel_with_one_row_per_scenario(monkeypatch, tmp_p
     _patch_common(monkeypatch)
 
     monkeypatch.setattr(dsr_module, "_call_api", _fake_call_api(201, {"id": 5}))
-    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config: (True, ""))
+    monkeypatch.setattr(dsr_module.postgres_backend, "check", lambda check, config, evidence=None: (True, ""))
 
     report_path = tmp_path / "report.xlsx"
     code = run_main(
