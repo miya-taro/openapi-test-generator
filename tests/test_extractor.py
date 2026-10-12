@@ -182,7 +182,7 @@ def test_path_level_parameter_kept_when_not_overridden():
     assert id_specs[0]["schema"]["type"] == "string"
 
 
-def test_extract_specs_adds_content_type_probe_only_when_415_is_documented():
+def test_extract_specs_adds_content_type_probe_when_error_is_documented():
     api = {
         "openapi": "3.1.0",
         "paths": {"/users": {"post": {
@@ -202,6 +202,10 @@ def test_extract_specs_adds_content_type_probe_only_when_415_is_documented():
     del api["paths"]["/users"]["post"]["responses"]["415"]
     params, _ = extract_specs(api)
     assert not any(p.get("unsupportedContentType") for p in params)
+    api["paths"]["/users"]["post"]["responses"]["400"] = {"description": "Bad request"}
+    params, _ = extract_specs(api)
+    assert any(p.get("unsupportedContentType") for p in params)
+
 
 
 def _openapi_with_multipart_upload() -> dict:

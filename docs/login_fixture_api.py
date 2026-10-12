@@ -46,6 +46,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             body = None
         self.server.calls.append({'path': self.path, 'body': body})
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            return self.respond(400, {'error': 'invalid content type'})
         valid_shape = isinstance(body, dict) and all(isinstance(body.get(key), str) for key in ('username', 'password'))
         if not valid_shape and self.server.fault != 'accept-invalid':
             return self.respond(400, {'error': 'invalid input'})

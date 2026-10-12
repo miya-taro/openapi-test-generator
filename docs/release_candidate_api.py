@@ -130,6 +130,8 @@ class Handler(BaseHTTPRequestHandler):
             result = {"time": "2026-10-11T00:00:00Z", "items": []}
         else:
             return self.respond(404, {"error": "route"})
+        if path in {"/profiles", "/numbers", "/settings"} and self.command in {"POST", "PUT", "PATCH"}:
+            valid = valid and self.headers.get("Content-Type", "").split(";")[0].strip().lower() == "application/json"
         if self.server.fault == "accept_invalid":
             valid = True
             result = {"enabled": True, "threshold": 1, "note": None}
