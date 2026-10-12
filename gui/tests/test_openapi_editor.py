@@ -229,7 +229,7 @@ def test_create_login_then_edit_and_append_without_losing_contract(tmp_path):
     from openapi_editor import create_operation_document
     draft = tmp_path / 'login.json'
     doc = create_operation_document('', '/v1/auth/login', 'POST', 'login', ['200', '400', '401'])
-    draft.write_text(json.dumps(doc))
+    draft.write_text(json.dumps(doc), encoding='utf-8')
     request = {'type': 'object', 'required': ['username', 'password'], 'properties': {
         'username': {'type': 'string'}, 'password': {'type': 'string'}}}
     response = {'type': 'object', 'required': ['id', 'created_datetime'], 'properties': {
@@ -240,7 +240,7 @@ def test_create_login_then_edit_and_append_without_losing_contract(tmp_path):
     assert loaded['requestBodySchema'] == request
     assert loaded['responseBodySchema'] == response
     added = create_operation_document(str(saved), '/v1/data', 'GET', 'getData', ['200'], False)
-    assert added['paths']['/v1/auth/login'] == json.loads(saved.read_text())['paths']['/v1/auth/login']
+    assert added['paths']['/v1/auth/login'] == json.loads(saved.read_text(encoding='utf-8'))['paths']['/v1/auth/login']
     assert 'requestBody' not in added['paths']['/v1/data']['get']
     assert set(added['paths']['/v1/auth/login']['post']['responses']) == {'200', '400', '401'}
     with pytest.raises(ValueError, match='登録済み'):

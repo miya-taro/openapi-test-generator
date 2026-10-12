@@ -48,7 +48,7 @@ def test_create_login_in_browser(tmp_path, monkeypatch):
                 page.locator('#contract-save-button').click()
                 expect(page.locator('#contract-editor-status')).to_contain_text('試験対象に設定しました')
                 saved = Path(page.locator('#openapi-path').input_value())
-                doc = json.loads(saved.read_text())
+                doc = json.loads(saved.read_text(encoding='utf-8'))
                 op = doc['paths']['/v1/auth/login']['post']
                 assert set(op['requestBody']['content']['application/json']['schema']['required']) == {'username', 'password'}
                 response = op['responses']['200']['content']['application/json']['schema']
@@ -61,7 +61,7 @@ def test_create_login_in_browser(tmp_path, monkeypatch):
                 page.locator('#new-api-append').check()
                 page.locator('#new-api-create').click()
                 expect(page.locator('#new-api-message')).to_contain_text('登録済み')
-                assert json.loads(saved.read_text()) == doc
+                assert json.loads(saved.read_text(encoding='utf-8')) == doc
             finally:
                 browser.close()
     finally:
