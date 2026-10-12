@@ -31,7 +31,7 @@
 python docs/pwrco_suite.py --start "2026-11-01T00:00:00+09:00" --site-id 101 --location HOME --other-location OTHER --output pwrco-cases.json
 ```
 
-`--table`、`--site-table`で検証テーブル名を変更できます。コマンド自体はファイル生成のみで、DB/APIにアクセスしません。正常ケース18件はそれぞれ別の日付を使います。日時は固定予約や自動確保ではないので、実際に未使用かは確認してください。
+`--table`、`--site-table`で検証テーブル名を変更できます。コマンド自体はファイル生成のみで、DB/APIにアクセスしません。正常・異常ケースはそれぞれ別の日付を使います。日時は固定予約や自動確保ではないので、実際に未使用かは確認してください。
 
 ## 確認範囲と限界
 
@@ -43,6 +43,6 @@ python docs/pwrco_suite.py --start "2026-11-01T00:00:00+09:00" --site-id 101 --l
 
 ## ツール側の検証
 
-`runner/tests/test_pwrco_e2e.py`で38ケース、既存UIの生成処理との一致、CLIのExcel/JUnit/JSON証跡を確認します。14種類の故障（優先拠点、欠落、余分、別行の値、rate、start、end、type、datetime、余計な本文、status、既存変更、既存削除、400時のDB変更）を注入して不合格になることも確認します。
+`runner/tests/test_pwrco_e2e.py`で38ケース、既存UIの生成処理との一致、CLIのExcel/JUnit/JSON証跡を確認します。15種類の故障（優先拠点、欠落、余分、別行の値、rate、start、end、type、datetime、余計な本文、status、既存変更、既存削除、400時のDB変更、配列前半だけの部分保存）を注入して不合格になることも確認します。
 
 `gui/tests/test_browser_pwrco.py`で、この設定ファイルを実ブラウザから読み込み、38件のレビュー・実行・Excel取得を確認します。試験が作るテーブルはランダム名の使い捨てテーブルで、実y_pwrcoは変更しません。

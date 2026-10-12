@@ -31,7 +31,17 @@ def build_suite(start, table='y_pwrco', site_table='t_site', site_id=101, locati
                 cases.append({'name':f'pwrco {site_mode} / type={type_value if type_value is not None else "省略→NULL"} / {count}行',
                               'request':{'operationId':'setPwrco','body':body},'response_check':{'expect':{'status':200,'empty_body':True}},
                               'db_insert_check':mapping(table,site_table)})
-    for item in invalid_cases(cases[0]['request']['body']):
+    for index,item in enumerate(invalid_cases(cases[0]['request']['body'])):
+        # Error cases must also use unused keys: otherwise an existing valid row
+        # can conceal a bug that commits the first item before rejecting the next.
+        body=item['body']
+        targets=[(body,'start_datetime'),(body,'end_time')]
+        if isinstance(body.get('schedule'),list):
+            targets.extend((row,'time') for row in body['schedule'] if isinstance(row,dict))
+        for target,key in targets:
+            try:stamp=datetime.fromisoformat(target[key])
+            except (KeyError,TypeError,ValueError):continue
+            target[key]=(stamp+timedelta(days=18+index)).isoformat()
         cases.append({'name':'pwrco 400 / '+item['name'], 'request':{'operationId':'setPwrco','body':item['body']},
                       'response_check':{'expect':{'status':400}},
                       'db_unchanged':[{'table':table,'columns':['site_id','datetime','rate','start','end','type'],'where':{}}]})

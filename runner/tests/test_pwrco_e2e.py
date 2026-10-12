@@ -34,7 +34,11 @@ def test_pwrco_suite_matches_contract_and_ui_builder():
         if i<18:
             for row in body['schedule']:
                 key=(101,row['time']);assert key not in keys;keys.add(key)
-        else:assert case['response_check']['expect']['status']==400 and case['db_unchanged']
+        else:
+            assert case['response_check']['expect']['status']==400 and case['db_unchanged']
+            if isinstance(body.get('schedule'),list):
+                for row in body['schedule']:
+                    if isinstance(row,dict) and isinstance(row.get('time'),str):assert (101,row['time']) not in keys
     assert len(suite['scenarios'])==38
     code="""import fs from 'node:fs'; import {buildInsertScenario} from './gui-tauri/src/insert-editor.js';
 const input=JSON.parse(fs.readFileSync(0,'utf8'));const op=input.spec.paths['/v1/pwrco/set'].post;
@@ -65,6 +69,7 @@ def test_pwrco_real_matrix_and_faults(tmp_path):
             if i<18:
                 added=evidence['db_insert_comparison']['added_rows'];assert len(added)==len(case['request']['body']['schedule'])
                 assert all(row['site_id']==101 and row['type']==case['request']['body'].get('type') for row in added)
+        fixture.fault='partial-write';run('fault-partial-write',suite['scenarios'][-3],False)
         fixture.fault='error-write';run('fault-error-write',suite['scenarios'][-1],False)
         for i,fault in enumerate(['priority','missing','extra','duplicate-value','rate','start','end','type','datetime','body','status','modify-old','delete-old']):
             fixture.fault=fault

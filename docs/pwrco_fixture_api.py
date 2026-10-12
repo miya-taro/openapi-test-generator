@@ -24,6 +24,7 @@ class PwrcoFixture:
             def do_POST(self):
                 body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));fixture.calls.append(copy.deepcopy(body))
                 if not fixture.valid(body):
+                    if fixture.fault=='partial-write':fixture.insert({**body,'schedule':body['schedule'][:1]})
                     if fixture.fault=='error-write':
                         with psycopg2.connect(**fixture.config) as conn,conn.cursor() as cur:cur.execute(f'UPDATE {fixture.table} SET rate=rate+1 WHERE site_id=999')
                     status=400
