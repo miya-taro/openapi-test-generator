@@ -16,7 +16,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import validators  # noqa: E402
-from openapi_editor import load_operation_body_contract, save_operation_body_contract  # noqa: E402
+from openapi_editor import create_operation_document, load_operation_body_contract, save_operation_body_contract  # noqa: E402
 from workflow.project_store import load_project  # noqa: E402
 from workflow.case_master import (  # noqa: E402
     load_case_master,
@@ -172,6 +172,9 @@ def _dispatch(command: str, args: dict) -> object:
         return items
     if command == "save_db_scenario_yaml":
         return _save_db_scenario_yaml(args["path"], args.get("scenarios"))
+    if command == "create_operation_document":
+        return create_operation_document(args.get("source_path", ""), args["route"], args["method"],
+                                         args["operation_id"], args["statuses"], args.get("request_body", True))
     if command == "load_operation_body_contract":
         return load_operation_body_contract(args["path"], args["operation_id"])
     if command == "save_operation_body_contract":

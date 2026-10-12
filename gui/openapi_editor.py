@@ -262,3 +262,45 @@ def _validate_saved_schemas(document: dict, operation_id: str, status: str) -> N
     for schema in schemas:
         if isinstance(schema, dict):
             Draft202012Validator.check_schema(schema)
+
+
+def create_operation_document(source_path: str, route: str, method: str,
+                              operation_id: str, statuses: list[str],
+                              request_body: bool = True) -> dict:
+    """Create an editable operation without inventing body fields or error statuses."""
+    route, method, operation_id = route.strip(), method.lower(), operation_id.strip()
+    if not route.startswith('/') or re.search(r'[\s?#{}]', route):
+        raise ValueError('パスは / で始めてください。クエリ・空白・パス変数はこの登録画面では指定できません')
+    if method not in _HTTP_METHODS:
+        raise ValueError('対応していないHTTPメソッドです')
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*', operation_id):
+        raise ValueError('API名は英字または_で始まる英数字・_・-・.で入力してください')
+    if not statuses or any(not re.fullmatch(r'[2-5]\d\d', s) for s in statuses):
+        raise ValueError('ステータスは200〜599をカンマ区切りで指定してください')
+    if not any(s.startswith('2') for s in statuses):
+        raise ValueError('成功時のステータスを1つ以上指定してください')
+    if type(request_body) is not bool:
+        raise ValueError('JSONボディの設定が不正です')
+    document = _read_document(source_path) if source_path else {
+        'openapi': '3.0.3', 'info': {'title': 'UIで作成したAPI', 'version': '1.0.0'}, 'paths': {},
+    }
+    paths = document.setdefault('paths', {})
+    if method in paths.get(route, {}):
+        raise ValueError('同じパス・メソッドは登録済みです。仕様画面で編集してください')
+    for item in paths.values():
+        for key, op in item.items():
+            if key in _HTTP_METHODS and isinstance(op, dict) and op.get('operationId') == operation_id:
+                raise ValueError('同じAPI名は登録済みです')
+    operation = {'operationId': operation_id, 'responses': {
+        s: {'description': 'UIで登録。ボディの仕様は次の画面で設定してください'} for s in statuses
+    }}
+    # The empty object is a visible draft to fill using the existing schema builder.
+    success = next(s for s in statuses if s.startswith('2'))
+    if success not in {'204', '205'}:
+        operation['responses'][success]['content'] = {
+            'application/json': {'schema': {'type': 'object', 'properties': {}}}}
+    if request_body:
+        operation['requestBody'] = {'required': True, 'content': {
+            'application/json': {'schema': {'type': 'object', 'properties': {}}}}}
+    paths.setdefault(route, {})[method] = operation
+    return document

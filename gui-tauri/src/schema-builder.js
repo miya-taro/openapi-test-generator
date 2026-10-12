@@ -241,6 +241,8 @@ function renderNode(node, context, refresh, notify) {
     const formatField = makeElement("label", "schema-type-field");
     formatField.appendChild(makeElement("span", "", "形式"));
     const format = makeElement("select");
+    format.dataset.role = "schema-format";
+    format.setAttribute("aria-label", "形式");
     const formats = node.type === "number"
       ? [["", "指定なし"], ["float", "float"], ["double", "double"]]
       : [["", "指定なし"], ["date-time", "日時（date-time）"], ["date", "日付（date）"], ["email", "メール"], ["uuid", "UUID"]];
