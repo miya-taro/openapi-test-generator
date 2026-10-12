@@ -122,6 +122,7 @@ class ResponseCheck:
     expect_body: dict = field(default_factory=dict)
     expect_contains: list[dict] = field(default_factory=list)
     expect_values: list[dict] = field(default_factory=list)
+    empty_body: bool = False
 
 
 @dataclass
@@ -138,6 +139,7 @@ class DBScenario:
     cleanup: ScenarioCleanup | None = None
     db_unchanged: list[DBUnchangedCheck] = field(default_factory=list)
     influx_mutation: dict | None = None
+    db_insert_check: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -175,6 +177,7 @@ class DBScenario:
             "responseCheck": (
                 {
                     "expectedStatus": self.response_check.expect_status,
+                    **({"emptyBody": True} if self.response_check.empty_body else {}),
                     "expectedBody": self.response_check.expect_body,
                     **({"expectedValues": self.response_check.expect_values}
                        if self.response_check.expect_values else {}),
@@ -202,6 +205,8 @@ class DBScenario:
                 else None
             ),
         }
+        if self.db_insert_check is not None:
+            definition["dbInsertCheck"] = self.db_insert_check
         if self.influx_mutation is not None:
             definition["influxMutation"] = self.influx_mutation
         if self.db_unchanged:
@@ -328,9 +333,18 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation")):
-        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation", "db_insert_check")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation、db_insert_check のいずれかは必須です")
 
+    db_insert_check = raw.get("db_insert_check")
+    if "db_insert_check" in raw:
+        from src.insert_mapping import validate_insert
+        try:
+            validate_insert(db_insert_check)
+        except ValueError as exc:
+            raise ScenarioError(str(exc)) from exc
+        if any(k in raw for k in ("db_check", "db_response_check", "influx_mutation", "cleanup")):
+            raise ScenarioError("複数行保存は他の保存照合・自動削除と同時指定できません")
     influx_mutation = raw.get("influx_mutation")
     if "influx_mutation" in raw:
         from src.influx_mutation import validate_mutation
@@ -374,7 +388,10 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             expect_body=expect_raw.get("body") or {},
             expect_contains=expect_raw.get("contains") or [],
             expect_values=expect_raw.get("values", []),
+            empty_body=expect_raw.get("empty_body", False),
         )
+        if type(response_check.empty_body) is not bool:
+            raise ScenarioError("empty_bodyは真偽値で指定してください")
         if not isinstance(response_check.expect_body, dict):
             raise ScenarioError("response_check.expect.body はオブジェクトである必要があります")
         if not isinstance(response_check.expect_contains, list):
@@ -540,6 +557,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         db_response_check=db_response_check,
         db_unchanged=db_unchanged,
         influx_mutation=influx_mutation,
+        db_insert_check=db_insert_check,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

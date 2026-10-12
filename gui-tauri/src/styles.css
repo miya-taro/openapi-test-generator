@@ -1245,3 +1245,11 @@ label.checkbox input[type="checkbox"] {
 .coverage-review th, .coverage-review td { padding: .5rem; border-bottom: 1px solid #dfe5ec; text-align: left; vertical-align: top; }
 .error-db-scope { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; margin: .75rem 0; }
 .error-db-scope label { display: flex; flex: 1 1 190px; flex-direction: column; gap: .3rem; }
+
+#dbscenario-insert-panel > label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.insert-mapping { display: grid; grid-template-columns: 170px 220px 1fr auto; gap: 12px; align-items: start; border: 1px solid #dce2ef; padding: 12px; margin-bottom: 12px; }
+.insert-mapping label { display: flex; flex-direction: column; gap: 4px; }
+.insert-rule-fields { display: grid; gap: 8px; }
+@media (max-width: 1000px) { .insert-mapping { grid-template-columns: 1fr 1fr; } }
+#dbscenario-insert-panel > label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; }
+#dbscenario-insert-panel input[type="checkbox"] { width: auto; margin: 0; }

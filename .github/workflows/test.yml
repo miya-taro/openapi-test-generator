@@ -177,6 +177,12 @@ jobs:
           OTG_LOOKUP_EVIDENCE_DIR: docs/_ci_measure_evidence/lookups
         run: python -m pytest runner/tests/test_lookup_response_e2e.py -q
 
+      - name: Verify POST array mappings and faulty PostgreSQL APIs
+        env:
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
+          OTG_POST_EVIDENCE_DIR: docs/_ci_measure_evidence/post-array
+        run: python -m pytest runner/tests/test_post_array_e2e.py -q
+
       - name: Upload GET JSON body comparison evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,10 +201,11 @@ jobs:
       - name: Verify independent API matrix and actual browser workflow
         env:
           OTG_BROWSER_TEST: "1"
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
           OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
           OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
           OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
-        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py -q
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py -q
 
       - name: Upload first release qualification evidence
         if: always()

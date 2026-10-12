@@ -58,3 +58,4 @@ class ResponseSchema:
     # ヘッダ名 -> 期待値（存在確認のみの場合は None）。Content-Type は
     # expected_content_type 側で扱うためここには含めない。
     expected_headers: dict = field(default_factory=dict)
+    expected_empty_body_statuses: frozenset[int] = frozenset()

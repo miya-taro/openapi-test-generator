@@ -141,6 +141,9 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
         )
 
     # Level 3: Content-Type
+    empty_body_expected = result.actual_status in schema.expected_empty_body_statuses
+    if empty_body_expected and result.actual_body != "":
+        fail_details.append("レスポンスボディは空である必要があります")
     documented_content_types = schema.expected_content_types_by_status.get(result.actual_status)
     if documented_content_types:
         if not any(_content_type_matches(actual_content_type, expected) for expected in documented_content_types):
@@ -148,7 +151,7 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
                 "Content-Type不一致: 期待=" + " or ".join(sorted(documented_content_types))
                 + f", 実測={actual_content_type!r}"
             )
-    elif schema.expected_content_type:
+    elif schema.expected_content_type and not empty_body_expected:
         if not _content_type_matches(actual_content_type, schema.expected_content_type):
             fail_details.append(
                 f"Content-Type不一致: 期待={schema.expected_content_type}, "
@@ -185,7 +188,7 @@ def verify(result: RunResult, schema: ResponseSchema) -> tuple[str, str]:
 
     # Level 4: レスポンスボディの JSON Schema 適合
     body_schema = response_body_schema
-    if body_schema is not None:
+    if body_schema is not None and not empty_body_expected:
         body_errors = validate_body(result.actual_body, body_schema)
         if body_errors:
             fail_details.append("ボディ不適合: " + " / ".join(body_errors))

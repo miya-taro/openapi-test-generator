@@ -184,6 +184,7 @@ def _scenario_case(
                 {
                     "status": definition["responseCheck"]["expectedStatus"],
                     "body": definition["responseCheck"]["expectedBody"],
+                    **({"emptyBody": True} if definition["responseCheck"].get("emptyBody") else {}),
                     "contains": definition["responseCheck"].get("expectedContains", []),
                     **({"values": definition["responseCheck"]["expectedValues"]}
                        if definition["responseCheck"].get("expectedValues") else {}),
@@ -193,6 +194,7 @@ def _scenario_case(
             ),
             "database": definition["dbCheck"],
             "databaseResponse": definition.get("dbResponseCheck"),
+            **({"databaseInsert": definition["dbInsertCheck"]} if definition.get("dbInsertCheck") else {}),
             **({"influxMutation": definition["influxMutation"]} if definition.get("influxMutation") else {}),
             **({"databaseUnchanged": definition["dbUnchanged"]} if definition.get("dbUnchanged") else {}),
         },

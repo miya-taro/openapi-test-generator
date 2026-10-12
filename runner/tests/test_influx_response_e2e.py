@@ -155,7 +155,7 @@ def test_influx_ui_generated_response_and_error_guards(tmp_path):
             run(unchanged, f'unchanged-{method}')
         # Automatically generated 4xx cases use InfluxDB-only config, for all five methods.
         paths = {'/reject': {method: {'operationId': method, 'parameters': [{'name': 'id', 'in': 'query', 'required': True, 'schema': {'type': 'integer', 'minimum': 1}}],
-                   'responses': {'200': {'description': 'OK'}, '400': {'description': 'Invalid'}},
+                   'responses': {'200': {'description': 'OK'}, '400': {'description': 'Invalid', 'content': {'application/json': {'schema': {'type': 'object'}}}}},
                    'x-otg-error-db-unchanged': [scope]} for method in ['get', 'post', 'put', 'patch', 'delete']}}
         spec.write_text(json.dumps({'openapi': '3.1.0', 'paths': paths}))
         cases, excel = tmp_path / 'cases.json', tmp_path / 'cases.xlsx'

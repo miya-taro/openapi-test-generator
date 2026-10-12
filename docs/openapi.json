@@ -3,7 +3,7 @@
   "info": {
     "title": "Shop Sample API (規模確認用)",
     "version": "1.0.0",
-    "description": "GUIの動作確認用に作った、ある程度の規模を持つ架空のECサイトAPI。実サーバーは無いのでdry-run/生成確認向け。"
+    "description": "GUIの動作確認用に作った、ある程度の規模を持つ架空のECサイトAPI。docs/mock_api.pyで実行・生成確認ができます。"
   },
   "servers": [{ "url": "http://localhost:8080" }],
   "security": [{ "bearerAuth": [] }],
@@ -12,7 +12,7 @@
       "get": {
         "operationId": "healthCheck",
         "security": [],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/auth/login": {
@@ -34,13 +34,13 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/auth/logout": {
       "post": {
         "operationId": "logout",
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/users": {
@@ -50,7 +50,7 @@
           { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1 } },
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
         ],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       },
       "post": {
         "operationId": "createUser",
@@ -70,14 +70,14 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/users/{userId}": {
       "get": {
         "operationId": "getUser",
         "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "put": {
         "operationId": "updateUser",
@@ -97,23 +97,23 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "deleteUser",
         "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/users/{userId}/orders": {
       "get": {
         "operationId": "listUserOrders",
         "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       }
     },
     "/categories": {
-      "get": { "operationId": "listCategories", "responses": { "200": { "description": "ok" } } },
+      "get": { "operationId": "listCategories", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}} },
       "post": {
         "operationId": "createCategory",
         "requestBody": {
@@ -128,14 +128,14 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/categories/{categoryId}": {
       "get": {
         "operationId": "getCategory",
         "parameters": [{ "name": "categoryId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "put": {
         "operationId": "updateCategory",
@@ -152,12 +152,12 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "deleteCategory",
         "parameters": [{ "name": "categoryId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/products": {
@@ -167,7 +167,7 @@
           { "name": "categoryId", "in": "query", "required": false, "schema": { "type": "integer" } },
           { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1 } }
         ],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       },
       "post": {
         "operationId": "createProduct",
@@ -189,14 +189,14 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/products/{productId}": {
       "get": {
         "operationId": "getProduct",
         "parameters": [{ "name": "productId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "put": {
         "operationId": "updateProduct",
@@ -217,12 +217,12 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "deleteProduct",
         "parameters": [{ "name": "productId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/orders": {
@@ -231,7 +231,7 @@
         "parameters": [
           { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["pending", "shipped", "delivered", "cancelled"] } }
         ],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       },
       "post": {
         "operationId": "createOrder",
@@ -260,14 +260,14 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/orders/{orderId}": {
       "get": {
         "operationId": "getOrder",
         "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "patch": {
         "operationId": "updateOrderStatus",
@@ -286,19 +286,19 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "cancelOrder",
         "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/orders/{orderId}/items": {
       "get": {
         "operationId": "listOrderItems",
         "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       },
       "post": {
         "operationId": "addOrderItem",
@@ -318,14 +318,14 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/reviews": {
       "get": {
         "operationId": "listReviews",
         "parameters": [{ "name": "productId", "in": "query", "required": false, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}}
       },
       "post": {
         "operationId": "createReview",
@@ -345,23 +345,23 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/reviews/{reviewId}": {
       "get": {
         "operationId": "getReview",
         "parameters": [{ "name": "reviewId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "deleteReview",
         "parameters": [{ "name": "reviewId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/cart": {
-      "get": { "operationId": "getCart", "responses": { "200": { "description": "ok" } } }
+      "get": { "operationId": "getCart", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}} }
     },
     "/cart/items": {
       "post": {
@@ -381,7 +381,7 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
     "/cart/items/{itemId}": {
@@ -400,12 +400,12 @@
             }
           }
         },
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       },
       "delete": {
         "operationId": "removeCartItem",
         "parameters": [{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "ok" } }
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     }
   },
