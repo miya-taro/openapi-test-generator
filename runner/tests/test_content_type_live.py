@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 import shlex
 import shutil
@@ -11,6 +12,7 @@ from http_client import execute_with_openapi
 from models import RunCase
 from request_evidence import readable_curl
 from response_schema import from_run_case
+from verifier import verify
 from src.extractor import extract_specs
 from src.generator import generate_test_cases
 from src.renderer.readable_spec import simple_request
@@ -50,6 +52,9 @@ def test_generated_header_probes_reach_server_with_valid_body():
                 assert received[-1] == (expected_header, {'user': 'test'})
                 assert result.actual_status == 400
                 assert from_run_case(case, api).expected_statuses == frozenset({400})
+                assert verify(result, from_run_case(case, api))[0] == 'OK'
+                assert verify(replace(result, actual_status=401), from_run_case(case, api))[0] == 'NG'
+
                 if shutil.which('curl'):
                     _, command = simple_request(readable_curl(result.request_evidence))
                     replay = subprocess.run(shlex.split(command), capture_output=True, timeout=10)
