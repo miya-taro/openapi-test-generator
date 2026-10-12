@@ -280,7 +280,7 @@
                 <p class="form-section-desc">
                   API項目はOpenAPIから表示します。対象テーブルと対応するDB列を人が指定すると、実行用の確認内容を作成します。項目名によるDB列の推測は行いません。
                   POSTはAPIに送る値とDB列を対応付けます。PUT・PATCH・DELETEは対象行を指定し、GETは検索条件とレスポンス項目をDB列に対応付けます。GETでは既存DBを読み取るため、試験行を画面で用意する必要はありません。
-                  1件の設定で確認するDBテーブルは1つです。親子テーブルへの複数書き込みや集計値は、引き続きYAMLで個別に指定してください。
+                  通常の対応付けは1テーブルを対象にします。GETの複数テーブル参照・集計・履歴選択は「SQL取得結果と入れ子レスポンスを照合する」、POSTの配列保存は「配列から複数行への保存を照合する」で設定できます。
                 </p>
                 <div class="db-scenario-editor">
                   <div id="dbscenario-editor-guidance" class="db-scenario-guidance" aria-live="polite">
@@ -308,9 +308,11 @@
                     <select id="dbscenario-editor-mode">
                       <option value="mapping">APIとDBの値を照合する</option>
                       <option value="unchanged">API実行前後でDBに変更がないこと</option>
+                      <option value="sql_response">GET：SQL取得結果と入れ子レスポンスを照合する</option>
                       <option value="insert_rows">POST：配列から複数行への保存を照合する</option>
                     </select>
                   </div>
+                  <div id="dbscenario-sql-panel" hidden></div>
                   <div id="dbscenario-insert-panel" hidden></div>
                   <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>
                   <div id="dbscenario-editor-influx-mutation" hidden>

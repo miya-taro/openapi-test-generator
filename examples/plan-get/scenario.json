@@ -1,0 +1,89 @@
+{
+  "scenarios": [
+    {
+      "name": "計画取得のSQL照合例",
+      "request": {
+        "operationId": "getPlanControl",
+        "body": {
+          "site_id": 101,
+          "location_id": "OTHER",
+          "start": "2026-10-12T00:00:00+09:00",
+          "end": "2026-10-14T00:00:00+09:00"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200
+        }
+      },
+      "db_sql_response_check": {
+        "sql": "WITH request AS (\n  SELECT COALESCE(%(site_id)s::integer,\n    (SELECT site_id FROM t_site WHERE location_id = %(location_id)s::text)) AS selected_site,\n    %(start)s::timestamptz AS start_at, %(end)s::timestamptz AS end_at,\n    %(correct)s::boolean AS selected_correct, %(type)s::text AS selected_type\n), ranked AS (\n  SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.datetime, p.use_id ORDER BY\n    (p.correct OR p.force) DESC NULLS LAST,\n    CASE WHEN p.fixed THEN CASE WHEN p.cpbs_type IS NOT NULL THEN 1000 + p.cpbs_type ELSE 500 END\n         ELSE CASE WHEN p.cpbs_type IS NULL THEN 100 ELSE 0 END END DESC,\n    p.created DESC) AS rn\n  FROM h_plan p CROSS JOIN request r\n  WHERE p.site_id = r.selected_site AND p.datetime >= r.start_at AND p.datetime < r.end_at\n    AND (r.selected_correct IS NULL OR p.correct = r.selected_correct)\n), preferred AS (\n  SELECT COALESCE(r.selected_type,\n    (SELECT use_id FROM ranked WHERE rn = 1 AND (fixed OR force) ORDER BY created DESC, use_id LIMIT 1),\n    (SELECT param->'multiuse'->>'use_id' FROM h_setting WHERE site_id = r.selected_site\n     AND setting_id = 2 ORDER BY datetime DESC LIMIT 1)) AS use_id\n  FROM request r\n)\nSELECT p.site_id, %(start)s::text AS start_datetime, %(end)s::text AS end_datetime,\n  to_char(p.datetime AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS plan_date,\n  p.profit, p.use_id, to_char(p.datetime AT TIME ZONE 'Asia/Tokyo', 'HH24:MI') AS control_time,\n  p.correct, p.buy, p.sell, p.charge, p.discharge, p.soc, p.gen, p.suppression, p.correct_point\nFROM ranked p CROSS JOIN preferred s WHERE p.rn = 1 AND p.use_id = s.use_id\nORDER BY p.datetime, p.use_id\n",
+        "parameters": {
+          "site_id": {
+            "source": "body",
+            "path": "site_id",
+            "missing": "null"
+          },
+          "location_id": {
+            "source": "body",
+            "path": "location_id",
+            "missing": "null"
+          },
+          "start": {
+            "source": "body",
+            "path": "start",
+            "missing": "error"
+          },
+          "end": {
+            "source": "body",
+            "path": "end",
+            "missing": "error"
+          },
+          "correct": {
+            "source": "body",
+            "path": "correct",
+            "missing": "null"
+          },
+          "type": {
+            "source": "body",
+            "path": "type",
+            "missing": "null"
+          }
+        },
+        "fields": {
+          "site_id": "site_id",
+          "start_datetime": "start_datetime",
+          "end_datetime": "end_datetime",
+          "plans[].date": "plan_date",
+          "plans[].profit": "profit",
+          "plans[].type": "use_id",
+          "plans[].controls[].time": "control_time",
+          "plans[].controls[].correct": "correct",
+          "plans[].controls[].buy": "buy",
+          "plans[].controls[].sell": "sell",
+          "plans[].controls[].charge": "charge",
+          "plans[].controls[].discharge": "discharge",
+          "plans[].controls[].soc": "soc",
+          "plans[].controls[].gen": "gen",
+          "plans[].controls[].suppression": "suppression",
+          "plans[].controls[].correct_point": "correct_point"
+        },
+        "arrays": [
+          {
+            "path": "plans[]",
+            "group_by": [
+              "plan_date",
+              "use_id"
+            ],
+            "ordered": false
+          },
+          {
+            "path": "plans[].controls[]",
+            "group_by": [],
+            "ordered": false
+          }
+        ]
+      }
+    }
+  ]
+}

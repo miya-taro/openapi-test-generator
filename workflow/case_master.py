@@ -194,6 +194,7 @@ def _scenario_case(
             ),
             "database": definition["dbCheck"],
             "databaseResponse": definition.get("dbResponseCheck"),
+            **({"databaseSqlResponse": definition["dbSqlResponseCheck"]} if definition.get("dbSqlResponseCheck") else {}),
             **({"databaseInsert": definition["dbInsertCheck"]} if definition.get("dbInsertCheck") else {}),
             **({"influxMutation": definition["influxMutation"]} if definition.get("influxMutation") else {}),
             **({"databaseUnchanged": definition["dbUnchanged"]} if definition.get("dbUnchanged") else {}),

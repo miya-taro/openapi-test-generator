@@ -40,7 +40,7 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario, ResponseCheck
-from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert
+from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert, sql_response
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
@@ -581,6 +581,23 @@ def _run_scenario(
             except Exception as e:
                 return False, f"DB変更なし確認の準備に失敗しました: {e}", "ERR", previous_response
 
+        sql_evidence = None
+        if scenario.db_sql_response_check is not None:
+            if method != "GET":
+                return False, "SQLレスポンス照合はGETで指定してください", "ERR", previous_response
+            sql_evidence = {"definition": scenario.db_sql_response_check, "verdict": "未確認"}
+            if evidence is not None:
+                evidence["db_sql_response_comparison"] = sql_evidence
+            try:
+                sql_rows, sql_values = sql_response.read_rows(scenario.db_sql_response_check,
+                    {"body": resolved_body, "query": resolved_query_params, "path": resolved_path_params}, db_config)
+                sql_evidence.update(rows=sql_rows, parameters=sql_values, row_count=len(sql_rows))
+                sql_expected = sql_response.expected_tree(scenario.db_sql_response_check, sql_rows)
+            except postgres_backend.DBResponseCheckUnverified as exc:
+                return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
+            except Exception as exc:
+                return False, f"期待値SQLの準備に失敗: {exc}", "ERR", previous_response
+
         insert_evidence = None
         if scenario.db_insert_check is not None:
             if method != "POST":
@@ -613,6 +630,10 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        if sql_evidence is not None:
+            ok, detail = sql_response.compare(scenario.db_sql_response_check, sql_expected, response_json, sql_evidence)
+            if not ok:
+                failures.append(detail)
         if scenario.response_check and scenario.response_check.empty_body and getattr(api_response, "raw_body", "") != "":
             failures.append("レスポンスボディは空である必要があります")
         if insert_evidence is not None:

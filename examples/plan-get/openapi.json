@@ -1,0 +1,216 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Plan control GET - verification example, not final production contract",
+    "version": "1.0"
+  },
+  "paths": {
+    "/plan/control/get": {
+      "get": {
+        "operationId": "getPlanControl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "anyOf": [
+                  {
+                    "required": [
+                      "site_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "location_id"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "site_id": {
+                    "type": "integer"
+                  },
+                  "location_id": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "correct": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "1-1",
+                      "2-1"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "site_id",
+                    "start_datetime",
+                    "end_datetime",
+                    "plans"
+                  ],
+                  "properties": {
+                    "site_id": {
+                      "type": "integer"
+                    },
+                    "start_datetime": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "end_datetime": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "plans": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "date",
+                          "profit",
+                          "type",
+                          "controls"
+                        ],
+                        "properties": {
+                          "date": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "profit": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "controls": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "time",
+                                "correct",
+                                "buy",
+                                "sell",
+                                "charge",
+                                "discharge",
+                                "soc",
+                                "gen",
+                                "suppression",
+                                "correct_point"
+                              ],
+                              "properties": {
+                                "time": {
+                                  "type": "string"
+                                },
+                                "correct": {
+                                  "type": "boolean"
+                                },
+                                "buy": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "sell": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "charge": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "discharge": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "soc": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "gen": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "suppression": {
+                                  "type": "number",
+                                  "format": "double"
+                                },
+                                "correct_point": {
+                                  "type": "object",
+                                  "properties": {
+                                    "start_time": {
+                                      "type": "string"
+                                    },
+                                    "start": {
+                                      "type": "object",
+                                      "properties": {
+                                        "buy": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "sell": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "charge": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "discharge": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "soc": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "gen": {
+                                          "type": "number",
+                                          "format": "double"
+                                        },
+                                        "suppression": {
+                                          "type": "number",
+                                          "format": "double"
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
