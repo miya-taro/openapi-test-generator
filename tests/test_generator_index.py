@@ -229,3 +229,12 @@ def test_generate_from_schema_type_array_all_null_generates_no_type_specific_cas
     # common.py 由来の optional/nullable ケースは type 不問で生成されるため対象外。
     cases = _generate_from_schema({"type": ["null"]}, False, "query", "x", ALL_OPTS, "200")
     assert all(c["keyword"] in ("optional", "nullable") for c in cases)
+
+
+def test_empty_string_is_not_assumed_to_return_success():
+    plain = _generate_from_schema({"type": "string"}, True, "body", "user", ALL_OPTS, "200")
+    assert not any(c["perspective"].startswith("正常") and c["inputValue"] == "（空文字）" for c in plain)
+    asserted = _generate_from_schema({"type": "string", "example": ""}, True, "body", "user", ALL_OPTS, "200")
+    assert any(c["perspective"] == "正常系_空値" for c in asserted)
+    invalid = _generate_from_schema({"type": "string", "minLength": 1}, True, "body", "user", ALL_OPTS, "200")
+    assert any(c["inputValue"] == "（空文字）" and c["expectedStatus"] == "4xx" for c in invalid)

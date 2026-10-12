@@ -60,12 +60,9 @@ def test_generated_login_contract_and_auth_chain(setup, tmp_path):
     fixture,api,_=setup
     params,bodies=extract_specs(api)
     cases=assign_ids(generate_test_cases(params,bodies,{'includeNormal':True,'includeAbnormal':True},extract_auth_specs(api)))
+    assert not any(raw['operationId'] == 'login' and raw['perspective'] == '正常系_空値' for raw in cases)
     results=[]
     for raw in cases:
-        # Explicit fixture expectation: an empty credential is a login failure,
-        # even though plain OpenAPI string permits the empty string.
-        if raw['operationId']=='login' and raw['perspective']=='正常系_空値':
-            raw['expectedStatus']='401'
         result,verdict,detail=execute(run_case(raw),setup)
         results.append({'id':raw['id'],'operation':raw['operationId'],'condition':raw['perspective'],'status':result.actual_status,'verdict':verdict})
         assert verdict=='OK',(raw,detail)
@@ -113,8 +110,6 @@ def test_cli_login_contract_evidence(tmp_path):
     api=parse_openapi(str(SPEC))
     params,bodies=extract_specs(api)
     cases=assign_ids(generate_test_cases(params,bodies,{'includeNormal':True,'includeAbnormal':True},extract_auth_specs(api)))
-    for raw in cases:
-        if raw['operationId']=='login' and raw['perspective']=='正常系_空値':raw['expectedStatus']='401'
     source=tmp_path/'cases.xlsx';result=tmp_path/'result.xlsx'
     write_excel_output(build_output(cases,str(SPEC)),str(source))
     fixture=LoginFixture()

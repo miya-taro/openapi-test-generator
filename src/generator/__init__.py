@@ -377,6 +377,13 @@ def _generate_from_schema(
     filtered = []
     for case in cases:
         raw = case["inputValue"]
+        # A string schema can allow "" structurally, but it cannot establish that an
+        # API will return success for an empty credential or business key. Only an
+        # explicit empty example is evidence that the user intends a success case.
+        if (case["perspective"].startswith("正常")
+                and raw in {"（空文字）", '""'}
+                and schema.get("example") != ""):
+            continue
         if raw.startswith(("（", "__", "{ ...validBody,")) and raw != "（空文字）" and not raw.startswith(JSON_VALUE_PREFIX):
             filtered.append(case)
             continue
