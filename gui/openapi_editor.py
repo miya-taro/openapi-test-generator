@@ -41,6 +41,7 @@ def load_operation_body_contract(path: str, operation_id: str) -> dict:
         "requestBodySchema": request_schema,
         "responseStatus": response_status,
         "responseBodySchema": response_schema,
+        "responseBodyEmpty": bool(response) and not response.get("content"),
         "errorDbUnchanged": operation.get(DB_KEY, []),
     }
 
@@ -54,6 +55,7 @@ def save_operation_body_contract(
     response_status: str,
     response_body_schema: dict | None,
     error_db_unchanged: list | None = None,
+    response_body_empty: bool = False,
 ) -> dict:
     """Save edited schemas to a validated copy; never overwrite the selected source file."""
     source = Path(source_path).expanduser().resolve()
@@ -89,7 +91,15 @@ def save_operation_body_contract(
     responses = operation.get("responses")
     if not isinstance(responses, dict):
         responses = {}
-    if response_body_schema is not None:
+    if type(response_body_empty) is not bool:
+        raise ValueError("レスポンスボディなしの設定は真偽値で指定してください")
+    if response_body_empty:
+        response_key = _response_key(responses, status)
+        response = _dereference_object(document, responses.get(response_key) if response_key else None)
+        response = response or {"description": "No response body"}
+        response.pop("content", None)
+        responses[response_key or status] = response
+    elif response_body_schema is not None:
         response_key = _response_key(responses, status)
         response = _dereference_object(document, responses.get(response_key) if response_key else None)
         if not response:

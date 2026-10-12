@@ -174,6 +174,7 @@ def _dispatch(command: str, args: dict) -> object:
             args["response_status"],
             args.get("response_body_schema"),
             args.get("error_db_unchanged"),
+            args.get("response_body_empty", False),
         )
     if command == "login_operation_hints":
         return validators.login_operation_hints(args["path"], args["operation_id"])

@@ -1,0 +1,192 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "計画保存（検証用の例）",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/plan/set": {
+      "post": {
+        "operationId": "setPlan",
+        "description": "検証例: site_id優先。enum・配列最小件数は実APIの仕様に合わせて編集する。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "correct",
+                  "force",
+                  "plans"
+                ],
+                "x-otg-presence-rules": [
+                  {
+                    "kind": "atLeastOne",
+                    "fields": [
+                      "site_id",
+                      "location_id"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "site_id": {
+                    "type": "integer"
+                  },
+                  "location_id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "1-1",
+                      "2-1"
+                    ]
+                  },
+                  "correct": {
+                    "type": "boolean"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "plans": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "date",
+                        "profit",
+                        "controls"
+                      ],
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "profit": {
+                          "type": "integer"
+                        },
+                        "controls": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "time",
+                              "buy",
+                              "sell",
+                              "charge",
+                              "discharge",
+                              "soc",
+                              "gen",
+                              "suppression"
+                            ],
+                            "properties": {
+                              "time": {
+                                "type": "string",
+                                "format": "time"
+                              },
+                              "buy": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "sell": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "charge": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "discharge": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "soc": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "gen": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "suppression": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "correct_point": {
+                                "type": "object",
+                                "properties": {
+                                  "start_time": {
+                                    "type": "string",
+                                    "format": "time"
+                                  },
+                                  "start": {
+                                    "type": "object",
+                                    "properties": {
+                                      "buy": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "sell": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "charge": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "discharge": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "soc": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "gen": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "suppression": {
+                                        "type": "number",
+                                        "format": "double"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存成功・本文なし"
+          },
+          "400": {
+            "description": "入力不正・本文なし"
+          },
+          "401": {
+            "description": "認証不正・本文なし"
+          },
+          "404": {
+            "description": "対象なし・本文なし"
+          },
+          "500": {
+            "description": "サーバーエラー・本文なし"
+          }
+        }
+      }
+    }
+  }
+}

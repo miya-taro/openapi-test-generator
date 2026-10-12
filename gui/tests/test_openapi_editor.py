@@ -73,6 +73,7 @@ def test_load_operation_contract_reads_json_body_schemas_and_resolves_body_objec
         "requestBodySchema": {"$ref": "#/components/schemas/CreateUser"},
         "responseStatus": "201",
         "responseBodySchema": {"$ref": "#/components/schemas/User"},
+        "responseBodyEmpty": False,
         "errorDbUnchanged": [],
     }
 
@@ -210,3 +211,15 @@ def test_save_comparison_rules_validates_values_and_preserves_previous_file(tmp_
     with pytest.raises(ValueError, match="試験値"):
         save_operation_body_contract(str(source), str(destination), "createUser", True, schema, "201", None)
     assert destination.read_bytes() == previous
+
+
+def test_explicit_empty_body_removes_content_preserving_headers_and_source(tmp_path):
+    source = tmp_path / "api.json"
+    destination = tmp_path / "edited.json"
+    source.write_text(json.dumps(_document()), encoding="utf-8")
+    save_operation_body_contract(str(source), str(destination), "createUser", True, None, "201", None, response_body_empty=True)
+    contract = load_operation_body_contract(str(destination), "createUser")
+    assert contract["responseBodyEmpty"] is True and contract["responseBodySchema"] is None
+    assert load_operation_body_contract(str(source), "createUser")["responseBodyEmpty"] is False
+    response = json.loads(destination.read_text())["paths"]["/users"]["post"]["responses"]["201"]
+    assert "content" not in response and "headers" in response

@@ -48,7 +48,7 @@ SAMPLE_OPENAPI = {
                         }
                     }
                 },
-                "responses": {"201": {"description": "Created"}},
+                "responses": {"201": {"description": "Created", "content": {"application/json": {"schema": {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}}}}}},
             },
         }
     },

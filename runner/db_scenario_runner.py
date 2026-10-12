@@ -40,7 +40,7 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario, ResponseCheck
-from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response
+from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert
 import response_check as response_check_module
 import db_scenario_report
 from http_client import health_check, _resolve_auth_header
@@ -581,12 +581,29 @@ def _run_scenario(
             except Exception as e:
                 return False, f"DB変更なし確認の準備に失敗しました: {e}", "ERR", previous_response
 
+        insert_evidence = None
+        if scenario.db_insert_check is not None:
+            if method != "POST":
+                return False, "複数行保存の照合はPOSTで指定してください", "ERR", previous_response
+            insert_evidence = {"definition": scenario.db_insert_check, "lookups": [], "verdict": "未確認"}
+            if evidence is not None:
+                evidence["db_insert_comparison"] = insert_evidence
+            try:
+                insert_expected = postgres_insert.expected_rows(scenario.db_insert_check, resolved_body, db_config, insert_evidence["lookups"])
+                insert_before = postgres_insert.snapshot(scenario.db_insert_check, db_config)
+            except postgres_backend.DBResponseCheckUnverified as exc:
+                return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
+            except Exception as exc:
+                return False, f"複数行保存の準備に失敗: {exc}", "ERR", previous_response
+
         call_args = (base_url, path, method, resolved_path_params, resolved_body, session, persist_cookies)
         call_kwargs = {"auth_header": auth_header} if auth_header is not None else {}
         if resolved_query_params:
             call_kwargs["query_params"] = resolved_query_params
         api_call_started = True
+        insert_started = datetime.now(timezone.utc)
         api_response = _call_api(*call_args, **call_kwargs)
+        insert_ended = datetime.now(timezone.utc)
         status, response_json, error = api_response
         if error:
             return False, f"API呼び出しに失敗しました: {error}", "ERR", previous_response
@@ -596,6 +613,17 @@ def _run_scenario(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        if scenario.response_check and scenario.response_check.empty_body and getattr(api_response, "raw_body", "") != "":
+            failures.append("レスポンスボディは空である必要があります")
+        if insert_evidence is not None:
+            try:
+                insert_after = postgres_insert.snapshot(scenario.db_insert_check, db_config)
+                ok, detail = postgres_insert.compare(scenario.db_insert_check, insert_before, insert_after,
+                                                    insert_expected, insert_started, insert_ended, insert_evidence)
+                if not ok:
+                    failures.append(detail)
+            except Exception as exc:
+                failures.append(f"複数行保存の事後確認に失敗・未確認: {exc}")
         if mutation_evidence is not None:
             try:
                 ok, detail = influx_mutation.verify(scenario.influx_mutation, get_influxdb_config(db_config), mutation_evidence)

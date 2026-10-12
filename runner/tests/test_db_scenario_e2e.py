@@ -125,6 +125,11 @@ def test_real_api_and_db_comparison(tmp_path):
         "/wrong": {"get": {"operationId": "wrongData", "responses": {"200": {"description": "OK"}}}},
         "/empty-ok": {"get": {"operationId": "emptyOkData", "responses": {"200": {"description": "OK"}}}},
     }}
+    # All fixture endpoints return JSON, including their error responses.
+    for path_item in spec["paths"].values():
+        for operation in path_item.values():
+            for response in operation["responses"].values():
+                response["content"] = {"application/json": {"schema": {"type": "object"}}}
     spec_path = tmp_path / "openapi.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
     config_path = tmp_path / "db.json"

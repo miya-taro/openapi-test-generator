@@ -697,6 +697,8 @@ function resetContractEditor() {
   setContractSchemaBuilder("request", null);
   $("contract-response-status").value = "200";
   setContractSchemaBuilder("response", null);
+  $("contract-response-empty").checked = false;
+  $("contract-response-schema-builder").hidden = false;
   setContractEditorStatus("");
 }
 
@@ -713,6 +715,8 @@ function populateContractOperationSelect() {
     setContractSchemaBuilder("request", null);
     $("contract-response-status").value = "200";
     setContractSchemaBuilder("response", null);
+    $("contract-response-empty").checked = false;
+    $("contract-response-schema-builder").hidden = false;
     setContractEditorStatus("");
     return "";
   }
@@ -754,6 +758,8 @@ async function loadOperationBodyContract() {
     setContractSchemaBuilder("request", contract.requestBodySchema);
     $("contract-response-status").value = contract.responseStatus || "200";
     setContractSchemaBuilder("response", contract.responseBodySchema);
+    $("contract-response-empty").checked = !!contract.responseBodyEmpty;
+    $("contract-response-schema-builder").hidden = !!contract.responseBodyEmpty;
     setContractEditorStatus("選択したoperationのbody項目を読み込みました", "ok");
   } catch (error) {
     setContractEditorStatus(`OpenAPIを読み込めませんでした: ${error.message || error}`, "error");
@@ -774,7 +780,7 @@ async function saveOperationBodyContract() {
     requestSchema = contractRequestSchemaNode ? builderNodeToSchema(contractRequestSchemaNode) : null;
     requestSchema = applyPresenceRules(requestSchema, contractPresenceRules);
     requestSchema = applyComparisonRules(requestSchema, contractComparisonRules);
-    responseSchema = contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
+    responseSchema = !$("contract-response-empty").checked && contractResponseSchemaNode ? builderNodeToSchema(contractResponseSchemaNode) : null;
   } catch (error) {
     setContractEditorStatus(error.message, "error");
     return;
@@ -802,6 +808,7 @@ async function saveOperationBodyContract() {
         request_body_schema: requestSchema,
         response_status: responseStatus,
         response_body_schema: responseSchema,
+        response_body_empty: $("contract-response-empty").checked,
         error_db_unchanged: collectErrorDbScopes($("contract-error-db-scopes")),
       },
     });
@@ -1352,7 +1359,7 @@ function finishDbScenarioRunUi(code) {
   $("dbscenario-run-button").disabled = false;
   $("dbscenario-cancel-button").disabled = true;
   if (dbScenarioFailedCaseIds.length) $("dbscenario-rerun-failed-button").disabled = false;
-  if ((code === 0 || code === 2) && dbScenarioResultPath) {
+  if (dbScenarioResultPath) {
     $("dbscenario-open-result-button").disabled = false;
   }
 }
@@ -2101,3 +2108,5 @@ listen("proc-done", async (event) => {
 loadSettingsIntoForm();
 loadRuntimeDiagnosis();
 loadAppVersion();
+
+$("contract-response-empty").addEventListener("change", () => { $("contract-response-schema-builder").hidden = $("contract-response-empty").checked; });

@@ -1,3 +1,4 @@
+import { buildInsertScenario, initInsertEditor } from "./insert-editor.js";
 import { validateComparisonBody } from "./comparison-rules.js";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const SEEDED_METHODS = new Set(["PUT", "PATCH", "DELETE"]);
@@ -746,6 +747,7 @@ export function buildDbScenario(form) {
       query_params: { ...(form.queryParams || {}) },
     },
   };
+  if (form.mode === "insert_rows") return buildInsertScenario(form);
   if (form.mode === "unchanged") {
     const status = Number(form.unchangedStatus);
     if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error("期待するHTTP statusを100〜599の整数で入力してください");
@@ -1110,6 +1112,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   };
 
   const selectedOperation = () => operations.find((item) => item.operationId === byId("dbscenario-editor-operation").value);
+  const insertEditor = initInsertEditor(() => selectedOperation());
 
   function renderOperations() {
     const select = byId("dbscenario-editor-operation");
@@ -1209,6 +1212,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     const operationChanged = operation?.operationId !== renderedOperationId;
     renderedOperationId = operation?.operationId || "";
     if (operationChanged) {
+      insertEditor.render();
       byId("dbscenario-editor-mode").value = "mapping";
       byId("dbscenario-editor-unchanged-body").value = "{}";
       byId("dbscenario-editor-unchanged-status").value = "";
@@ -1309,16 +1313,18 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   function updateMode() {
+    const insert = byId("dbscenario-editor-mode").value === "insert_rows";
+    byId("dbscenario-insert-panel").hidden = !insert;
     const unchanged = byId("dbscenario-editor-mode").value === "unchanged";
     const influx = byId("dbscenario-editor-engine").value === "influxdb";
     byId("dbscenario-editor-influx-help").hidden = !influx;
     byId("dbscenario-editor-influx-period").hidden = !influx || !unchanged;
     const method = selectedOperation()?.method;
     byId("dbscenario-editor-unchanged-panel").hidden = !unchanged;
-    byId("dbscenario-editor-write-panel").hidden = unchanged || !["POST", "PUT", "PATCH"].includes(method);
-    byId("dbscenario-editor-seed-panel").hidden = influx || unchanged || !SEEDED_METHODS.has(method);
-    byId("dbscenario-editor-get-panel").hidden = unchanged || method !== "GET";
-    const mutation = influx && !unchanged && MUTATING_METHODS.has(method);
+    byId("dbscenario-editor-write-panel").hidden = insert || unchanged || !["POST", "PUT", "PATCH"].includes(method);
+    byId("dbscenario-editor-seed-panel").hidden = insert || influx || unchanged || !SEEDED_METHODS.has(method);
+    byId("dbscenario-editor-get-panel").hidden = insert || unchanged || method !== "GET";
+    const mutation = influx && !insert && !unchanged && MUTATING_METHODS.has(method);
     byId("dbscenario-editor-influx-mutation").hidden = !mutation;
     byId("dbscenario-editor-influx-fixture-panel").hidden = !byId("dbscenario-editor-influx-fixture").checked;
     byId("dbscenario-editor-influx-seeds-panel").hidden = byId("dbscenario-editor-influx-action").value === "insert";
@@ -1347,6 +1353,12 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   function currentForm() {
+    if (byId("dbscenario-editor-mode").value === "insert_rows") return {
+      mode: "insert_rows", engine: byId("dbscenario-editor-engine").value,
+      operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
+      table: byId("dbscenario-editor-table").value, pathParams: collectPathParams(), queryParams: collectQueryParams(),
+      ...insertEditor.collect(),
+    };
     if (byId("dbscenario-editor-mode").value === "unchanged") {
       return {
         mode: "unchanged", engine: byId("dbscenario-editor-engine").value,

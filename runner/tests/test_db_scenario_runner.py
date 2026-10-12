@@ -24,6 +24,17 @@ MINIMAL_OPENAPI = {
     },
 }
 
+# These orchestration fixtures return JSON, so describe a JSON response explicitly.
+for _path in MINIMAL_OPENAPI["paths"].values():
+    for _operation in _path.values():
+        for _response in _operation["responses"].values():
+            _response["content"] = {"application/json": {"schema": {"type": "object"}}}
+
+
+def _api_response(status, body):
+    return dsr_module.APIResponse(status, body, None, json.dumps(body), {"Content-Type": "application/json"})
+
+
 CONFIG = {
     "postgres": {"host": "h", "port": 5432, "dbname": "d", "user": "u", "password": "p"},
     "influxdb": {"host": "h", "port": 8086, "database": "m"},
@@ -57,7 +68,7 @@ def _fake_call_api(status: int, response_json: dict):
     差し替える（HTTP層自体の検証は test_call_api_* / test_http_client.py で行う）。
     """
     def _call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
-        return status, response_json, None
+        return _api_response(status, response_json)
 
     return _call_api
 
@@ -94,6 +105,7 @@ def _fake_response(status: int, body: str) -> requests.Response:
     resp = requests.Response()
     resp.status_code = status
     resp._content = body.encode("utf-8")
+    resp.headers["Content-Type"] = "application/json"
     return resp
 
 
@@ -320,7 +332,7 @@ def test_case_ids_runs_only_selected_self_contained_db_scenario(monkeypatch, tmp
 
     def fake_api(*args, **kwargs):
         calls.append(args[2])
-        return 201, {}, None
+        return _api_response(201, {})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_api)
     code = run_main(monkeypatch, [
@@ -519,8 +531,8 @@ def test_path_params_resolved_from_previous_scenario_response(monkeypatch, tmp_p
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         calls.append(path_params)
         if len(calls) == 1:
-            return 201, {"id": 42}, None
-        return 200, {"id": 42, "name": "次郎"}, None
+            return _api_response(201, {"id": 42})
+        return _api_response(200, {"id": 42, "name": "次郎"})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -557,7 +569,7 @@ def test_body_resolved_from_previous_scenario_response(monkeypatch, tmp_path):
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         calls.append(body)
-        return 201, {"id": 99}, None
+        return _api_response(201, {"id": 99})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -631,7 +643,7 @@ def test_previous_response_updates_to_most_recent_scenario_only(monkeypatch, tmp
         # 1件目はid=1を、2件目はid=2を返す。3件目はid=2を参照すべき（id=1ではない）
         responses = [(201, {"id": 1}), (200, {"id": 2}), (200, {"id": 2})]
         status, response_json = responses[len(calls) - 1]
-        return status, response_json, None
+        return _api_response(status, response_json)
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -854,7 +866,7 @@ def test_given_creates_data_before_api_call_and_cleans_up_after(monkeypatch, tmp
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         calls.append(("call_api", path_params, body))
-        return 201, {"id": 1}, None
+        return _api_response(201, {"id": 1})
 
     monkeypatch.setattr(dsr_module.db_factory, "create", fake_create)
     monkeypatch.setattr(dsr_module.db_factory, "delete", fake_delete)
@@ -885,7 +897,7 @@ def test_given_data_referenced_in_request_body_and_db_check(monkeypatch, tmp_pat
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         captured["body"] = body
-        return 201, {"id": 1}, None
+        return _api_response(201, {"id": 1})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -946,7 +958,7 @@ def test_get_response_check_resolves_values_from_given_db_row(monkeypatch, tmp_p
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         captured.update({"path": path, "method": method, "path_params": path_params})
-        return 200, {"id": 42, "name": "Read User", "email": "read@example.com", "role": "member"}, None
+        return _api_response(200, {"id": 42, "name": "Read User", "email": "read@example.com", "role": "member"})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -1227,7 +1239,7 @@ def test_cookie_jar_flag_passes_shared_session_with_persist_cookies_true(monkeyp
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         seen.append((session, persist_cookies))
-        return 201, {"id": 5}, None
+        return _api_response(201, {"id": 5})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 
@@ -1253,7 +1265,7 @@ def test_without_cookie_jar_flag_session_shared_but_not_persisted(monkeypatch, t
 
     def fake_call_api(base_url, path, method, path_params, body, session=None, persist_cookies=False):
         seen.append((session, persist_cookies))
-        return 201, {"id": 5}, None
+        return _api_response(201, {"id": 5})
 
     monkeypatch.setattr(dsr_module, "_call_api", fake_call_api)
 

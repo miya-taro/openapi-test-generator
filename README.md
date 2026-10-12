@@ -331,3 +331,5 @@ cd gui-tauri
 npm run lint                    # JavaScript（src/main.js）
 cargo clippy --all-targets -- -D warnings --manifest-path src-tauri/Cargo.toml   # Rust
 ```
+
+POSTで配列を複数行へ保存するAPIは、[配列からの保存照合](docs/post-array-testing.md)を参照してください。UIで親項目・固定値・日時・JSON・DB参照を設定できます。

@@ -95,6 +95,7 @@
                           <input id="contract-response-status" type="text" value="200" placeholder="200 / 201 / 2XX" />
                         </div>
                       </div>
+                      <label><input type="checkbox" id="contract-response-empty" /> レスポンスボディなし（空であることを検証）</label>
                       <div id="contract-response-schema-builder" class="schema-builder"></div>
                       <p class="field-caption">レスポンス項目も同じフォームで設定します。schema未設定のまま保存すると既存定義を保ちます。</p>
                     </div>
@@ -307,8 +308,10 @@
                     <select id="dbscenario-editor-mode">
                       <option value="mapping">APIとDBの値を照合する</option>
                       <option value="unchanged">API実行前後でDBに変更がないこと</option>
+                      <option value="insert_rows">POST：配列から複数行への保存を照合する</option>
                     </select>
                   </div>
+                  <div id="dbscenario-insert-panel" hidden></div>
                   <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>
                   <div id="dbscenario-editor-influx-mutation" hidden>
                     <p class="field-caption">対象は時刻と全タグで特定する1ポイントです。APIが保存・更新・削除した結果をDBから読み取ります。</p>

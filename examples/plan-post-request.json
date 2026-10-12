@@ -1,0 +1,109 @@
+{
+  "site_id": 101,
+  "location_id": "LOC002",
+  "type": "1-1",
+  "correct": true,
+  "force": false,
+  "plans": [
+    {
+      "date": "2026-10-12T00:00:00+09:00",
+      "profit": 1000,
+      "controls": [
+        {
+          "time": "10:00:00",
+          "buy": 0.125,
+          "sell": 1.125,
+          "charge": 2.125,
+          "discharge": 3.125,
+          "soc": 4.125,
+          "gen": 5.125,
+          "suppression": 6.125,
+          "correct_point": {
+            "start_time": "10:00:00",
+            "start": {
+              "buy": 0.0,
+              "sell": 1.0,
+              "charge": 2.0,
+              "discharge": 3.0,
+              "soc": 4.0,
+              "gen": 5.0,
+              "suppression": 6.0
+            }
+          }
+        },
+        {
+          "time": "11:00:00",
+          "buy": 0.125,
+          "sell": 1.125,
+          "charge": 2.125,
+          "discharge": 3.125,
+          "soc": 4.125,
+          "gen": 5.125,
+          "suppression": 6.125,
+          "correct_point": {
+            "start_time": "11:00:00",
+            "start": {
+              "buy": 0.0,
+              "sell": 1.0,
+              "charge": 2.0,
+              "discharge": 3.0,
+              "soc": 4.0,
+              "gen": 5.0,
+              "suppression": 6.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-13T00:00:00+09:00",
+      "profit": 1000,
+      "controls": [
+        {
+          "time": "10:00:00",
+          "buy": 0.125,
+          "sell": 1.125,
+          "charge": 2.125,
+          "discharge": 3.125,
+          "soc": 4.125,
+          "gen": 5.125,
+          "suppression": 6.125,
+          "correct_point": {
+            "start_time": "10:00:00",
+            "start": {
+              "buy": 0.0,
+              "sell": 1.0,
+              "charge": 2.0,
+              "discharge": 3.0,
+              "soc": 4.0,
+              "gen": 5.0,
+              "suppression": 6.0
+            }
+          }
+        },
+        {
+          "time": "11:00:00",
+          "buy": 0.125,
+          "sell": 1.125,
+          "charge": 2.125,
+          "discharge": 3.125,
+          "soc": 4.125,
+          "gen": 5.125,
+          "suppression": 6.125,
+          "correct_point": {
+            "start_time": "11:00:00",
+            "start": {
+              "buy": 0.0,
+              "sell": 1.0,
+              "charge": 2.0,
+              "discharge": 3.0,
+              "soc": 4.0,
+              "gen": 5.0,
+              "suppression": 6.0
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -18,6 +18,7 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
     has_error_status_range = False
     has_default_response = False
     require_documented_status = False
+    empty_body_statuses = set()
     body_schemas_by_status: dict[int, dict | None] = {}
     content_types_by_status: dict[int, frozenset[str]] = {}
     header_schemas_by_status: dict[int, dict[str, dict]] = {}
@@ -59,6 +60,8 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
         for code in status_codes:
             response = _response_for_status(responses, code)
             content = response.get("content") or {}
+            if (response and not content) or code in (204, 304) or case.method.upper() == "HEAD":
+                empty_body_statuses.add(code)
             if content:
                 content_types_by_status[code] = frozenset(str(name) for name in content)
                 json_schemas = {}
@@ -119,6 +122,7 @@ def from_run_case(case: RunCase, openapi: dict | None = None) -> ResponseSchema:
         expected_header_schemas_by_status=header_schemas_by_status,
         expected_header_names_by_status=header_names_by_status,
         expected_headers=expected_headers,
+        expected_empty_body_statuses=frozenset(empty_body_statuses),
     )
 
 
