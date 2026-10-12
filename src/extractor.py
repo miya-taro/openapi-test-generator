@@ -172,7 +172,8 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                     )
                     continue
 
-                if "415" in (operation.get("responses") or {}):
+                if any(str(code).upper() == "4XX" or (str(code).isdigit() and 400 <= int(code) < 500)
+                       for code in (operation.get("responses") or {})):
                     supported_types = {str(value).lower() for value in content}
                     invalid_type = "application/x-api-tester-invalid"
                     while invalid_type in supported_types:
@@ -185,7 +186,7 @@ def extract_specs(api: dict) -> tuple[list[dict], list[dict]]:
                         "name": "Content-Type",
                         "required": True,
                         "schema": {},
-                        "successStatus": "415",
+                        "successStatus": "4xx",
                         "responsesInfo": responses_info,
                         "unsupportedContentType": invalid_type,
                     })

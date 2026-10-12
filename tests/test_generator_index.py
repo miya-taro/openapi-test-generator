@@ -126,11 +126,12 @@ def test_generate_test_cases_emits_documented_unsupported_content_type_case():
         "unsupportedContentType": "text/plain",
     }
     cases = generate_test_cases([spec], [], ALL_OPTS)
-    assert len(cases) == 1
+    assert len(cases) == 2
+    assert cases[1]["inputValue"] == "（省略）"
     assert cases[0]["paramName"] == "Content-Type"
     assert cases[0]["inputValue"] == "text/plain"
-    assert cases[0]["expectedStatus"] == "415"
-    assert cases[0]["expectedResponseHeader"] == "Content-Type: application/json"
+    assert cases[0]["expectedStatus"] == "4xx"
+    assert "定義済みヘッダ" in cases[0]["expectedResponseHeader"]
 
 
 def test_generate_test_cases_omits_unsupported_content_type_case_when_abnormal_disabled():

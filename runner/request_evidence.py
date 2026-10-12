@@ -44,6 +44,8 @@ def readable_curl(request: dict) -> str:
     for name, value in request.get('headers', {}).items():
         parts.extend(['--header', shlex.quote(f'{name}: {value}')])
     if request.get('body') is not None:
+        if not any(name.lower() == 'content-type' for name in request.get('headers', {})):
+            parts.extend(['--header', 'Content-Type:'])
         parts.extend(['--data-binary', shlex.quote(request['body'])])
     return ' '.join(parts)
 

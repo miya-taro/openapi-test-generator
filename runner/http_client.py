@@ -157,6 +157,12 @@ def _send_request(
             exit_code=EXIT_ERROR, curl_command="", error=f"リクエストの組み立てに失敗しました: {e}",
         )
 
+    # requests/session can restore Content-Type while encoding JSON/multipart.
+    # Remove it from the final prepared request, retaining the encoded body.
+    if (case.param_in == "header" and case.param_name.lower() == "content-type"
+            and case.input_value in OMIT_MARKERS):
+        prepared.headers.pop("Content-Type", None)
+
     request_evidence = capture_request(prepared, secrets)
     cmd_str = _mask_secrets(_curl_command_from_prepared(prepared), secrets)
     if preview:
@@ -225,6 +231,8 @@ def _curl_command_from_prepared(prepared: requests.PreparedRequest) -> str:
 
     body = prepared.body
     if body is not None:
+        if "Content-Type" not in prepared.headers:
+            parts += ["-H", quote_cmd_arg("Content-Type:")]
         if isinstance(body, bytes):
             try:
                 body = body.decode("utf-8")

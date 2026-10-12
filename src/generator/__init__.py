@@ -144,24 +144,19 @@ def generate_test_cases(
         if spec.get("unsupportedContentType"):
             if not opts["includeAbnormal"]:
                 continue
-            results.append({
-                "operationId": spec["operationId"],
-                "path": spec["path"],
-                "method": spec["method"],
-                "in": "header",
-                "paramName": "Content-Type",
-                "verdict": "",
-                "summary": f"Content-Type 不正値（{spec['unsupportedContentType']}）",
-                "keyword": "contentType",
-                "perspective": "異常系_Content-Type不正",
-                "inputValue": spec["unsupportedContentType"],
-                "expectedStatus": "415",
-                "expectedResult": "Unsupported Media Type が返ること",
-                "notes": "OpenAPI に 415 応答が定義されているため、本文を保ったまま未対応メディアタイプを送信",
-                "expectedResponseBody": _derive_response_body(spec["responsesInfo"].get("415")),
-                "expectedResponseHeader": _derive_response_header(spec["responsesInfo"].get("415")),
-                "expectedResponseTime": "3秒以内",
-            })
+            for value, label in [(spec["unsupportedContentType"], "不正値"), ("（省略）", "省略")]:
+                results.append({
+                    "operationId": spec["operationId"], "path": spec["path"], "method": spec["method"],
+                    "in": "header", "paramName": "Content-Type", "verdict": "",
+                    "summary": f"Content-Typeを{label}にして正常な本文を送る",
+                    "keyword": "contentType", "perspective": f"異常系_Content-Type{label}",
+                    "inputValue": value, "expectedStatus": "4xx",
+                    "expectedResult": "OpenAPIに定義した4xxのいずれかで拒否されること",
+                    "notes": "本文は正常値を維持。Content-Typeだけを変更する",
+                    "expectedResponseBody": "実測statusに対応する定義済みレスポンスを検証する",
+                    "expectedResponseHeader": "実測statusに対応する定義済みヘッダを検証する",
+                    "expectedResponseTime": "3秒以内",
+                })
             continue
 
         partials = _generate_from_schema(
