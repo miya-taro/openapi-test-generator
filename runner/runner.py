@@ -25,7 +25,7 @@ for _stream in (sys.stdout, sys.stderr):
     except AttributeError:
         pass
 
-from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError
+from auth_login import load_auth_config, perform_login, build_auth_header, AuthLoginError, mark_login_response_sensitive
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 from excel_reader import read_excel
 from excel_writer import write_results
@@ -287,6 +287,7 @@ def main() -> int:
         if args.auth_config:
             try:
                 auth_cfg = load_auth_config(args.auth_config)
+                mark_login_response_sensitive(openapi, auth_cfg)
                 token = perform_login(args.base_url, auth_cfg, session)
                 header_name, header_value = build_auth_header(token, auth_cfg)
                 os.environ["TEST_AUTH_HEADER_NAME"] = header_name

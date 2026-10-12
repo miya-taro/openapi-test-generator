@@ -137,3 +137,28 @@ def build_auth_header(token: str, auth_config: dict) -> tuple[str, str]:
     header_format = auth_config.get("header_format", "Bearer {token}")
     header_value = header_format.format(token=token)
     return header_name, header_value
+
+
+def mark_login_response_sensitive(openapi: dict | None, auth_config: dict) -> None:
+    """Mark only the configured login token path for report redaction, not validation."""
+    import copy
+    from urllib.parse import urlsplit
+
+    if not isinstance(openapi, dict):
+        return
+    path = urlsplit(auth_config['login_url']).path
+    operation = openapi.get('paths', {}).get(path, {}).get(str(auth_config.get('method', 'POST')).lower(), {})
+    operation['responses'] = copy.deepcopy(operation.get('responses', {}))
+    for response in operation['responses'].values():
+        for media in (response.get('content') or {}).values():
+            schema = media.get('schema')
+            if not isinstance(schema, dict):
+                continue
+            media['schema'] = copy.deepcopy(schema)
+            node = media['schema']
+            for key in auth_config.get('token_path', 'access_token').split('.'):
+                if not isinstance(node, dict):
+                    break
+                node = node.get('properties', {}).get(key)
+            if isinstance(node, dict):
+                node['x-api-tester-sensitive'] = True

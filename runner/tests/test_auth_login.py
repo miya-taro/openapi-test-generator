@@ -242,3 +242,16 @@ def test_build_auth_header_custom():
     )
     assert name == "X-Api-Key"
     assert value == "Token tok123"
+
+
+def test_login_redaction_marks_only_selected_response_path():
+    from auth_login import mark_login_response_sensitive
+    schema = {'type':'object','properties':{'data':{'type':'object','properties':{'id':{'type':'string'}}},'id':{'type':'string'}}}
+    response = {'200':{'content':{'application/json':{'schema':schema}}}}
+    api = {'paths':{'/login':{'post':{'responses':response}},'/other':{'get':{'responses':response}}}}
+    mark_login_response_sensitive(api,{'login_url':'/login','method':'POST','token_path':'data.id'})
+    login_schema=api['paths']['/login']['post']['responses']['200']['content']['application/json']['schema']
+    assert login_schema['properties']['data']['properties']['id']['x-api-tester-sensitive'] is True
+    assert 'x-api-tester-sensitive' not in login_schema['properties']['id']
+    assert 'x-api-tester-sensitive' not in schema['properties']['data']['properties']['id']
+    mark_login_response_sensitive(None,{'login_url':'/login'})

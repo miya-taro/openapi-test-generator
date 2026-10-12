@@ -156,7 +156,7 @@ def _redact_with_schema(value: object, schema: dict | None) -> tuple[object, boo
         redacted: dict[object, object] = {}
         for key, item in value.items():
             property_schema = properties.get(key) if isinstance(properties, dict) else None
-            if isinstance(property_schema, dict) and property_schema.get(WRITE_ONLY_SCHEMA_MARKER):
+            if isinstance(property_schema, dict) and (property_schema.get(WRITE_ONLY_SCHEMA_MARKER) or property_schema.get("x-api-tester-sensitive")):
                 redacted[key] = "[REDACTED]"
                 changed = True
                 continue
