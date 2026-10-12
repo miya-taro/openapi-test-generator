@@ -181,8 +181,9 @@ jobs:
         env:
           OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
           OTG_POST_EVIDENCE_DIR: docs/_ci_measure_evidence/post-array
+          OTG_PWRCO_EVIDENCE_DIR: docs/_ci_measure_evidence/pwrco
           OTG_SQL_EVIDENCE_DIR: docs/_ci_measure_evidence/sql-response
-        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py -q
+        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py -q
 
       - name: Upload GET JSON body comparison evidence
         if: always()
@@ -206,7 +207,7 @@ jobs:
           OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
           OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
           OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
-        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py -q
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py gui/tests/test_browser_pwrco.py -q
 
       - name: Upload first release qualification evidence
         if: always()

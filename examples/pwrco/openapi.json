@@ -1,0 +1,103 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "v1/pwrco/set 確定済み成功契約",
+    "version": "1.0"
+  },
+  "paths": {
+    "/v1/pwrco/set": {
+      "post": {
+        "operationId": "setPwrco",
+        "description": "site_id優先。type省略時NULL。必須欠落・型違い・enum違反・空scheduleは400、DB変更なし。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "start_datetime",
+                  "end_time",
+                  "schedule"
+                ],
+                "anyOf": [
+                  {
+                    "required": [
+                      "site_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "location_id"
+                    ]
+                  }
+                ],
+                "x-otg-presence-rules": [
+                  {
+                    "kind": "atLeastOne",
+                    "fields": [
+                      "site_id",
+                      "location_id"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "site_id": {
+                    "type": "integer"
+                  },
+                  "location_id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ]
+                  },
+                  "start_datetime": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "end_time": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "schedule": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "time",
+                        "value"
+                      ],
+                      "properties": {
+                        "time": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "value": {
+                          "type": "number",
+                          "format": "double"
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存成功、本文なし"
+          },
+          "400": {
+            "description": "入力不正"
+          }
+        }
+      }
+    }
+  }
+}
