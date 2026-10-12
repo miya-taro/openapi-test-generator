@@ -52,6 +52,29 @@ def test_all_case_ids_are_unique():
     assert len(set(ids)) == len(ids)
 
 
+def test_login_cases_do_not_add_unconfigured_extra_property(tmp_path):
+    source = {
+        "openapi": "3.1.0",
+        "info": {"title": "login fixture", "version": "1"},
+        "paths": {"/v1/auth/login": {"post": {
+            "operationId": "login",
+            "requestBody": {"required": True, "content": {"application/json": {"schema": {
+                "type": "object",
+                "properties": {"user": {"type": "string", "example": "test"}},
+                "required": ["user"],
+            }}}},
+            "responses": {"200": {"description": "OK"}, "400": {"description": "Invalid"}},
+        }}},
+    }
+    path = tmp_path / "login.openapi.json"
+    path.write_text(json.dumps(source), encoding="utf-8")
+    params, bodies = extract_specs(parse_openapi(str(path)))
+    cases = generate_test_cases(params, bodies, ALL_OPTS)
+
+    assert any(case["perspective"] == "正常系_最小有効リクエスト" for case in cases)
+    assert not any("__extra__" in case.get("inputValue", "") for case in cases)
+
+
 def test_openapi_auth_alternatives_flow_into_identified_test_cases(tmp_path):
     source = {
         "openapi": "3.1.0",
