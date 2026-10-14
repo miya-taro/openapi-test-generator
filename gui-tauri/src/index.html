@@ -204,6 +204,7 @@
                   <button class="secondary" id="rerun-failed-button" hidden disabled>失敗ケースを再実行</button>
                 </div>
                 <div id="run-status" class="run-status-line"></div>
+                <p id="run-next-action" class="field-caption" aria-live="polite"></p>
                 <div id="run-progress"><div id="run-progress-bar"></div></div>
                 <div id="run-artifacts" class="artifact-list" aria-live="polite"></div>
                 <div id="run-log" class="run-log"></div>
@@ -279,13 +280,17 @@
 
               <div class="form-section">
                 <h3 class="form-section-title">1. APIとDBの対応を登録</h3>
-                <p class="form-section-desc">
-                  API項目はOpenAPIから表示します。対象テーブルと対応するDB列を人が指定すると、実行用の確認内容を作成します。項目名によるDB列の推測は行いません。
-                  POSTはAPIに送る値とDB列を対応付けます。PUT・PATCH・DELETEは対象行を指定し、GETは検索条件とレスポンス項目をDB列に対応付けます。GETでは既存DBを読み取るため、試験行を画面で用意する必要はありません。
-                  通常の対応付けは1テーブルを対象にします。GETの複数テーブル参照・集計・履歴選択は「SQL取得結果と入れ子レスポンスを照合する」、POSTの配列保存は「配列から複数行への保存を照合する」で設定できます。
-                </p>
+                <p class="form-section-desc">APIを選び、送信する値とDBの対応を順番に設定します。最後に試験内容を確認して追加します。設定中にAPIの送信やDBの更新は行いません。</p>
                 <div class="db-scenario-editor">
-                  <div id="dbscenario-editor-guidance" class="db-scenario-guidance" aria-live="polite">
+                  <div id="dbscenario-setup" class="db-setup" data-stage="1">
+                    <div class="db-setup-top">
+                      <nav id="dbsetup-nav" aria-label="DB確認の設定手順"></nav>
+                      <button type="button" id="dbsetup-display" class="secondary" aria-pressed="false">全項目を一覧で編集</button>
+                    </div>
+                    <h4 id="dbsetup-heading" tabindex="-1"></h4>
+                    <p id="dbsetup-help" class="field-caption"></p>
+                    <p id="dbsetup-selected" class="db-setup-selected" hidden></p>
+                  <div data-db-step="1" id="dbscenario-editor-guidance" class="db-scenario-guidance" aria-live="polite">
                     まずAPI操作を選択してください。操作に応じて必要な入力欄だけが表示されます。
                   </div>
                   <div class="db-scenario-editor-grid">
@@ -300,6 +305,8 @@
                     <div class="form-field">
                       <label for="dbscenario-editor-engine">確認するDB</label>
                       <select id="dbscenario-editor-engine"><option value="postgres">PostgreSQL</option><option value="influxdb">InfluxDB 1.x（InfluxQL）</option></select>
+                    </div>
+                    <div class="form-field">
                       <label for="dbscenario-editor-table">確認するテーブル / measurement</label>
                       <input id="dbscenario-editor-table" type="text" placeholder="例: users" />
                     </div>
@@ -314,10 +321,10 @@
                       <option value="insert_rows">POST：配列から複数行への保存を照合する</option>
                     </select>
                   </div>
-                  <div id="dbscenario-sql-panel" hidden></div>
-                  <div id="dbscenario-insert-panel" hidden></div>
-                  <p id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>
-                  <div id="dbscenario-editor-influx-mutation" hidden>
+                  <div data-db-step="2 3" id="dbscenario-sql-panel" hidden></div>
+                  <div data-db-step="2 3" id="dbscenario-insert-panel" hidden></div>
+                  <p data-db-step="3" id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>
+                  <div data-db-step="2 3" id="dbscenario-editor-influx-mutation" hidden>
                     <p class="field-caption">対象は時刻と全タグで特定する1ポイントです。APIが保存・更新・削除した結果をDBから読み取ります。</p>
                     <div class="db-scenario-editor-grid">
                       <label>期待する変更<select id="dbscenario-editor-influx-action"><option value="insert">保存：なし → 1件</option><option value="update">更新：既存1件 → 指定値</option><option value="delete">削除：既存1件 → なし</option></select></label>
@@ -338,7 +345,7 @@
                     <div id="dbscenario-editor-influx-delete-body-field" hidden><label>送信するJSON body（不要なら{}）<textarea id="dbscenario-editor-influx-delete-body" rows="3" spellcheck="false">{}</textarea></label></div>
                     <p class="field-caption">下のAPI項目にフィールドを対応付けると送信値から期待値を作ります。timeとタグは上の対象指定に使用し、期待フィールドとは分けます。既存値と同じ値への更新など、変更を確かめられないデータは未確認にします。</p>
                   </div>
-                  <div id="dbscenario-editor-unchanged-panel" hidden>
+                  <div data-db-step="2 3" id="dbscenario-editor-unchanged-panel" hidden>
                     <div id="dbscenario-editor-influx-period" class="db-scenario-editor-grid" hidden>
                       <label>比較期間の開始（含む）<input id="dbscenario-editor-time-start" type="text" placeholder="2026-01-01T00:00:00Z" /></label>
                       <label>比較期間の終了（含む）<input id="dbscenario-editor-time-end" type="text" placeholder="2026-01-02T00:00:00Z" /></label>
@@ -364,19 +371,19 @@
                     </div>
                   </div>
 
-                  <div id="dbscenario-editor-path-params" class="form-field" hidden>
+                  <div data-db-step="2 3" id="dbscenario-editor-path-params" class="form-field" hidden>
                     <label>APIのパスに入れる値</label>
                     <div id="dbscenario-editor-path-param-rows" class="db-scenario-editor-rows"></div>
                     <p class="field-caption">URLの <code>{id}</code> などに入れる値です。PUT・PATCH・DELETEでは、DBの主キーを使う場合はチェックしてください。自動では選びません。</p>
                   </div>
 
-                  <div id="dbscenario-editor-query-params" class="form-field" hidden>
+                  <div data-db-step="2 3" id="dbscenario-editor-query-params" class="form-field" hidden>
                     <label>APIに渡す検索条件（Query）</label>
                     <div id="dbscenario-editor-query-param-rows" class="db-scenario-editor-rows"></div>
                     <p class="field-caption">値を空欄にすると、その条件は送りません。GETで下の検索条件に対応付けた項目は、実行時に既存DBの値から自動で作ります。</p>
                   </div>
 
-                  <div id="dbscenario-editor-write-panel" hidden>
+                  <div data-db-step="2 3" id="dbscenario-editor-write-panel" hidden>
                     <div class="form-field db-scenario-editor-status-field">
                       <label for="dbscenario-editor-write-status">API成功時のstatus</label>
                       <input id="dbscenario-editor-write-status" type="number" min="100" max="599" value="200" />
@@ -424,7 +431,7 @@
                     </div>
                   </div>
 
-                  <div id="dbscenario-editor-seed-panel" class="form-field" hidden>
+                  <div data-db-step="3" id="dbscenario-editor-seed-panel" class="form-field" hidden>
                     <label for="dbscenario-editor-seed-fields">API実行前にDBへ用意する1行（JSON）</label>
                     <textarea id="dbscenario-editor-seed-fields" rows="5" spellcheck="false" placeholder='{"name":"sample","email":"sample@example.com"}'></textarea>
                     <p class="field-caption">PUT・PATCHではこの行が更新されるか、DELETEではこの行が削除されるかを確認します。GETの試験データは入力不要です。</p>
@@ -443,7 +450,7 @@
                     </div>
                   </div>
 
-                  <div id="dbscenario-editor-get-panel" hidden>
+                  <div data-db-step="2 3" id="dbscenario-editor-get-panel" hidden>
                     <p class="field-caption">GETのJSONボディもOpenAPIの項目から設定できます。任意項目は値を空欄にすると送信しません。</p>
                     <label class="checkbox"><input type="checkbox" id="dbscenario-editor-expand-combinations" /> 条件付き必須とIN配列の正常な組み合わせを生成する</label>
                     <p class="field-caption">組み合わせ生成時は、条件付き必須の各項目にDBにある試験値を入力してください。「どちらか必須」は片方ずつと両方、「同時指定」は両方あり／なし、IN配列は全指定と1項目ずつを作ります（最大64件）。期待statusは全ケース共通です。</p>
@@ -501,6 +508,13 @@
                     </div>
                   </div>
 
+                    <section id="dbsetup-preview" data-db-step="4" aria-label="追加する試験内容"></section>
+                    <p id="dbsetup-error" class="status-message error" role="alert" hidden></p>
+                    <div class="btn-row db-setup-actions">
+                      <button type="button" id="dbsetup-back" class="secondary">戻る</button>
+                      <button type="button" id="dbsetup-next">次へ：送信値を入力</button>
+                    </div>
+                  </div>
                   <div id="dbscenario-editor-status" class="field-caption status-message" aria-live="polite"></div>
                   <div class="btn-row">
                     <button id="dbscenario-editor-add-scenario" type="button">この対応設定を追加</button>
@@ -552,6 +566,7 @@
                   <button class="secondary" id="dbscenario-rerun-failed-button" hidden disabled>失敗ケースを再実行</button>
                 </div>
                 <div id="dbscenario-status" class="run-status-line"></div>
+                <p id="dbscenario-next-action" class="field-caption" aria-live="polite"></p>
                 <div id="dbscenario-artifacts" class="artifact-list" aria-live="polite"></div>
                 <div id="dbscenario-log" class="run-log"></div>
               </div>
@@ -602,9 +617,12 @@
                   </div>
                 </div>
                 <div class="btn-row" aria-label="プロジェクト設定">
+                  <button class="secondary" id="settings-save">このPCに設定を保存</button>
                   <button class="secondary" id="project-open">プロジェクトを開く</button>
                   <button class="secondary" id="project-save">プロジェクトを保存</button>
                 </div>
+                <p class="field-caption">接続先・ファイルの場所・実行設定を保存します。API定義とDB対応は各編集画面で保存してください。DBパスワードと認証ボディはこの設定保存には含みません。</p>
+                <div id="settings-status" class="field-caption status-message" aria-live="polite"></div>
                 <div id="project-status" class="field-caption status-message" aria-live="polite"></div>
                 <div id="runtime-status" class="field-caption status-message" aria-live="polite">実行環境を確認しています...</div>
 

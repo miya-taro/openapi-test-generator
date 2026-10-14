@@ -98,7 +98,11 @@ async function loadSettingsIntoForm() {
   updateActiveBaseUrlText();
   updateActiveDbConfigText();
 
+  if (Object.keys(settings).length) {
+    settingsNotice("前回の設定を復元しました。DBパスワードと認証用の入力値は再確認してください。API定義・DB対応は保存済みファイルから読み込みます。");
+  }
   await refreshOperationsList({ keepExcluded: true });
+  await dbScenarioEditor.restoreSaved();
   // ログイン操作の選択はoperation一覧に依存するため、一覧更新後に復元する。
   // value を直接書き換えても change イベントは発火しないため、ボディ/token_pathの
   // 自動入力を明示的に呼び直す（呼ばないと「選択済みなのに毎回空欄」になる）。
@@ -107,6 +111,24 @@ async function loadSettingsIntoForm() {
     await applyLoginOperationHints();
   }
 }
+
+function settingsNotice(message) {
+  $("settings-status").textContent = message;
+}
+
+$("settings-save").addEventListener("click", async () => {
+  const button = $("settings-save");
+  button.disabled = true;
+  try {
+    await persistSettings();
+    updateActiveBaseUrlText();
+    updateActiveDbConfigText();
+  } catch {
+    settingsNotice("設定を保存できませんでした。保存先の空き容量と書き込み権限を確認してください。");
+  } finally {
+    button.disabled = false;
+  }
+});
 
 async function persistSettings() {
   settings.shared_openapi_path = $("openapi-path").value.trim();
@@ -151,6 +173,7 @@ async function persistSettings() {
   settings.dbscenario_cookie_jar = $("dbscenario-cookie-jar").checked;
 
   await invoke("save_settings", { data: settings });
+  settingsNotice("このPCに設定を保存しました。再起動後、DBパスワードと認証用の入力値は再確認してください。");
 }
 
 // ---------- ファイル/フォルダ選択 ----------
@@ -1016,6 +1039,7 @@ $("project-open").addEventListener("click", async () => {
     updateActiveOpenapiText();
     updateActiveBaseUrlText();
     await refreshOperationsList({ keepExcluded: false, selectedOperations: project.selectedOperations || [] });
+    await persistSettings();
     setProjectStatus(`開きました: ${path}`, "ok");
   } catch {
     setProjectStatus("プロジェクトを開けませんでした。project.jsonの内容を確認してください。", "error");
@@ -1195,6 +1219,7 @@ function hideDbScenarioError() {
 }
 
 function setDbScenarioStatus(text, state) {
+  $("dbscenario-next-action").textContent = "";
   const el = $("dbscenario-status");
   el.textContent = text;
   el.dataset.state = state || "";
@@ -1229,6 +1254,8 @@ export function appendArtifact(containerId, event) {
   const item = document.createElement("div");
   item.className = "artifact-item";
   item.dataset.artifactKind = event.kind;
+  const primary = ["html_report", "result_excel", "db_report_excel"].includes(event.kind);
+  item.classList.toggle("artifact-primary", primary);
   const name = document.createElement("span");
   name.className = "artifact-item-name";
   name.textContent = artifactLabel(event.kind);
@@ -1238,12 +1265,23 @@ export function appendArtifact(containerId, event) {
   path.title = event.path;
   const openButton = document.createElement("button");
   openButton.className = "secondary";
-  openButton.textContent = "開く";
+  openButton.textContent = event.kind === "html_report" ? "結果を確認" : "開く";
+  const message = document.createElement("span");
+  message.className = "artifact-message";
+  message.setAttribute("role", "status");
+  message.textContent = ({html_report: "合否を一覧し、要確認の試験やAPI名で絞り込めます。",
+    result_excel: "最初の「結果サマリー」で期待値と実測値を比較できます。",
+    db_report_excel: "「結果サマリー」から判定理由・DB比較の詳細を確認できます。"})[event.kind] || "";
   openButton.addEventListener("click", async () => {
-    await openPath(event.path).catch(() => {});
+    await openPath(event.path).catch(() => { message.textContent = "ファイルを開けませんでした。保存場所を確認してください。"; });
   });
-  item.append(name, path, openButton);
-  container.appendChild(item);
+  const location = document.createElement("details");
+  const label = document.createElement("summary"); label.textContent = "保存場所";
+  location.append(label, path);
+  item.append(name, openButton, message, location);
+  if (event.kind === "html_report") container.prepend(item);
+  else if (primary) container.insertBefore(item, container.querySelector('.artifact-item:not(.artifact-primary)'));
+  else container.appendChild(item);
 }
 
 const REVIEW_LABELS = { draft: "下書き・未確認", reviewed: "レビュー済み", approved: "承認済み" };
@@ -1252,6 +1290,7 @@ const REVIEW_NEXT = {
   reviewed: ["approved", "承認する"],
   approved: ["reviewed", "承認を戻す"],
 };
+let caseReviewSaving = false;
 
 function syncPreparedExecutionButtons() {
   const contractCases = currentCaseMaster?.cases?.filter((item) => item.kind === "contract") || [];
@@ -1306,7 +1345,19 @@ function renderCaseMasterView(master, masterPath, ids, rerender) {
       }
       table.append(tr);
     }
-    coverage.append(heading, table); list.append(coverage);
+    const filterLabel = document.createElement("label");
+    const filter = document.createElement("input");
+    filter.type = "checkbox";
+    filter.checked = gaps.length > 0;
+    filterLabel.append(filter, " 要確認の項目だけ表示");
+    const applyFilter = () => {
+      Array.from(table.rows).slice(1).forEach((tr, index) => {
+        tr.hidden = filter.checked && !gaps.includes(master.coverage[index]);
+      });
+    };
+    filter.addEventListener("change", applyFilter);
+    applyFilter();
+    coverage.append(heading, filterLabel, table); list.append(coverage);
   }
 
   for (const testCase of cases) {
@@ -1336,17 +1387,20 @@ function renderCaseMasterView(master, masterPath, ids, rerender) {
     action.textContent = actionLabel;
     action.disabled = workflowClient.isRunning();
     action.addEventListener("click", async () => {
-      if (!masterPath || workflowClient.isRunning()) return;
-      action.disabled = true;
+      if (!masterPath || workflowClient.isRunning() || caseReviewSaving) return;
+      caseReviewSaving = true;
+      list.querySelectorAll('button').forEach((button) => { button.disabled = true; });
       try {
         const updated = await invoke("bridge_call", {
           command: "save_case_master_reviews",
           args: { path: masterPath, updates: { [testCase.caseId]: nextStatus } },
         });
+        caseReviewSaving = false;
         rerender(updated, masterPath);
         $(ids.message).textContent = `${testCase.caseId} を「${REVIEW_LABELS[nextStatus]}」にしました。`;
       } catch {
-        action.disabled = false;
+        caseReviewSaving = false;
+        list.querySelectorAll('button').forEach((button) => { button.disabled = workflowClient.isRunning(); });
         $(ids.message).textContent = "レビュー状態を保存できませんでした。試験ケースマスターのファイル権限を確認してください。";
       }
     });
@@ -1418,6 +1472,7 @@ function finishDbScenarioRunUi(code) {
   const meaning = { 0: "OK：すべてのDB確認に成功", 1: "NG：失敗したDB確認があります", 2: "WARNING：警告があります", 3: "ERROR：実行エラー", 130: "キャンセルしました" }[code] || `終了コード ${code}`;
   const state = { 0: "ok", 1: "ng", 2: "warn", 130: "warn" }[code] || "ng";
   setDbScenarioStatus(meaning, state);
+  $("dbscenario-next-action").textContent = runOutcomeAdvice(code);
   $("dbscenario-run-button").disabled = false;
   $("dbscenario-cancel-button").disabled = true;
   if (dbScenarioFailedCaseIds.length) $("dbscenario-rerun-failed-button").disabled = false;
@@ -1719,6 +1774,7 @@ function updateProgressBar() {
 }
 
 function setStatus(text, state) {
+  $("run-next-action").textContent = "";
   const el = $("run-status");
   el.textContent = text;
   el.dataset.state = state || "";
@@ -1785,7 +1841,7 @@ function finishPrepareUi(code) {
 const RUN_STAGE_MEANING = {
   0: "OK：全ケース成功",
   1: "NG：1件以上失敗",
-  2: "WARNING：1件以上警告（応答時間超過）",
+  2: "WARNING：警告・未確認があります（応答時間超過など）",
   3: "ERROR：実行エラー",
   4: "ERROR：設定エラー",
   130: "キャンセルしました",
@@ -1796,9 +1852,19 @@ export function runStatusMeaning(code) {
   return { text: RUN_STAGE_MEANING[code] || `終了コード ${code}`, state: RUN_STATE_BY_CODE[code] || "ng" };
 }
 
+export function runOutcomeAdvice(code) {
+  if (code === 0) return "実行したケースが成功しました。未実行ケースと「仕様の対応状況」の要確認項目は別に確認してください。";
+  if (code === 1) return "結果サマリーのNGから、期待値・実際の値・不一致理由を確認してください。401/403の場合は認証設定と権限を確認してください。";
+  if (code === 2) return "警告・未確認は合格ではありません。結果サマリーの理由と未照合項目を確認してください。";
+  if (code === 4) return "API定義、Base URL、DB接続先、保存済みの対応設定を確認してください。詳しい不足箇所は実行ログに表示します。";
+  if (code === 130) return "送信済みのAPIがDBを変更している場合があります。実行ログとDBの状態を確認してから再実行してください。キャンセルはロールバックを保証しません。";
+  return "実行ログのエラーを確認してください。接続エラーならBase URL・DB接続先・VPN、認証エラーなら認証情報を確認してください。変更系APIの再実行前にはDBの状態も確認してください。";
+}
+
 function finishRunUi(code) {
   const { text, state } = runStatusMeaning(code);
   setStatus(text, state);
+  $("run-next-action").textContent = runOutcomeAdvice(code);
   $("run-button").disabled = false;
   $("run-schemathesis-button").disabled = false;
   $("cancel-button").disabled = true;

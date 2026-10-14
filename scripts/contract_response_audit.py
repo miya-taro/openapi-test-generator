@@ -243,6 +243,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.headers.get("Authorization") != "Bearer audit-valid":
             status, payload = 401, {"error": "auth"}
+        elif self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            status, payload = 400, {"error": "content type"}
         else:
             text = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             try:

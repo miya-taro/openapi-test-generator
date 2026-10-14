@@ -91,3 +91,13 @@ def test_partial_execution_never_becomes_all_passed():
         == "合格 1件 / 未確認 1件 / スキップ 1件 / 未実行 1件"
     )
     assert execution_summary({"caseIds": []}, {}) == "未試験（対応ケースなし）"
+
+
+def test_registered_rule_conditions_remain_separate_from_complete_coverage():
+    rows = coverage({}, [case({}, ruleTest={'kind': 'combinations', 'condition': 'siteのみ'})])
+    row = next(row for row in rows if row['location'] == '共通ルール')
+    assert row['caseIds'] == ['DB-1'] and row['status'] == '照合設定あり'
+    assert 'siteのみ' in row['detail'] and '網羅は保証しない' in row['detail']
+    assert execution_summary(row, {}) == '未実行 1件'
+    missing = next(row for row in coverage({}, []) if row['location'] == '共通ルール')
+    assert missing['status'] == '要手動確認'

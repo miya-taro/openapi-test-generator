@@ -60,6 +60,32 @@ def test_result_columns_written(output_file):
     assert "実行コマンド" in header_row
 
 
+def test_overview_keeps_unexecuted_cases_and_links_to_original_rows(tmp_path):
+    source = tmp_path/'source.xlsx'
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'test_spec'
+    ws.append([]); ws.append([]); ws.append([])
+    ws.append(['試験ID', '概要', '期待ステータス', '判定'])
+    ws.append(['a', '正常値', '200', '未実施'])
+    ws.append(['b', '型違い', '400', '未実施'])
+    ws.append(['c', '必須欠落', '400', '未実施'])
+    wb.save(source)
+    result = tmp_path/'result.xlsx'
+    write_results(source, [(make_result(make_case('a')), 'OK', ''),
+                          (make_result(make_case('b'), 500), 'NG', 'status不一致')], result)
+    wb = openpyxl.load_workbook(result)
+    summary = wb.active
+    assert summary.title == '結果サマリー'
+    assert [summary.cell(row, 3).value for row in range(5, 8)] == ['NG', '未実施', 'OK']
+    assert summary['B5'].value == '型違い'
+    assert summary['E5'].value == 500
+    assert summary['H5'].hyperlink.location == "'実行詳細'!A4"
+    assert summary['H6'].hyperlink.location == "'実行詳細'!A5"
+    assert wb['実行詳細'].sheet_state == 'visible'
+    assert summary.auto_filter.ref == 'A4:H7'
+    assert '未実施 1件' in summary['A2'].value
+    assert wb['test_spec']['A5'].value == 'a'
+
+
 def test_result_values_in_correct_row(output_file):
     case = make_case("TC-001-001")
     result = make_result(case, status=200, elapsed_ms=150.0)

@@ -13,7 +13,7 @@ def test_write_report_creates_file_with_headers(tmp_path):
     assert output.exists()
 
     wb = openpyxl.load_workbook(str(output))
-    ws = wb.active
+    ws = wb["DBシナリオ結果"]
     header_values = [c.value for c in ws[2]]
     assert header_values == HEADERS
 
@@ -28,7 +28,7 @@ def test_write_report_row_values_match_input(tmp_path):
         output,
     )
     wb = openpyxl.load_workbook(str(output))
-    ws = wb.active
+    ws = wb["DBシナリオ結果"]
     row1 = [c.value for c in ws[3]]
     row2 = [c.value for c in ws[4]]
     assert row1[:5] == [1, None, "createUser", "OK", "201"]
@@ -40,7 +40,7 @@ def test_write_report_ok_and_ng_rows_have_different_fill_colors(tmp_path):
     output = tmp_path / "report.xlsx"
     write_report([("ok_case", True, "200", ""), ("ng_case", False, "500", "err")], output)
     wb = openpyxl.load_workbook(str(output))
-    ws = wb.active
+    ws = wb["DBシナリオ結果"]
     ok_fill = ws[3][0].fill.fgColor.rgb
     ng_fill = ws[4][0].fill.fgColor.rgb
     assert ok_fill != ng_fill
@@ -50,7 +50,7 @@ def test_write_report_empty_rows_still_creates_valid_file(tmp_path):
     output = tmp_path / "report.xlsx"
     write_report([], output)
     wb = openpyxl.load_workbook(str(output))
-    ws = wb.active
+    ws = wb["DBシナリオ結果"]
     assert [c.value for c in ws[2]] == HEADERS
     assert ws.max_row == 2
 
@@ -66,7 +66,26 @@ def test_write_report_includes_shared_case_id_for_new_rows(tmp_path):
     write_report([("DB-case-1", "createUser", True, "201", "")], output)
 
     wb = openpyxl.load_workbook(output, data_only=True)
-    ws = wb.active
+    ws = wb["DBシナリオ結果"]
     assert "試験ID" in [cell.value for cell in ws[2]]
     row = [cell.value for cell in ws[3]]
     assert row[:5] == [1, "DB-case-1", "createUser", "OK", "201"]
+
+
+def test_db_comparison_overview_keeps_values_and_unverified_separate(tmp_path):
+    target = tmp_path/'comparison.xlsx'
+    evidence = [{'case_id':'b', 'name':'値の照合', 'expected_status':200,
+                 'db_response_comparison': {'expected_rows':[{'value':10}], 'actual_rows':[{'value':99}],
+                                            'expected_count':1, 'actual_count':1}}]
+    write_report([('a', '準備不足', '未確認', '未実行', '条件の省略を検出できない'),
+                  ('b', '=HYPERLINK("x")', 'NG', 200, '値の不一致')], target, evidence)
+    wb = openpyxl.load_workbook(target)
+    assert wb.active.title == '結果サマリー'
+    assert wb.active['C5'].value == 'NG'
+    assert wb.active['D5'].value == 200
+    assert wb.active['B5'].data_type == 's'
+    assert '未確認 1件' in wb.active['A2'].value
+    values = wb['DB比較詳細']
+    assert '10' in values['D4'].value and '99' in values['E4'].value
+    assert values.freeze_panes == 'C3'
+    assert wb['DBシナリオ結果']['C4'].data_type == 's'

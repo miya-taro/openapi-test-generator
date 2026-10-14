@@ -403,7 +403,8 @@ def test_report_output_writes_excel_with_one_row_per_scenario(monkeypatch, tmp_p
 
     import openpyxl
     wb = openpyxl.load_workbook(str(report_path))
-    ws = wb.active
+    assert wb.active.title == "結果サマリー"
+    ws = wb["DBシナリオ結果"]
     assert ws[3][1].value.startswith("DB-")
     assert ws[3][2].value == "ユーザー作成"
     assert ws[3][3].value == "OK"

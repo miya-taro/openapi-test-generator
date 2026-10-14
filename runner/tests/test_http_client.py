@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 import requests
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from http_client import execute_with_openapi, health_check, _resolve_auth_header
@@ -273,6 +274,33 @@ def test_no_auth_header_without_token(monkeypatch):
     with patch("requests.Session.send", mock_send(200, "ok", capture=capture)):
         execute_with_openapi(case, "http://localhost:8080", None)
     assert "Authorization" not in capture[0].headers
+
+
+@pytest.mark.parametrize('name,value', [('Content-Type', 'application/x-invalid'),
+                                      ('Content-Type', '（省略）'), ('X-Client', 'wrong')])
+def test_unrelated_header_probe_retains_login_and_masks_it(monkeypatch, name, value):
+    monkeypatch.setenv('TEST_AUTH_HEADER_NAME', 'auth-key')
+    monkeypatch.setenv('TEST_AUTH_HEADER_VALUE', 'fixture-private-token')
+    capture = []
+    with patch('requests.Session.send', mock_send(400, '', capture=capture)):
+        result = execute_with_openapi(make_case(param_in='header', param_name=name, input_value=value),
+                                      'http://localhost:8080', None)
+    assert capture[0].headers['auth-key'] == 'fixture-private-token'
+    assert capture[0].headers.get(name) == (None if value == '（省略）' else value)
+    assert 'fixture-private-token' not in result.curl_command
+
+
+@pytest.mark.parametrize('name', ['auth-key', 'AUTH-KEY'])
+@pytest.mark.parametrize('value', ['invalid-id', '（省略）', '（空文字）'])
+def test_auth_header_probe_is_not_replaced_by_valid_login(monkeypatch, name, value):
+    monkeypatch.setenv('TEST_AUTH_HEADER_NAME', 'auth-key')
+    monkeypatch.setenv('TEST_AUTH_HEADER_VALUE', 'valid-login-id')
+    capture = []
+    with patch('requests.Session.send', mock_send(401, '', capture=capture)):
+        execute_with_openapi(make_case(param_in='header', param_name=name, input_value=value),
+                             'http://localhost:8080', None)
+    expected = None if value == '（省略）' else '' if value == '（空文字）' else value
+    assert capture[0].headers.get('auth-key') == expected
 
 
 def test_auth_probe_bundle_sends_all_invalid_credentials_and_excludes_session_cookies(monkeypatch):

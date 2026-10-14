@@ -7,6 +7,7 @@ Layer1（openapi-test-run）の結果Excelと違い、Layer2はこれまで標�
 from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -16,6 +17,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.renderer.excel_output import COLOR
 from request_evidence import write_request_sheet
+from report_layout import safe_cell, style_table, write_overview
 
 HEADERS = ["No", "試験ID", "シナリオ名", "判定", "APIステータス", "詳細"]
 
@@ -48,6 +50,8 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
         cell.border = _THIN_BORDER
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
+    overview = []
+    evidence_by_id = {item.get('case_id'): item for item in evidence or [] if item.get('case_id')}
     for i, row_data in enumerate(rows, start=1):
         if len(row_data) == 5:
             case_id, name, result, api_status, detail = row_data
@@ -57,8 +61,11 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
         else:
             raise ValueError("DBシナリオ結果の行は4要素または5要素で指定してください")
         verdict = result if isinstance(result, str) else "OK" if result else "NG"
-        row = [i, case_id, name, verdict, api_status, detail]
+        row = [safe_cell(value) for value in [i, case_id, name, verdict, api_status, detail]]
         ws.append(row)
+        entry = evidence_by_id.get(case_id, {})
+        overview.append({'number': i, 'title': name, 'verdict': verdict, 'expected': entry.get('expected_status'),
+                         'actual': api_status, 'detail': detail, 'sheet': ws.title, 'row': i + 2})
         fill = _OK_FILL if verdict == "OK" else _WARNING_FILL if verdict == "未確認" else _NG_FILL
         for cell in ws[i + 2]:
             cell.fill = fill
@@ -69,10 +76,26 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
 
     ws.freeze_panes = "A3"  # 実行日時行・ヘッダ行を固定し、シナリオ数が多くてもスクロール時に見失わないようにする
+    style_table(ws, _COL_WIDTHS, 2, 4)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     if evidence is not None:
         write_request_sheet(wb, [{"case_id": row.get("case_id"), "verdict": row.get("verdict"),
                                  "status": row.get("api_status"), "request": row.get("sent_request", {})}
                                 for row in evidence])
+        comparison = wb.create_sheet('DB比較詳細')
+        comparison.append(['期待値と実際の値。長い内容はセルを選択して数式バーで確認できます。記録のない比較は表示しません。'])
+        comparison.append(['試験ID', '試験項目', '比較対象', '期待値', '実際の値'])
+        for entry in evidence:
+            for key, label in [('db_response_comparison', 'DB行とレスポンス'), ('db_insert_comparison', '追加されたDB行'), ('db_sql_response_comparison', 'SQL結果とレスポンス')]:
+                data = entry.get(key, {})
+                value_keys = ('expected', 'actual') if key == 'db_sql_response_comparison' else ('expected_rows', 'added_rows' if key == 'db_insert_comparison' else 'actual_rows')
+                for expected, actual, name in [('expected_count', 'actual_count', '件数'), (*value_keys, '値')]:
+                    if expected not in data and actual not in data:
+                        continue
+                    comparison.append([safe_cell(value) for value in [entry.get('case_id'), entry.get('name'), f'{label}：{name}',
+                        json.dumps(data.get(expected, '記録なし'), ensure_ascii=False, indent=2, default=str),
+                        json.dumps(data.get(actual, '記録なし'), ensure_ascii=False, indent=2, default=str)]])
+        style_table(comparison, [22, 35, 25, 65, 65], 2)
+    write_overview(wb, overview)
     wb.save(str(output_path))

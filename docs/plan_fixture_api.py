@@ -1,6 +1,8 @@
 """Independent, disposable PostgreSQL API for POST array mapping qualification."""
 import copy
 import json
+import math
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta
@@ -9,6 +11,52 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import psycopg2
 from psycopg2.extras import Json
+
+QUANTITIES = ('buy', 'sell', 'charge', 'discharge', 'soc', 'gen', 'suppression')
+
+
+def valid_plan_request(body):
+    """Independent checks, deliberately not using the tool's schema/validator."""
+    def number(value):
+        return type(value) in (int, float) and math.isfinite(value)
+
+    def clock(value):
+        return isinstance(value, str) and re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d', value) is not None
+
+    def timestamp(value):
+        try:
+            return isinstance(value, str) and 'T' in value and datetime.fromisoformat(value).tzinfo is not None
+        except ValueError:
+            return False
+
+    if not isinstance(body, dict) or not any(key in body for key in ('site_id', 'location_id')):
+        return False
+    if 'site_id' in body and type(body['site_id']) is not int:
+        return False
+    if 'location_id' in body and not isinstance(body['location_id'], str):
+        return False
+    if body.get('type') not in ('1-1', '2-1') or not all(type(body.get(key)) is bool for key in ('correct', 'force')):
+        return False
+    plans = body.get('plans')
+    if not isinstance(plans, list) or not plans:
+        return False
+    for plan in plans:
+        if not isinstance(plan, dict) or not timestamp(plan.get('date')) or type(plan.get('profit')) is not int:
+            return False
+        controls = plan.get('controls')
+        if not isinstance(controls, list) or not controls:
+            return False
+        for control in controls:
+            if not isinstance(control, dict) or not clock(control.get('time')) or not all(number(control.get(key)) for key in QUANTITIES):
+                return False
+            if 'correct_point' in control:
+                point = control['correct_point']
+                if not isinstance(point, dict) or ('start_time' in point and not clock(point['start_time'])):
+                    return False
+                if 'start' in point and (not isinstance(point['start'], dict) or any(
+                        key in point['start'] and not number(point['start'][key]) for key in QUANTITIES)):
+                    return False
+    return True
 
 
 class PlanFixture:
@@ -32,13 +80,31 @@ class PlanFixture:
             def log_message(self, *_):
                 pass
             def do_POST(self):
-                request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                try:
+                    request = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))
+                except ValueError:
+                    request = None
                 fixture.calls.append(copy.deepcopy(request))
                 try:
+                    if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json' or not valid_plan_request(request):
+                        if fixture.fault == 'partial-write':
+                            partial = copy.deepcopy(request)
+                            partial['plans'] = [partial['plans'][0]]
+                            partial['plans'][0]['controls'] = partial['plans'][0]['controls'][:1]
+                            fixture.insert(partial)
+                        elif fixture.fault == 'error-write':
+                            with psycopg2.connect(**fixture.config) as conn, conn.cursor() as cur:
+                                cur.execute(f'UPDATE "{fixture.table}" SET buy=buy+1')
+                        if fixture.fault != 'accept-invalid':
+                            raise ValueError('invalid input')
+                        self.send_response(200)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
                     fixture.insert(request)
                     self.send_response(200)
                     data = b'{}' if fixture.fault == 'body' else b''
-                except (ValueError, KeyError, psycopg2.Error):
+                except (ValueError, KeyError, TypeError, psycopg2.Error):
                     self.send_response(400)
                     data = b''
                 self.send_header('Content-Length', str(len(data)))

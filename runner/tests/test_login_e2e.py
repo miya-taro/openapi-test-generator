@@ -66,11 +66,9 @@ def test_generated_login_contract_and_auth_chain(setup, tmp_path):
         result,verdict,detail=execute(run_case(raw),setup)
         results.append({'id':raw['id'],'operation':raw['operationId'],'condition':raw['perspective'],'status':result.actual_status,'verdict':verdict})
         assert verdict=='OK',(raw,detail)
-    for index,body in enumerate([
-        {'username':USERNAME,'password':'wrong'}, {'username':'unknown','password':PASSWORD},
-        {'username':'','password':PASSWORD}, {'username':USERNAME,'password':''},
-    ]):
-        result,verdict,detail=execute(explicit(f'LOGIN-invalid-{index}',body,401),setup)
+    failures=json.loads((ROOT/'examples/login/failure-scenarios.json').read_text(encoding='utf-8'))['scenarios']
+    for index,case in enumerate(failures):
+        result,verdict,detail=execute(explicit(f'LOGIN-invalid-{index}',case['request']['body'],case['response_check']['expect']['status']),setup)
         assert verdict=='OK',detail
         results.append({'id':result.case.id,'status':result.actual_status,'verdict':verdict})
     assert any(c.get('authenticated') is True for c in fixture.calls)

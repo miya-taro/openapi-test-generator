@@ -31,7 +31,8 @@ class AuthenticatedFixture:
                                          headers={'Content-Type':'application/json'}, timeout=10)
                     return self.respond(401, b'')
                 response = requests.request(self.command, (login_url if login else upstream_url)+self.path,
-                                            data=payload, headers={'Content-Type':'application/json'}, timeout=10)
+                                            data=payload, headers=({'Content-Type': self.headers['Content-Type']}
+                                                                   if 'Content-Type' in self.headers else {}), timeout=10)
                 self.respond(response.status_code, response.content, response.headers.get('Content-Type'))
 
             def respond(self, status, payload, content_type=None):

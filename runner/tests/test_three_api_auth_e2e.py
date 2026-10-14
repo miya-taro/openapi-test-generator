@@ -22,29 +22,16 @@ from docs.plan_fixture_api import PlanFixture
 from docs.plan_get_fixture_api import PlanGetFixture
 from docs.pwrco_fixture_api import PwrcoFixture
 from docs.pwrco_suite import build_suite
+from docs.plan_test_suites import post_suite, get_suite
 from src.parser import parse_openapi
 
 
 def plan_cases(fixture):
-    body=json.loads((ROOT/'examples/plan-post-request.json').read_text(encoding='utf-8'))
-    script="""import fs from 'node:fs';import {buildInsertScenario,planInsertMappings} from './gui-tauri/src/insert-editor.js';
-const input=JSON.parse(fs.readFileSync(0,'utf8'));const spec=JSON.parse(fs.readFileSync('examples/plan-post-openapi.json','utf8'));
-const op=spec.paths['/v1/plan/set'].post;const mappings=planInsertMappings();mappings[0].rule.lookup.table=input.site;
-console.log(JSON.stringify(buildInsertScenario({operation:{...op,method:'POST',requestSchema:op.requestBody.content['application/json'].schema},engine:'postgres',table:input.table,name:'authenticated plan',rowsPath:'plans[].controls[]',primaryKeys:'datetime,created,site_id,use_id',insertStatus:200,emptyBody:true,requestBody:input.body,insertMappings:mappings})));"""
-    result=subprocess.run(['node','--input-type=module','-e',script],input=json.dumps({'table':fixture.table,'site':fixture.site_table,'body':body}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=20)
-    assert result.returncode==0,result.stderr
-    raw=json.loads(result.stdout)
-    bodies=[body,{k:v for k,v in body.items() if k!='location_id'},
-            {k:v for k,v in body.items() if k!='site_id'},{**body,'force':True,'type':'2-1'}]
-    return [{**copy.deepcopy(raw),'request':{**raw['request'],'body':b}} for b in bodies]
+    return post_suite(fixture.table, fixture.site_table)['scenarios']
 
 
 def get_cases(fixture):
-    raw=fixture.definition();body=raw['request']['body']
-    bodies=[body,{k:v for k,v in body.items() if k!='location_id'},
-            {**{k:v for k,v in body.items() if k!='site_id'},'location_id':'HOME'},
-            {**body,'correct':False},{**body,'correct':True},{**body,'type':'1-1'}]
-    return [{**copy.deepcopy(raw),'request':{**raw['request'],'body':b}} for b in bodies]
+    return get_suite(fixture.definition())['scenarios']
 
 
 def snapshot(config,tables):

@@ -75,6 +75,7 @@ def test_browser_influx_post_workflow(tmp_path, monkeypatch, managed):
                 for key in ['username', 'password']:
                     if config.get(key): page.locator(f'#influx-{key}').fill(config[key])
                 page.locator('[data-page="db-scenario"]').click()
+                page.locator('#dbsetup-display').click()  # Advanced full-form editing remains available.
                 page.locator('#dbscenario-editor-operation').select_option('writeMeasure')
                 page.locator('#dbscenario-editor-engine').select_option('influxdb')
                 page.locator('#dbscenario-editor-table').fill('measure')

@@ -256,6 +256,16 @@ def build_db_coverage(api, cases):
                 )
                 and case["definition"]["responseCheck"]["expectedStatus"] >= 400
             ]
+            kinds = {'combinations': '項目の組み合わせ'}
+            if method == 'get':
+                kinds.update(boundary='期間の境界', priority='データの優先順位', empty='対象データ0件')
+            for kind, label in kinds.items():
+                matched = [case for case in related if (case['definition'].get('ruleTest') or {}).get('kind') == kind]
+                conditions = list(dict.fromkeys(case['definition']['ruleTest']['condition'] for case in matched))
+                add(op, '共通ルール', label, '明示した試験条件', matched,
+                    ('登録条件: ' + ' / '.join(conditions) + '。設定外の条件・値・業務分岐の網羅は保証しない')
+                    if matched else 'この条件を仕様が持つ場合は共通ルールのケースを設定してください。該当するかは人が確認',
+                    missing='要手動確認')
             if method in {"post", "put", "patch", "delete"}:
                 for case in errors:
                     add(

@@ -1,5 +1,9 @@
 from workflow.html_report import write_html_report, write_failed_case_ids
 from workflow.case_master import write_case_master
+import os
+import shutil
+from pathlib import Path
+import pytest
 
 
 def test_html_report_links_results_by_case_id_and_marks_unapproved_cases(tmp_path):
@@ -90,3 +94,39 @@ def test_failed_case_list_contains_only_failure_and_error_case_ids(tmp_path):
     assert output.read_text(encoding="utf-8")
     import json
     assert json.loads(output.read_text(encoding="utf-8")) == ["TC-fail", "TC-error"]
+
+
+@pytest.mark.skipif(os.environ.get('OTG_BROWSER_TEST') != '1', reason='requires Chromium')
+def test_result_report_filters_in_actual_browser(tmp_path):
+    from playwright.sync_api import sync_playwright, expect
+    master = tmp_path/'master.json'
+    write_case_master({'format':'api-tester.case-master', 'schemaVersion':1, 'project':{'name':'結果の確認'},
+                      'cases':[{'caseId':key, 'kind':'contract', 'title':title, 'source':{'operationId':api},
+                                'definition':{}, 'expected':{'status':'200'}, 'reviewStatus':'approved'}
+                               for key, title, api in [('ok','正常値でログイン','login'), ('ng','期間内の値を照合','measure'),
+                                                      ('skip','試験データ不足','measure'), ('pending','未実施の条件','login')]]}, master)
+    junit = tmp_path/'result.xml'
+    junit.write_text('<testsuites><testsuite><testcase name="ok"/><testcase name="ng"><failure message="private-details"/></testcase><testcase name="skip"><skipped/></testcase></testsuite></testsuites>')
+    report = tmp_path/'report.html'; write_html_report(master, [junit], report)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(executable_path=shutil.which('chromium'), args=['--no-sandbox'])
+        page = browser.new_page(viewport={'width':1440, 'height':1000})
+        page.set_content(report.read_text(encoding='utf-8'))
+        visible = page.locator('#results tbody tr:visible')
+        expect(visible).to_have_count(3)
+        expect(visible.first).to_contain_text('期間内の値')
+        page.locator('#result-search').fill('measure'); expect(visible).to_have_count(2)
+        page.locator('#result-search').fill('login'); expect(visible).to_have_count(1)
+        page.locator('#attention-only').uncheck(); expect(visible).to_have_count(2)
+        page.locator('#result-search').fill('not-found'); expect(visible).to_have_count(0)
+        expect(page.locator('#visible-count')).to_contain_text('該当なし')
+        page.locator('#result-search').fill('')
+        expect(visible).to_have_count(4)
+        assert 'private-details' not in page.content()
+        output = Path(os.environ.get('OTG_BROWSER_EVIDENCE_DIR', str(tmp_path)))
+        output.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(output/'result-report.png'), full_page=True)
+        page.set_viewport_size({'width':390, 'height':844})
+        expect(page.locator('#result-search')).to_be_visible()
+        page.screenshot(path=str(output/'result-report-mobile.png'), full_page=True)
+        browser.close()

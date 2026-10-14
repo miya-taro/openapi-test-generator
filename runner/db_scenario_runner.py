@@ -19,6 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
 from uuid import UUID
+from urllib.parse import quote
 
 import requests
 
@@ -430,9 +431,21 @@ def _run_scenario(
     cleanup_primary_keys_before: list[object] | None = None
     api_call_started = False
     influx_fixture: dict = {}
+    rule_fixture: dict = {}
 
     def _execute() -> tuple[bool, str, str, dict]:
         nonlocal cleanup_where, cleanup_primary_keys_before, api_call_started, scenario
+        if scenario.test_fixture is not None:
+            import rule_fixture as rule_fixture_module
+            if evidence is not None:
+                evidence['test_fixture'] = rule_fixture
+                evidence['rule_test'] = scenario.rule_test
+            try:
+                rule_fixture_module.prepare(scenario.test_fixture, db_config, rule_fixture)
+            except Exception as exc:
+                rule_fixture['setup_status'] = '未確認'
+                message = str(exc) if isinstance(exc, rule_fixture_module.FixtureUnavailable) else '検証データの準備に失敗しました。接続・列・型・主キーを確認してください'
+                return False, '[UNVERIFIED] '+message+'（HTTP未送信）', 'ERR', previous_response
         for item in scenario.given:
             try:
                 pg_config = get_postgres_config(db_config)
@@ -619,6 +632,8 @@ def _run_scenario(
         call_kwargs = {"auth_header": auth_header} if auth_header is not None else {}
         if resolved_query_params:
             call_kwargs["query_params"] = resolved_query_params
+        if scenario.rule_test and scenario.rule_test.get('body_present') and resolved_body == {}:
+            call_kwargs['send_empty_body'] = True
         api_call_started = True
         insert_started = datetime.now(timezone.utc)
         api_response = _call_api(*call_args, **call_kwargs)
@@ -710,7 +725,7 @@ def _run_scenario(
                 request={"body": resolved_body, "query": resolved_query_params, "path": resolved_path_params},
                 evidence=value_evidence,
             )
-            if evidence is not None and scenario.response_check.expect_values:
+            if evidence is not None and (scenario.response_check.expect_values or scenario.response_check.collections):
                 try:
                     masked_response = json.loads(report_body)
                 except (TypeError, ValueError):
@@ -719,7 +734,7 @@ def _run_scenario(
                     if response_check_module._get_nested(masked_response, item["path"]) == "[REDACTED]":
                         item["expected"] = item["actual"] = "[REDACTED]"
                     else:
-                        item["expected"] = _safe_evidence(item["expected"], item["parameter"] or item["path"])
+                        item["expected"] = _safe_evidence(item["expected"], item.get("parameter") or item["path"])
                         item["actual"] = _safe_evidence(item["actual"], item["path"])
                 evidence["response_value_checks"] = value_evidence
             if not ok:
@@ -782,6 +797,13 @@ def _run_scenario(
         result = _execute()
     finally:
         cleanup_errors: list[str] = []
+        if scenario.test_fixture is not None:
+            import rule_fixture as rule_fixture_module
+            try:
+                rule_fixture_module.cleanup(scenario.test_fixture, db_config, rule_fixture)
+            except Exception:
+                rule_fixture['cleanup_status'] = 'NG'
+                cleanup_errors.append('共通ルールの検証データの後片付けに失敗しました。証跡の専用範囲を確認してください')
         if influx_fixture.get('armed'):
             try:
                 influx_mutation.cleanup_fixture(scenario.influx_mutation, get_influxdb_config(db_config), influx_fixture)
@@ -826,6 +848,9 @@ def _run_scenario(
     if influx_fixture.get('cleanup_status') == 'NG':
         ok, detail, status, response = result
         result = (False, 'InfluxDB検証用ポイントの後片付け失敗' + ('; ' + detail if detail else ''), status, response)
+    if rule_fixture.get('cleanup_status') == 'NG':
+        ok, detail, status, response = result
+        result = (False, '検証データの後片付け失敗' + ('; '+detail if detail else ''), status, response)
     return (*result, cleanup_errors)
 
 
@@ -843,11 +868,13 @@ def _call_api(
     base_url: str, path: str, method: str, path_params: dict, body: dict,
     session: requests.Session | None = None, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None, query_params: dict | None = None,
+    send_empty_body: bool = False,
 ) -> APIResponse:
     """requests でAPIを呼び出す。戻り値: (status, response_json, error)"""
     url_path = path
     for name, value in path_params.items():
-        url_path = url_path.replace("{" + name + "}", str(value))
+        rendered = str(value).lower() if isinstance(value, bool) else str(value)
+        url_path = url_path.replace("{" + name + "}", quote(rendered, safe=''))
     url = base_url.rstrip("/") + url_path
 
     headers: dict[str, str] = {}
@@ -861,8 +888,14 @@ def _call_api(
 
     kwargs: dict = {"headers": headers, "timeout": REQUEST_TIMEOUT}
     if query_params:
-        kwargs["params"] = query_params
-    if body:
+        def scalar(value):
+            if isinstance(value, bool):
+                return str(value).lower()
+            if isinstance(value, (list, tuple)):
+                return [scalar(item) for item in value]
+            return value
+        kwargs["params"] = {key: scalar(value) for key, value in query_params.items()}
+    if body or send_empty_body:
         kwargs["json"] = body
 
     sender = session if session is not None else requests

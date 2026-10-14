@@ -51,7 +51,7 @@ def test_result_workbook_replaces_preview_and_shows_actual_curl(tmp_path):
     dest = tmp_path / 'result.xlsx'
     write_results(source, [(result, 'OK', '')], dest)
     output = openpyxl.load_workbook(dest)
-    assert output.active.title == '送信リクエスト'
+    assert output.active.title == '結果サマリー'
     sheet = output['test_spec']
     assert sheet.cell(4, 2).value == '送信curl（Bash形式）'
     assert sheet.cell(5, 2).value == readable_curl(record)
@@ -59,8 +59,8 @@ def test_result_workbook_replaces_preview_and_shows_actual_curl(tmp_path):
     all_values = '\n'.join(str(v) for ws in output for row in ws.values for v in row)
     assert '{BASE_URL}' not in all_values
     assert '\\"' not in sheet.cell(5, 2).value
-    assert output.active.cell(3, 5).value == prepared.url
-    assert json.loads(output.active.cell(3, 8).value) == {'items': [{'id': 1}]}
+    assert output['送信リクエスト'].cell(3, 5).value == prepared.url
+    assert json.loads(output['送信リクエスト'].cell(3, 8).value) == {'items': [{'id': 1}]}
 
 
 def test_recorded_curl_replays_the_actual_http_payload(tmp_path, monkeypatch):
@@ -116,7 +116,7 @@ def test_recorded_curl_replays_the_actual_http_payload(tmp_path, monkeypatch):
         write_results(spec, [(result, 'OK', '')], result_path)
         report_wb = openpyxl.load_workbook(result_path)
         assert report_wb['試験仕様_001'].cell(5, 7).value == 'OK'
-        assert report_wb.active.title == '試験仕様_001'
+        assert report_wb.active.title == '結果サマリー'
         assert report_wb['test_spec'].sheet_state == 'hidden'
         tokens = shlex.split(readable_curl(result.request_evidence))
         tokens[0] = executable

@@ -36,6 +36,7 @@ def test_influx_configuration_in_browser(tmp_path, monkeypatch):
             chooser.value.set_files(root/'examples/measure-get-openapi.json')
             expect(page.locator('#operations-list input[data-op-id]')).to_have_count(1)
             page.locator('[data-page="db-scenario"]').click()
+            page.locator('#dbsetup-display').click()  # Advanced full-form editing remains available.
             expect(page.locator('#dbscenario-editor-operation option')).to_have_count(2)
             operation=page.locator('#dbscenario-editor-operation option').nth(1).get_attribute('value')
             page.locator('#dbscenario-editor-operation').select_option(operation)

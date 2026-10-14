@@ -1,0 +1,334 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "計画保存（検証用の例）",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/plan/set": {
+      "post": {
+        "operationId": "setPlan",
+        "description": "検証例: site_id優先。enum・配列最小件数は実APIの仕様に合わせて編集する。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "correct",
+                  "force",
+                  "plans"
+                ],
+                "x-otg-presence-rules": [
+                  {
+                    "kind": "atLeastOne",
+                    "fields": [
+                      "site_id",
+                      "location_id"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "site_id": {
+                    "type": "integer"
+                  },
+                  "location_id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "1-1",
+                      "2-1"
+                    ]
+                  },
+                  "correct": {
+                    "type": "boolean"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "plans": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "date",
+                        "profit",
+                        "controls"
+                      ],
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "profit": {
+                          "type": "integer"
+                        },
+                        "controls": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "time",
+                              "buy",
+                              "sell",
+                              "charge",
+                              "discharge",
+                              "soc",
+                              "gen",
+                              "suppression"
+                            ],
+                            "properties": {
+                              "time": {
+                                "type": "string",
+                                "format": "time"
+                              },
+                              "buy": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "sell": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "charge": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "discharge": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "soc": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "gen": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "suppression": {
+                                "type": "number",
+                                "format": "double"
+                              },
+                              "correct_point": {
+                                "type": "object",
+                                "properties": {
+                                  "start_time": {
+                                    "type": "string",
+                                    "format": "time"
+                                  },
+                                  "start": {
+                                    "type": "object",
+                                    "properties": {
+                                      "buy": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "sell": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "charge": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "discharge": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "soc": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "gen": {
+                                        "type": "number",
+                                        "format": "double"
+                                      },
+                                      "suppression": {
+                                        "type": "number",
+                                        "format": "double"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "site_id": 101,
+                  "location_id": "LOC002",
+                  "type": "1-1",
+                  "correct": true,
+                  "force": false,
+                  "plans": [
+                    {
+                      "date": "2026-10-12T00:00:00+09:00",
+                      "profit": 1000,
+                      "controls": [
+                        {
+                          "time": "10:00:00",
+                          "buy": 0.125,
+                          "sell": 1.125,
+                          "charge": 2.125,
+                          "discharge": 3.125,
+                          "soc": 4.125,
+                          "gen": 5.125,
+                          "suppression": 6.125,
+                          "correct_point": {
+                            "start_time": "10:00:00",
+                            "start": {
+                              "buy": 0.375,
+                              "sell": 1.375,
+                              "charge": 2.375,
+                              "discharge": 3.375,
+                              "soc": 4.375,
+                              "gen": 5.375,
+                              "suppression": 6.375
+                            }
+                          }
+                        },
+                        {
+                          "time": "11:00:00",
+                          "buy": 10.125,
+                          "sell": 11.125,
+                          "charge": 12.125,
+                          "discharge": 13.125,
+                          "soc": 14.125,
+                          "gen": 15.125,
+                          "suppression": 16.125,
+                          "correct_point": {
+                            "start_time": "11:00:00",
+                            "start": {
+                              "buy": 10.375,
+                              "sell": 11.375,
+                              "charge": 12.375,
+                              "discharge": 13.375,
+                              "soc": 14.375,
+                              "gen": 15.375,
+                              "suppression": 16.375
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "date": "2026-10-13T00:00:00+09:00",
+                      "profit": 1001,
+                      "controls": [
+                        {
+                          "time": "10:00:00",
+                          "buy": 100.125,
+                          "sell": 101.125,
+                          "charge": 102.125,
+                          "discharge": 103.125,
+                          "soc": 104.125,
+                          "gen": 105.125,
+                          "suppression": 106.125,
+                          "correct_point": {
+                            "start_time": "10:00:00",
+                            "start": {
+                              "buy": 100.375,
+                              "sell": 101.375,
+                              "charge": 102.375,
+                              "discharge": 103.375,
+                              "soc": 104.375,
+                              "gen": 105.375,
+                              "suppression": 106.375
+                            }
+                          }
+                        },
+                        {
+                          "time": "11:00:00",
+                          "buy": 110.125,
+                          "sell": 111.125,
+                          "charge": 112.125,
+                          "discharge": 113.125,
+                          "soc": 114.125,
+                          "gen": 115.125,
+                          "suppression": 116.125,
+                          "correct_point": {
+                            "start_time": "11:00:00",
+                            "start": {
+                              "buy": 110.375,
+                              "sell": 111.375,
+                              "charge": 112.375,
+                              "discharge": 113.375,
+                              "soc": 114.375,
+                              "gen": 115.375,
+                              "suppression": 116.375
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存成功・本文なし"
+          },
+          "400": {
+            "description": "入力不正・本文なし"
+          },
+          "401": {
+            "description": "認証不正・本文なし"
+          },
+          "404": {
+            "description": "対象なし・本文なし"
+          },
+          "500": {
+            "description": "サーバーエラー・本文なし"
+          }
+        },
+        "x-otg-error-db-unchanged": [
+          {
+            "table": "h_plan",
+            "columns": [
+              "datetime",
+              "created",
+              "site_id",
+              "use_id",
+              "manual",
+              "fixed",
+              "force",
+              "cpbs_type",
+              "profit",
+              "buy",
+              "sell",
+              "charge",
+              "discharge",
+              "soc",
+              "gen",
+              "suppression",
+              "correct_point"
+            ],
+            "where": {}
+          },
+          {
+            "table": "t_site",
+            "columns": [
+              "site_id",
+              "location_id"
+            ],
+            "where": {}
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1115,7 +1115,8 @@ label.checkbox input[type="checkbox"] {
 }
 
 .artifact-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -1123,6 +1124,11 @@ label.checkbox input[type="checkbox"] {
   border: 1px solid var(--border-light);
   border-radius: 6px;
 }
+.artifact-item > details, .artifact-message { grid-column: 1 / -1; font-size: 12px; }
+.artifact-message:empty { display: none; }
+.artifact-item > details > summary { cursor: pointer; color: var(--text-muted); }
+.artifact-item > details .artifact-item-path { display: block; white-space: normal; overflow-wrap: anywhere; }
+.artifact-primary { border-left: 4px solid var(--accent, #3564ee); background: #f3f6ff; padding: 12px; }
 
 .artifact-item-name {
   min-width: 115px;
@@ -1265,3 +1271,40 @@ label.checkbox input[type="checkbox"] {
 .scenario-template > label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
 .scenario-template textarea { width: 100%; }
 .scenario-template button { margin: 6px; }
+
+/* Rule forms remain collapsed until requested; the preview requires confirmation. */
+.rule-controls { margin: 12px 0; border: 1px solid var(--border, #d8deea); border-radius: 8px; padding: 12px; }
+.rule-controls > summary { cursor: pointer; font-weight: 600; }
+.rule-form { display: grid; gap: 14px; margin-top: 12px; }
+.rule-form fieldset { min-width: 0; border: 1px solid #d8deea; border-radius: 6px; padding: 12px; }
+.rule-form legend { font-weight: 600; }
+.rule-form label { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.rule-form input, .rule-form select { width: 100%; min-width: 0; box-sizing: border-box; }
+.rule-value-row { display: grid; grid-template-columns: 2fr 1fr 2fr auto; gap: 8px; align-items: end; }
+.rule-value-row > button { margin-bottom: 8px; }
+.rule-candidate { margin: 10px 0; padding-left: 8px; border-left: 3px solid #4b6fff; }
+.rule-preview { max-height: 420px; overflow: auto; margin: 12px 0; }
+.rule-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.rule-controls > button { margin-right: 8px; }
+@media (max-width: 800px) { .rule-value-row { grid-template-columns: 1fr; } }
+
+/* Step visibility is independent of each API/mode's existing hidden state. */
+.db-setup { scroll-margin-top: 130px; }
+.db-setup[data-stage="1"] [data-db-step]:not([data-db-step~="1"]),
+.db-setup[data-stage="2"] [data-db-step]:not([data-db-step~="2"]),
+.db-setup[data-stage="3"] [data-db-step]:not([data-db-step~="3"]),
+.db-setup[data-stage="4"] [data-db-step]:not([data-db-step~="4"]) { display: none !important; }
+.db-setup[data-stage="2"] #dbscenario-editor-write-panel .db-scenario-map-table :is(th,td):nth-child(n+3),
+.db-setup[data-stage="2"] #dbscenario-editor-read-filters tr > td:nth-child(n+3),
+.db-setup[data-stage="2"] #dbscenario-editor-get-panel .db-scenario-map-table th:nth-child(n+3) { display: none; }
+.db-setup[data-stage="3"] #dbscenario-editor-write-panel .db-scenario-map-table :is(th,td):nth-child(2),
+.db-setup[data-stage="3"] #dbscenario-editor-read-filters tr > td:nth-child(2),
+.db-setup[data-stage="3"] #dbscenario-editor-get-panel .db-scenario-map-table:has(#dbscenario-editor-read-filters) th:nth-child(2) { display: none; }
+.db-setup-top { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+#dbsetup-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+#dbsetup-nav [aria-current="step"] { color: var(--accent, #3564ee); border-color: currentColor; background: #eef3ff; font-weight: 700; }
+#dbsetup-heading { margin: 8px 0; font-size: 16px; }
+.db-setup-selected { padding: 10px; border-left: 3px solid var(--accent, #3564ee); background: #f4f6fb; overflow-wrap: anywhere; }
+.db-setup-actions { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-light, #e3e7ef); }
+.db-setup-preview-card { padding: 14px; margin: 12px 0; border: 1px solid var(--border-light, #e3e7ef); border-radius: 8px; }
+.db-setup-preview-card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }

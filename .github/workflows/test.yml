@@ -170,6 +170,13 @@ jobs:
           OTG_INFLUX_EVIDENCE_DIR: docs/_ci_measure_evidence/influxdb
         run: python -m pytest runner/tests/test_influx_response_e2e.py runner/tests/test_influx_mutation_e2e.py -q
 
+      - name: Verify common rule cases, fixture cleanup and faulty APIs
+        env:
+          OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
+          OTG_INFLUX_INTEGRATION_CONFIG: '{"host":"127.0.0.1","port":8086}'
+          OTG_RULE_EVIDENCE_DIR: docs/_ci_measure_evidence/rules
+        run: python -m pytest runner/tests/test_rule_cases.py -q
+
       - name: Verify cross-database lookup mappings and faulty APIs
         env:
           OTG_INTEGRATION_DB_CONFIG: '{"host":"127.0.0.1","port":5432,"dbname":"apitester_test","user":"postgres","password":"testpass123"}'
@@ -184,7 +191,8 @@ jobs:
           OTG_PWRCO_EVIDENCE_DIR: docs/_ci_measure_evidence/pwrco
           OTG_THREE_AUTH_EVIDENCE_DIR: docs/_ci_measure_evidence/three-api-auth
           OTG_SQL_EVIDENCE_DIR: docs/_ci_measure_evidence/sql-response
-        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py runner/tests/test_three_api_auth_e2e.py -q
+          OTG_PLAN_COVERAGE_EVIDENCE_DIR: docs/_ci_measure_evidence/plan-coverage
+        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py runner/tests/test_three_api_auth_e2e.py runner/tests/test_plan_coverage_e2e.py -q
 
       - name: Upload GET JSON body comparison evidence
         if: always()
@@ -209,7 +217,7 @@ jobs:
           OTG_BROWSER_EVIDENCE_DIR: docs/_ci_release_evidence/browser
           OTG_RELEASE_EVIDENCE_DIR: docs/_ci_release_evidence/api
           OTG_LOGIN_EVIDENCE_DIR: docs/_ci_release_evidence/login
-        run: python -m pytest runner/tests/test_release_candidate_matrix.py runner/tests/test_login_e2e.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py gui/tests/test_browser_pwrco.py gui/tests/test_browser_login.py gui/tests/test_browser_create_api.py -q
+        run: python -m pytest runner/tests/test_release_candidate_matrix.py runner/tests/test_login_e2e.py gui/tests/test_browser_workflow_e2e.py gui/tests/test_browser_influx_config.py gui/tests/test_browser_influx_mutation.py gui/tests/test_browser_post_array.py gui/tests/test_browser_sql_response.py gui/tests/test_browser_pwrco.py gui/tests/test_browser_login.py gui/tests/test_browser_create_api.py gui/tests/test_browser_rule_cases.py gui/tests/test_browser_db_wizard.py workflow/tests/test_html_report.py -q
 
       - name: Upload first release qualification evidence
         if: always()

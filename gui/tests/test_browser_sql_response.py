@@ -43,6 +43,7 @@ def test_browser_sql_response_workflow(tmp_path, monkeypatch):
                 for key in ['host','port','dbname','user','password']:
                     page.locator(f'#pg-{key}').fill(str(config[key]))
                 page.locator('[data-page="db-scenario"]').click()
+                page.locator('#dbsetup-display').click()  # Advanced full-form editing remains available.
                 page.locator('#dbscenario-editor-operation').select_option('getPlanControl')
                 page.locator('#dbscenario-editor-mode').select_option('sql_response')
                 page.get_by_role('button',name='計画取得の対応例を設定',exact=True).click()

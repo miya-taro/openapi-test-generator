@@ -123,6 +123,7 @@ class ResponseCheck:
     expect_contains: list[dict] = field(default_factory=list)
     expect_values: list[dict] = field(default_factory=list)
     empty_body: bool = False
+    collections: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -141,6 +142,8 @@ class DBScenario:
     influx_mutation: dict | None = None
     db_insert_check: dict | None = None
     db_sql_response_check: dict | None = None
+    test_fixture: dict | None = None
+    rule_test: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -180,6 +183,7 @@ class DBScenario:
                     "expectedStatus": self.response_check.expect_status,
                     **({"emptyBody": True} if self.response_check.empty_body else {}),
                     "expectedBody": self.response_check.expect_body,
+                    **({"collections": self.response_check.collections} if self.response_check.collections else {}),
                     **({"expectedValues": self.response_check.expect_values}
                        if self.response_check.expect_values else {}),
                     **(
@@ -208,6 +212,10 @@ class DBScenario:
         }
         if self.db_sql_response_check is not None:
             definition["dbSqlResponseCheck"] = self.db_sql_response_check
+        if self.test_fixture is not None:
+            definition["testFixture"] = self.test_fixture
+        if self.rule_test is not None:
+            definition["ruleTest"] = self.rule_test
         if self.db_insert_check is not None:
             definition["dbInsertCheck"] = self.db_insert_check
         if self.influx_mutation is not None:
@@ -401,7 +409,13 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             expect_contains=expect_raw.get("contains") or [],
             expect_values=expect_raw.get("values", []),
             empty_body=expect_raw.get("empty_body", False),
+            collections=expect_raw.get("collections", []),
         )
+        from src.rule_test import validate_collections
+        try:
+            validate_collections(response_check.collections)
+        except ValueError as exc:
+            raise ScenarioError(str(exc)) from exc
         if type(response_check.empty_body) is not bool:
             raise ScenarioError("empty_bodyは真偽値で指定してください")
         if not isinstance(response_check.expect_body, dict):
@@ -561,6 +575,25 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError(f"given[{i}] には table と as が必須です")
         given.append(GivenItem(table=g["table"], as_name=g["as"], fields=g.get("fields") or {}))
 
+    test_fixture = raw.get('test_fixture')
+    rule_test = raw.get('rule_test')
+    from src.rule_test import validate_fixture, validate_rule
+    try:
+        if 'test_fixture' in raw:
+            validate_fixture(test_fixture)
+            if given or cleanup or influx_mutation:
+                raise ValueError('共通ルールの検証データと既存の事前データ・片付け設定は同時指定できません')
+        if 'rule_test' in raw:
+            validate_rule(rule_test, test_fixture)
+            if response_check is None or type(response_check.expect_status) is not int or not 100 <= response_check.expect_status <= 599:
+                raise ValueError('共通ルールの期待ステータスを指定してください')
+            if rule_test['kind'] in ('boundary', 'priority') and not response_check.collections:
+                raise ValueError('境界・優先順位にはレスポンス配列の期待値が必要です')
+            if rule_test['kind'] == 'empty' and not (response_check.collections or response_check.expect_values or response_check.expect_body or response_check.empty_body):
+                raise ValueError('0件時の期待レスポンスを明示してください')
+    except ValueError as exc:
+        raise ScenarioError(str(exc)) from exc
+
     return DBScenario(
         name=name,
         request=request,
@@ -575,6 +608,8 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),
         cleanup=cleanup,
+        test_fixture=test_fixture,
+        rule_test=rule_test,
     )
 
 

@@ -1,0 +1,9 @@
+{
+  "scenarios": [
+    {"name": "ログイン・パスワード不一致（検証例401）", "request": {"operationId": "login", "body": {"username": "fixture-user", "password": "wrong"}}, "response_check": {"expect": {"status": 401}}},
+    {"name": "ログイン・存在しないユーザー（検証例401）", "request": {"operationId": "login", "body": {"username": "unknown", "password": "fixture-password-only"}}, "response_check": {"expect": {"status": 401}}},
+    {"name": "ログイン・username空文字（検証例401）", "request": {"operationId": "login", "body": {"username": "", "password": "fixture-password-only"}}, "response_check": {"expect": {"status": 401}}},
+    {"name": "ログイン・password空文字（検証例401）", "request": {"operationId": "login", "body": {"username": "fixture-user", "password": ""}}, "response_check": {"expect": {"status": 401}}},
+    {"name": "ログイン・両方空文字（検証例401）", "request": {"operationId": "login", "body": {"username": "", "password": ""}}, "response_check": {"expect": {"status": 401}}}
+  ]
+}

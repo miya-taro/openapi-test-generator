@@ -66,6 +66,9 @@ def test_measure_get_contract_and_ui_db_combinations(tmp_path):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
             except (ValueError, json.JSONDecodeError):
                 body = None
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                self.respond(400, {"error": "content type"})
+                return
             if not validator.is_valid(body):
                 self.respond(400, {"error": "invalid request"})
                 return

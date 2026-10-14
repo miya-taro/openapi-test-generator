@@ -11,6 +11,7 @@ import {
   feedProgress,
   runSimpleScript,
   runStatusMeaning,
+  runOutcomeAdvice,
   loadRuntimeDiagnosis,
   artifactLabel,
   appendArtifact,
@@ -391,6 +392,16 @@ describe("Schemathesis探索試験", () => {
 });
 
 describe("試験ケースマスター成果物", () => {
+  test("結果レポートを内部ファイルより先に表示し保存場所は折り畳む", () => {
+    const container = document.getElementById('run-artifacts'); container.replaceChildren();
+    appendArtifact('run-artifacts', {kind:'junit_xml', path:'result.xml'});
+    appendArtifact('run-artifacts', {kind:'result_excel', path:'result.xlsx'});
+    appendArtifact('run-artifacts', {kind:'html_report', path:'report.html'});
+    expect([...container.children].map(node => node.dataset.artifactKind)).toEqual(['html_report', 'result_excel', 'junit_xml']);
+    expect(container.firstElementChild.querySelector('button').textContent).toBe('結果を確認');
+    expect(container.firstElementChild.querySelector('details').open).toBe(false);
+    expect(container.firstElementChild.textContent).toContain('絞り込めます');
+  });
   test("下書きマスターを識別できる日本語名で表示する", () => {
     expect(artifactLabel("case_master_json")).toBe("試験ケースマスター（下書き）");
     expect(artifactLabel("html_report")).toBe("HTML結果レポート");
@@ -1119,4 +1130,48 @@ describe("runStatusMeaning", () => {
   test("unknown code falls back to a generic message", () => {
     expect(runStatusMeaning(99).text).toBe("終了コード 99");
   });
+});
+
+test('レビュー保存中は別ケースの操作も止め、応答後に再開する', async () => {
+  const master={cases:[1,2].map(id=>({caseId:`lock-${id}`,kind:'contract',title:`case ${id}`,definition:{},expected:{},reviewStatus:'draft'}))};
+  let finish;
+  mockInvoke.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  renderCaseMaster(master,'/tmp/reviews.json');
+  const buttons=[...document.querySelectorAll('#case-review-list .case-review-card button')];
+  buttons[0].click();buttons[1].click();
+  expect(mockInvoke).toHaveBeenCalledTimes(1);expect(buttons.every(button=>button.disabled)).toBe(true);
+  finish({...master,cases:master.cases.map((item,index)=>({...item,reviewStatus:index===0?'reviewed':'draft'}))});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  expect([...document.querySelectorAll('#case-review-list .case-review-card button')].every(button=>!button.disabled)).toBe(true);
+});
+
+
+test("保存ボタンは接続先を保存し認証情報を含めない", async () => {
+  document.getElementById("base-url").value = "http://localhost:8100";
+  document.getElementById("pg-password").value = "private-db-password";
+  document.getElementById("auth-body").value = '{"password":"private-login-password"}';
+  document.getElementById("settings-save").click();
+  await vi.waitFor(() => expect(document.getElementById("settings-status").textContent).toContain("保存しました"));
+  const saved = mockInvoke.mock.calls.find(([command]) => command === "save_settings")[1].data;
+  expect(saved.gen_base_url).toBe("http://localhost:8100");
+  expect(JSON.stringify(saved)).not.toContain("private-");
+});
+
+test("未対応項目を優先表示し対応済み項目も確認できる", () => {
+  renderCaseMaster({cases: [], coverage: [
+    {operationId: "op", location: "body", field: "x", keyword: "type", status: "生成済み"},
+    {operationId: "op", location: "body", field: "y", keyword: "contains", status: "未対応"},
+  ]}, "/tmp/master.json");
+  const rows = document.querySelectorAll(".coverage-review tr");
+  expect(rows[1].hidden).toBe(true);
+  expect(rows[2].hidden).toBe(false);
+  document.querySelector('.coverage-review input[type="checkbox"]').click();
+  expect(rows[1].hidden).toBe(false);
+});
+
+test("実行成功は全仕様の合格を意味せずキャンセルもロールバックを保証しない", () => {
+  expect(runOutcomeAdvice(0)).toContain("未実行");
+  expect(runOutcomeAdvice(2)).toContain("合格ではありません");
+  expect(runOutcomeAdvice(130)).toContain("ロールバックを保証しません");
+  expect(runOutcomeAdvice(3)).toContain("接続先");
 });

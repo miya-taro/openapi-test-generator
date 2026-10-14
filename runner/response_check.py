@@ -81,9 +81,59 @@ def check(response_check: ResponseCheck, status: int, response_json,
         ):
             mismatches.append(f"contains[{i}]: {path} に期待する項目が見つかりません ({fields!r})")
 
+    for rule in response_check.collections:
+        try:
+            actual_rows = _collection_rows(response_json, rule['path'])
+            projected = [{field: _get_nested(row, field) for field in rule['fields']} for row in actual_rows]
+            remaining = list(projected)
+            missing = []
+            for expected in rule['rows']:
+                index = next((i for i, actual in enumerate(remaining) if all(
+                    actual[field] is not _MISSING and _value_matches(actual[field], expected[field], 'exact')
+                    for field in rule['fields'])), None)
+                if index is None:
+                    missing.append(expected)
+                else:
+                    remaining.pop(index)
+            ok = not missing and not remaining
+            detail = '' if ok else f'期待行の欠落={len(missing)}件、余分・重複・値違い={len(remaining)}件'
+            if evidence is not None:
+                evidence.append({'path': rule['path'], 'source': 'fixed-collection', 'verdict': 'OK' if ok else 'NG',
+                                 'expected': rule['rows'], 'actual': [
+                                     {k: '[MISSING]' if v is _MISSING else v for k, v in row.items()} for row in projected], 'detail': detail})
+            if not ok:
+                mismatches.append(f"{rule['path']}: {detail}")
+        except ValueError as exc:
+            mismatches.append(str(exc))
+
     if mismatches:
         return False, "; ".join(mismatches)
     return True, ""
+
+
+def _collection_rows(body, path):
+    nodes = [body]
+    if path == '$':
+        if not isinstance(body, list):
+            raise ValueError('レスポンス全体が配列ではありません')
+        return body
+    parts = path.split('.')
+    for index, part in enumerate(parts):
+        expand = part.endswith('[]') or index == len(parts)-1
+        key = part[:-2] if part.endswith('[]') else part
+        result = []
+        for node in nodes:
+            value = node.get(key, _MISSING) if isinstance(node, dict) else _MISSING
+            if value is _MISSING:
+                raise ValueError(f'{path}: レスポンスに項目がありません')
+            if expand:
+                if not isinstance(value, list):
+                    raise ValueError(f'{path}: 配列ではありません')
+                result.extend(value)
+            else:
+                result.append(value)
+        nodes = result
+    return nodes
 
 
 def _value_matches(actual, expected, comparison):

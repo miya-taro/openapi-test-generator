@@ -115,11 +115,15 @@ def _send_request(
             if case.input_value not in OMIT_MARKERS and case.input_value != AUTH_NONE_MARKER:
                 cookies[case.param_name] = "" if case.input_value == EMPTY_VALUE_MARKER else case.input_value
 
-        if case.param_in != "header":
+        if not is_auth_probe:
             auth_header = _resolve_auth_header()
             if auth_header:
                 header_name, _, header_value = auth_header.partition(": ")
-                headers[header_name] = header_value
+                # A Content-Type/custom-header probe still needs valid authentication.
+                # Preserve an explicit omission/invalid value only for the auth header itself.
+                targets_auth = case.param_in == "header" and case.param_name.casefold() == header_name.casefold()
+                if not targets_auth:
+                    headers[header_name] = header_value
                 if header_value:
                     secrets.append(header_value)
 

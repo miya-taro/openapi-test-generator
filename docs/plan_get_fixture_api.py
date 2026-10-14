@@ -21,6 +21,8 @@ class PlanGetFixture:
         self.site_table='otg_get_site_'+suffix
         self.setting_table='otg_get_setting_'+suffix
         self.fault=None
+        # Configurable fixture expectation, never inferred for a user's API.
+        self.empty_status=200
         self.calls=[]
         with psycopg2.connect(**config) as conn, conn.cursor() as cur:
             cur.execute(f'CREATE TABLE {self.site_table} (location_id text PRIMARY KEY, site_id integer)')
@@ -49,7 +51,10 @@ class PlanGetFixture:
                 fixture.calls.append(request)
                 try:
                     result=fixture.response(request)
-                    payload=json.dumps(result).encode(); self.send_response(200)
+                    status=fixture.empty_status if not result['plans'] else 200
+                    if status != 200:
+                        result={'error':'no plans'}
+                    payload=json.dumps(result).encode(); self.send_response(status)
                 except Exception as exc:
                     payload=json.dumps({'error':str(exc)}).encode(); self.send_response(400)
                 self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(payload)));self.end_headers();self.wfile.write(payload)
@@ -65,14 +70,25 @@ class PlanGetFixture:
             cur.execute(f'SELECT * FROM {self.table} WHERE site_id=%s',(site,));rows=[dict(r) for r in cur.fetchall()]
             cur.execute(f'SELECT * FROM {self.setting_table} WHERE site_id=%s AND setting_id=2 ORDER BY datetime DESC',(site,));settings=cur.fetchall()
         start,end=map(datetime.fromisoformat,[request['start'],request['end']])
-        rows=[r for r in rows if start<=r['datetime']<end and ('correct' not in request or request['correct']==r['correct'])]
+        rows=[r for r in rows if
+              (start<r['datetime'] if self.fault=='exclude-start' else start<=r['datetime']) and
+              (r['datetime']<=end if self.fault=='include-end' else r['datetime']<end) and
+              (self.fault=='ignore-correct' or 'correct' not in request or request['correct']==r['correct'])]
         def priority(row):
             rank=(1000+row['cpbs_type'] if row['cpbs_type'] is not None else 500) if row['fixed'] else (100 if row['cpbs_type'] is None else 0)
-            return (row['correct'] or row['force'],rank,row['created'])
+            if self.fault=='ignore-fixed': rank=0
+            if self.fault=='ignore-cpbs': rank=500 if row['fixed'] else 0
+            flagged=False if self.fault=='ignore-correct-force' else row['correct'] or row['force']
+            return (flagged,rank,row['created'])
         chosen={}
         for row in rows:
             key=(row['datetime'],row['use_id'])
-            if key not in chosen or (row['created']>chosen[key]['created'] if self.fault=='history' else priority(row)>priority(chosen[key])): chosen[key]=row
+            if key not in chosen:
+                chosen[key]=row
+            elif self.fault=='oldest':
+                if row['created']<chosen[key]['created']: chosen[key]=row
+            elif row['created']>chosen[key]['created'] if self.fault=='history' else priority(row)>priority(chosen[key]):
+                chosen[key]=row
         candidates=list(chosen.values());fixed=sorted([r for r in candidates if r['fixed'] or r['force']],key=lambda r:(-r['created'].timestamp(),r['use_id']))
         kind=request.get('type') or (fixed[0]['use_id'] if fixed else settings[0]['param']['multiuse']['use_id'])
         rows=sorted([r for r in candidates if r['use_id']==kind or self.fault=='type'],key=lambda r:(r['datetime'],r['use_id']))

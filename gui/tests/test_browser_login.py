@@ -44,6 +44,32 @@ def test_browser_login_auth_key(tmp_path,monkeypatch):
                 page.locator('#auth-token-path').fill('id')
                 page.locator('#auth-header-name').fill('auth-key')
                 page.locator('#auth-header-format').fill('{token}')
+                # Save, shut down the application host, then open a fresh browser context.
+                page.locator('[data-step="target"]').click()
+                page.locator('#settings-save').click()
+                expect(page.locator('#settings-status')).to_contain_text('保存しました')
+                saved = json.loads(web_server.SETTINGS.read_text())
+                assert saved['gen_base_url'] == api.url
+                assert PASSWORD not in json.dumps(saved) and TOKEN not in json.dumps(saved)
+                context = page.context
+                context.close()
+                host.shutdown(); host.server_close(); thread.join(timeout=5)
+                host = web_server.WebServer(('127.0.0.1', 0), web_server.WebState(root/'gui-tauri/dist'))
+                thread = threading.Thread(target=host.serve_forever, daemon=True); thread.start()
+                page = browser.new_page(viewport={'width':1440,'height':1050}, accept_downloads=True)
+                page.set_default_timeout(20000)
+                page.goto(f'http://127.0.0.1:{host.server_port}/')
+                page.locator('[data-step="target"]').click()
+                expect(page.locator('#settings-status')).to_contain_text('復元しました')
+                expect(page.locator('#base-url')).to_have_value(api.url)
+                expect(page.locator('#operations-list input[data-op-id="protected"]')).to_be_checked()
+                expect(page.locator('#operations-list input[data-op-id="login"]')).not_to_be_checked()
+                expect(page.locator('#pg-password')).to_have_value('')
+                page.locator('[data-step="run"]').click()
+                page.locator('#advanced-settings > summary').click()
+                expect(page.locator('#auth-login-op')).to_have_value('login')
+                expect(page.locator('#auth-header-name')).to_have_value('auth-key')
+                page.locator('#auth-body').fill(json.dumps({'username':USERNAME,'password':PASSWORD}))
                 page.locator('#run-button').click()
                 expect(page.locator('#run-status')).to_contain_text('ケース準備完了',timeout=120000)
                 cards=page.locator('#case-review-list article')
@@ -54,12 +80,16 @@ def test_browser_login_auth_key(tmp_path,monkeypatch):
                     expect(cards.nth(index)).to_contain_text('承認済み')
                 page.locator('#execute-approved-button').click()
                 expect(page.locator('#run-status')).to_have_text('OK：全ケース成功',timeout=120000)
+                expect(page.locator('#run-artifacts > .artifact-item').first).to_have_attribute('data-artifact-kind', 'html_report')
+                expect(page.locator('#run-artifacts').get_by_role('button', name='結果を確認', exact=True)).to_be_visible()
                 assert sum(c.get('authenticated') is True for c in api.calls)==1
                 assert sum(c.get('authenticated') is False for c in api.calls)==2
                 assert sum(c['path']=='/v1/auth/login' for c in api.calls)==1
                 with page.expect_download() as download:page.locator('#open-result-button').click()
                 path=tmp_path/'result.xlsx';download.value.save_as(path)
                 book=load_workbook(path,read_only=True)
+                assert book.active.title == '結果サマリー'
+                assert book['実行詳細'].sheet_state == 'visible'
                 cells='\n'.join(str(v) for sheet in book for row in sheet.values for v in row)
                 book.close()
                 assert PASSWORD not in cells and TOKEN not in cells
