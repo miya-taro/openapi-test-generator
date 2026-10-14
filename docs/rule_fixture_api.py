@@ -139,5 +139,5 @@ def rule_input(fixture, kind='boundary', empty_status=200):
     return {'source': source, 'operation': operation(kind), 'form': form}
 
 def generate(data):
-    result = subprocess.run(['node', '--input-type=module', '-e', "import {buildRuleCases} from './gui-tauri/src/rule-cases.js'; let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);console.log(JSON.stringify(buildRuleCases(x.source,x.operation,x.form)));"], cwd=Path(__file__).resolve().parents[1], input=json.dumps(data), text=True, capture_output=True, check=True)
+    result = subprocess.run(['node', '--input-type=module', '-e', "import {buildRuleCases} from './gui-tauri/src/rule-cases.js'; let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);console.log(JSON.stringify(buildRuleCases(x.source,x.operation,x.form)));"], cwd=Path(__file__).resolve().parents[1], input=json.dumps(data), text=True, encoding="utf-8", capture_output=True, check=True)
     return json.loads(result.stdout)

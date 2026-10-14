@@ -41,11 +41,11 @@ def test_reusable_suites_match_ui_mapping_and_committed_examples(tmp_path):
     code = """import {planInsertMappings} from './gui-tauri/src/insert-editor.js';
 console.log(JSON.stringify(Object.fromEntries(planInsertMappings().map(x=>[x.column,x.rule]))));"""
     result = subprocess.run(['node', '--input-type=module', '-e', code], cwd=ROOT,
-                            capture_output=True, text=True, check=True)
+                            capture_output=True, text=True, encoding="utf-8", check=True)
     assert json.loads(result.stdout) == post_mapping()['columns']
     write_examples(tmp_path)
     for path in tmp_path.iterdir():
-        assert json.loads(path.read_text()) == json.loads((ROOT/'examples/plan-test-suites'/path.name).read_text())
+        assert json.loads(path.read_text(encoding="utf-8")) == json.loads((ROOT/'examples/plan-test-suites'/path.name).read_text(encoding="utf-8"))
     post = post_suite()['scenarios']
     assert len(post) == 28
     assert all(valid_plan_request(c['request']['body']) for c in post[:25])

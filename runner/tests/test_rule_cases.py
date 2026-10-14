@@ -46,7 +46,7 @@ def test_ui_generated_rules_real_http_db_and_faults(tmp_path, engine, env):
         evidence = {}
         with requests.Session() as session:
             result = _run_scenario(scenario, api, fixture.url, config, {}, session, evidence=evidence)
-        (evidence_dir/f'{len(outcomes):03}-{label}.json').write_text(json.dumps(_safe_evidence(evidence), ensure_ascii=False, indent=2))
+        (evidence_dir/f'{len(outcomes):03}-{label}.json').write_text(json.dumps(_safe_evidence(evidence), ensure_ascii=False, indent=2), encoding="utf-8")
         assert result[0] is expected, result
         if raw.get('test_fixture'):
             assert evidence['test_fixture']['cleanup_status'] == 'OK', evidence
@@ -92,7 +92,7 @@ def test_ui_generated_rules_real_http_db_and_faults(tmp_path, engine, env):
         run(raw, contract(), label='unrelated-site-preserved')
         assert len(fixture.rows('other')) == 2
         test_fixture.cleanup(outside, config, owned)
-        (evidence_dir/'summary.json').write_text(json.dumps(outcomes, indent=2))
+        (evidence_dir/'summary.json').write_text(json.dumps(outcomes, indent=2), encoding="utf-8")
     finally:
         fixture.close()
 

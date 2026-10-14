@@ -38,7 +38,7 @@ def post_mapping(table='h_plan', site_table='t_site'):
 
 
 def post_body():
-    body = json.loads((ROOT / 'examples/plan-post-request.json').read_text())
+    body = json.loads((ROOT / 'examples/plan-post-request.json').read_text(encoding="utf-8"))
     # Distinct values make wrong parent/child associations observable.
     for day_index, plan in enumerate(body['plans']):
         plan['profit'] = 1000 + day_index
@@ -50,7 +50,7 @@ def post_body():
 
 
 def post_contract(table='h_plan', site_table='t_site'):
-    api = json.loads((ROOT / 'examples/plan-post-openapi.json').read_text())
+    api = json.loads((ROOT / 'examples/plan-post-openapi.json').read_text(encoding="utf-8"))
     operation = api['paths']['/v1/plan/set']['post']
     operation['requestBody']['content']['application/json']['schema']['example'] = post_body()
     operation['x-otg-error-db-unchanged'] = [
@@ -103,7 +103,7 @@ def post_suite(table='h_plan', site_table='t_site'):
 
 def get_suite(definition=None):
     raw = copy.deepcopy(definition) if definition is not None else json.loads(
-        (ROOT / 'examples/plan-get/scenario.json').read_text())['scenarios'][0]
+        (ROOT / 'examples/plan-get/scenario.json').read_text(encoding="utf-8"))['scenarios'][0]
     cases = []
     for site, correct, kind in itertools.product(
             ('site', 'location', 'both-site-wins'), (None, False, True), (None, '1-1', '2-1')):
