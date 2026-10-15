@@ -80,9 +80,36 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     if evidence is not None:
-        write_request_sheet(wb, [{"case_id": row.get("case_id"), "verdict": row.get("verdict"),
-                                 "status": row.get("api_status"), "request": row.get("sent_request", {})}
-                                for row in evidence])
+        requests = []
+        for entry in evidence:
+            for phase in ('before', 'main', 'cleanup'):
+                if phase == 'main':
+                    attempts = entry.get('poll_attempts') or [{'status': entry.get('api_status'), 'request': entry.get('sent_request', {})}]
+                    steps = [{'name': '本試験', 'verdict': entry.get('verdict'), 'attempts': attempts}]
+                else:
+                    steps = [step for step in entry.get('api_steps', []) if step.get('phase', 'before') == phase]
+                for step in steps:
+                    for index, attempt in enumerate(step.get('attempts', []), 1):
+                        requests.append({'case_id': (f"{entry.get('case_id')} / {step['name']} #{index}"
+                                                     if entry.get("api_steps") or entry.get("poll_attempts") else entry.get("case_id")),
+                                         'verdict': step.get('verdict'), 'status': attempt.get('status'),
+                                         'request': attempt.get('request', {})})
+        write_request_sheet(wb, requests)
+        flow_sheet = wb.create_sheet('API手順と完了待ち')
+        flow_sheet.append(['試験ID', '手順', 'API操作', '判定', '期待status', '実測status', '送信回数', '期待レスポンス', '実測レスポンス', '詳細'])
+        for entry in evidence:
+            steps = list(entry.get('api_steps', []))
+            if entry.get('poll_attempts'):
+                attempts = entry['poll_attempts']
+                steps.append({'name': '本試験の完了待ち', 'verdict': entry.get('verdict'),
+                              'attempts': attempts, 'actualStatus': attempts[-1]['status'],
+                              'actualBody': attempts[-1]['body'], 'detail': entry.get('detail')})
+            for step in steps:
+                flow_sheet.append([safe_cell(value) for value in [entry.get('case_id'), step.get('name'), step.get('operationId'),
+                    step.get('verdict'), step.get('expectedStatus'), step.get('actualStatus'), len(step.get('attempts', [])),
+                    json.dumps(step.get('expectedBody', {}), ensure_ascii=False, default=str),
+                    json.dumps(step.get('actualBody', {}), ensure_ascii=False, default=str), step.get('detail')]])
+        style_table(flow_sheet, [22, 25, 25, 12, 16, 16, 12, 45, 45, 55], 1, 4)
         comparison = wb.create_sheet('DB比較詳細')
         comparison.append(['期待値と実際の値。長い内容はセルを選択して数式バーで確認できます。記録のない比較は表示しません。'])
         comparison.append(['試験ID', '試験項目', '比較対象', '期待値', '実際の値'])

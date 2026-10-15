@@ -1,3 +1,4 @@
+import { flowControls, newApiScenario } from "./api-flow-editor.js";
 import { templateControls } from "./scenario-templates.js";
 import { ruleControls } from "./rule-controls.js";
 import { initDbSetupWizard } from "./db-setup-wizard.js";
@@ -1519,6 +1520,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       }, (replacement) => {
         scenarios[index] = replacement; renderScenarioList(); setStatus("設定を変更しました。再保存・再レビューが必要です。", "ok");
       }, (message) => setStatus(message, "error")));
+      content.append(flowControls(scenario, operations, replacement => {
+        scenarios[index] = replacement; renderScenarioList(); setStatus("連続実行を反映しました。保存後に試験内容を再確認してください。", "ok");
+      }, message => setStatus(message, "error")));
       content.append(ruleControls(scenario, operations.find(op => op.operationId === scenario.request.operationId), (items) => {
         scenarios.push(...items); renderScenarioList(); setStatus(`${items.length}件の共通ルール試験を追加しました。保存後、実行内容を確認してください。`, 'ok');
       }, (message) => setStatus(message, 'error')));
@@ -1614,6 +1618,17 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     } catch (error) { setStatus(error.message || String(error), "error"); }
   });
   byId("dbscenario-editor-save").before(importButton);
+  const apiOnly = make("button", "secondary", "DB照合なしのAPI試験を追加");
+  apiOnly.type = "button";
+  apiOnly.addEventListener("click", () => {
+    try {
+      const scenario = newApiScenario(selectedOperation(), byId("dbscenario-editor-name").value);
+      if (scenarios.some(item => item.name === scenario.name)) throw new Error("同じ試験名が登録済みです");
+      scenarios.push(scenario); renderScenarioList();
+      setStatus("追加しました。一覧の「APIの連続実行」から送信値・期待結果を設定してください。", "ok");
+    } catch (error) { setStatus(error.message, "error"); }
+  });
+  byId("dbscenario-editor-save").before(apiOnly);
   renderScenarioList();
   return {
     async restoreSaved() {

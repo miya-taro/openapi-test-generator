@@ -341,3 +341,7 @@ cargo clippy --all-targets -- -D warnings --manifest-path src-tauri/Cargo.toml  
 POSTで配列を複数行へ保存するAPIは、[配列からの保存照合](docs/post-array-testing.md)を参照してください。UIで親項目・固定値・日時・JSON・DB参照を設定できます。
 
 - GETの複雑な取得条件・入れ子JSONのDB照合: [期待値SQLの設定](docs/sql-response-testing.md)
+
+### APIの連続実行と完了待ち
+
+「API連携・DB確認」で、前処理API → 応答値の受け渡し → 本試験・DB照合 → 後片付けを設定できます。GETの完了条件・期限・確認間隔も指定できます。[設定手順](docs/api-flows.md) を参照してください。

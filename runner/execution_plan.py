@@ -30,7 +30,11 @@ def load_plan(path, kind, case_ids=()):
         if case["source"].get("contractSha256") != digest:
             raise CaseMasterError("試験ケースとAPI定義が一致しません。ケースを再準備してください")
         # Parse every case before any HTTP/DB side effects.
-        contract_case(case) if kind == "contract" else db_case(case)
+        if kind == "contract":
+            contract_case(case)
+        else:
+            from api_flow import validate_operations
+            validate_operations(db_case(case), api)
     return master, cases, api
 
 
@@ -65,6 +69,7 @@ def db_case(case):
         "path_params": req.get("pathParams", {}), "query_params": req.get("queryParams", {}),
     }, "given": definition.get("given", [])}
     for key, target in (
+        ("apiFlow", "api_flow"), ("poll", "poll"),
         ("authProfile", "auth_profile"), ("testFixture", "test_fixture"), ("ruleTest", "rule_test"),
         ("dbInsertCheck", "db_insert_check"), ("influxMutation", "influx_mutation"),
         ("dbSqlResponseCheck", "db_sql_response_check"), ("dbUnchanged", "db_unchanged"),

@@ -74,7 +74,11 @@ def _preflight(args, cases, api):
     guarded = any(scopes_for_case(api, contract_case(case)) for case in cases) if args.kind == "contract" else False
     if args.parallel > 1 and (args.cookie_jar or guarded or args.kind == "db-scenario"):
         raise ValueError("Cookie維持・DB照合・シナリオ試験は逐次実行が必要です")
-    if (guarded or args.kind == "db-scenario" or args.setup or args.teardown) and not args.config:
+    needs_db = args.kind == "db-scenario" and any(
+        any(case['definition'].get(key) for key in (
+            'given', 'dbCheck', 'dbResponseCheck', 'dbInsertCheck', 'dbSqlResponseCheck',
+            'dbUnchanged', 'influxMutation', 'testFixture', 'cleanup')) for case in cases)
+    if (guarded or needs_db or args.setup or args.teardown) and not args.config:
         raise ValueError("DB接続設定が必要です")
     if args.case_ids and args.kind == "db-scenario" and any(
         _contains_response_placeholder(case["definition"]) for case in cases

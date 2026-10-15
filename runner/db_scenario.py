@@ -144,6 +144,8 @@ class DBScenario:
     db_sql_response_check: dict | None = None
     test_fixture: dict | None = None
     rule_test: dict | None = None
+    api_flow: dict | None = None
+    poll: dict | None = None
 
     @property
     def case_id(self) -> str:
@@ -210,6 +212,10 @@ class DBScenario:
                 else None
             ),
         }
+        if self.api_flow is not None:
+            definition["apiFlow"] = self.api_flow
+        if self.poll is not None:
+            definition["poll"] = self.poll
         if self.db_sql_response_check is not None:
             definition["dbSqlResponseCheck"] = self.db_sql_response_check
         if self.test_fixture is not None:
@@ -384,6 +390,14 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
             raise ScenarioError(
                 f"未対応の engine です: {engine!r}（対応: {', '.join(sorted(SUPPORTED_ENGINES))}）"
             )
+        expectation = check_raw.get("expect") or {}
+        values_key = "columns" if engine == "postgres" else "fields"
+        if not isinstance(expectation, dict) or set(expectation) - {"exists", values_key}:
+            raise ScenarioError(f"db_check.expect は exists と {values_key} で指定してください。未対応の条件は照合できません")
+        if "exists" in expectation and type(expectation["exists"]) is not bool:
+            raise ScenarioError("db_check.expect.exists は真偽値で指定してください")
+        if values_key in expectation and not isinstance(expectation[values_key], dict):
+            raise ScenarioError(f"db_check.expect.{values_key} は列名と期待値で指定してください")
         invariants_raw = check_raw.get("invariants") or []
         if not isinstance(invariants_raw, list) or not all(isinstance(v, str) for v in invariants_raw):
             raise ScenarioError("db_check.invariants は文字列のリストである必要があります")
@@ -594,6 +608,18 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
     except ValueError as exc:
         raise ScenarioError(str(exc)) from exc
 
+    try:
+        from .api_flow import validate_flow, validate_poll
+    except ImportError:
+        from api_flow import validate_flow, validate_poll
+    try:
+        validate_flow(raw.get("api_flow"))
+        validate_poll(raw.get("poll"))
+        if raw.get("poll") and (response_check is None or response_check.expect_status is None):
+            raise ValueError("完了待ちには期待HTTPステータスも必要です")
+    except ValueError as exc:
+        raise ScenarioError(str(exc)) from exc
+
     return DBScenario(
         name=name,
         request=request,
@@ -610,6 +636,8 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         cleanup=cleanup,
         test_fixture=test_fixture,
         rule_test=rule_test,
+        api_flow=raw.get("api_flow"),
+        poll=raw.get("poll"),
     )
 
 

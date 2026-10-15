@@ -123,8 +123,6 @@ def build_db_scenario_command(
 ) -> list[str]:
     if config.db_scenarios_path is None:
         raise ProjectConfigError("DBシナリオファイルが指定されていません")
-    if request.runtime_config_path is None:
-        raise ProjectConfigError("DB接続の実行時設定が必要です")
 
     command = [
         sys.executable,
@@ -133,8 +131,6 @@ def build_db_scenario_command(
         "--kind", "db-scenario",
         "--base-url",
         config.base_url,
-        "--config",
-        str(request.runtime_config_path),
         "--report-output",
         str(paths.db_report_excel),
         "--junit-xml",
@@ -143,6 +139,8 @@ def build_db_scenario_command(
         str(paths.db_evidence_json),
         "--skip-health-check",
     ]
+    if request.runtime_config_path is not None:
+        command.extend(["--config", str(request.runtime_config_path)])
     if request.auth_config_path is not None:
         command.extend(["--auth-config", str(request.auth_config_path)])
     if request.persist_cookies:

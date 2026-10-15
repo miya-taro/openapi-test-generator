@@ -404,7 +404,22 @@ def main() -> int:
         return 1 if has_fail else 2 if has_warning else 0
 
 
-def _run_scenario(
+def _run_scenario(scenario, openapi, base_url, db_config, previous_response, session,
+                  persist_cookies=False, auth_header=None, evidence=None):
+    from api_flow import validate_operations
+    try:
+        validate_operations(scenario, openapi)
+    except (ValueError, ScenarioError) as exc:
+        return False, str(exc), "ERR", previous_response, []
+    if scenario.api_flow:
+        from api_flow import run_flow
+        return run_flow(_run_scenario_once, scenario, openapi, base_url, db_config,
+                        previous_response, session, persist_cookies, auth_header, evidence)
+    return _run_scenario_once(scenario, openapi, base_url, db_config, previous_response,
+                              session, persist_cookies, auth_header, evidence)
+
+
+def _run_scenario_once(
     scenario: DBScenario, openapi: dict, base_url: str, db_config: dict, previous_response: dict,
     session: requests.Session, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None,
@@ -636,7 +651,20 @@ def _run_scenario(
             call_kwargs['send_empty_body'] = True
         api_call_started = True
         insert_started = datetime.now(timezone.utc)
-        api_response = _call_api(*call_args, **call_kwargs)
+        if scenario.poll:
+            from api_flow import call_with_poll
+            attempts = []
+            if evidence is not None:
+                evidence['poll_attempts'] = attempts
+                evidence['poll_condition'] = scenario.poll
+            api_response, poll_error = call_with_poll(_call_api, call_args, call_kwargs,
+                scenario.poll, scenario.response_check.expect_status, attempts,
+                lambda response: _verify_response_contract(scenario, openapi, path, method, response))
+            if poll_error:
+                poll_status, poll_body, _ = api_response
+                return False, poll_error, str(poll_status), poll_body
+        else:
+            api_response = _call_api(*call_args, **call_kwargs)
         insert_ended = datetime.now(timezone.utc)
         status, response_json, error = api_response
         if evidence is not None:
@@ -868,7 +896,7 @@ def _call_api(
     base_url: str, path: str, method: str, path_params: dict, body: dict,
     session: requests.Session | None = None, persist_cookies: bool = False,
     auth_header: tuple[str, str] | None = None, query_params: dict | None = None,
-    send_empty_body: bool = False,
+    send_empty_body: bool = False, timeout: float = REQUEST_TIMEOUT,
 ) -> APIResponse:
     """requests でAPIを呼び出す。戻り値: (status, response_json, error)"""
     url_path = path
@@ -886,7 +914,7 @@ def _call_api(
     else:
         headers[auth_header[0]] = auth_header[1]
 
-    kwargs: dict = {"headers": headers, "timeout": REQUEST_TIMEOUT}
+    kwargs: dict = {"headers": headers, "timeout": timeout}
     if query_params:
         def scalar(value):
             if isinstance(value, bool):

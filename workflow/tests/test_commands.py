@@ -99,17 +99,17 @@ def test_cookie_persistence_rejects_parallel_contract_execution(
         )
 
 
-def test_db_scenario_command_requires_scenario_and_runtime_config(project_config, tmp_path):
+def test_api_only_scenario_command_allows_no_db_config(project_config, tmp_path):
     request = RunRequest(
         workflow="db-scenarios",
         project_file=tmp_path / "project.json",
         runtime_config_path=None,
     )
 
-    with pytest.raises(ProjectConfigError, match="DB接続"):
-        build_db_scenario_command(
-            project_config, request, artifact_paths(project_config, run_id="run")
-        )
+    command = build_db_scenario_command(
+        project_config, request, artifact_paths(project_config, run_id="run")
+    )
+    assert "--config" not in command
 
 
 def test_db_scenario_command_uses_report_and_junit_paths(project_config, tmp_path):

@@ -91,8 +91,8 @@ export function createWorkflowClient({ invoke, listen }) {
       const args = [
         "--project", projectPath,
         "--run-id", preparedRunId,
-        "--runtime-config", runtimeConfigPath,
       ];
+      if (runtimeConfigPath) args.push("--runtime-config", runtimeConfigPath);
       if (authConfigPath) args.push("--auth-config", authConfigPath);
       if (persistCookies) args.push("--cookie-jar");
       if (dryRun) args.push("--dry-run");

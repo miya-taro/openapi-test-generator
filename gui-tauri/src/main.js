@@ -1623,9 +1623,8 @@ $("dbscenario-browse").addEventListener("click", () =>
 );
 
 async function writeDbScenarioRuntimeConfigs() {
-  if (!dbConfigEnabled()) throw new Error("DB接続設定（「設定」画面）が必要です");
-  const dbConfigData = collectDbConfig();
-  const configPath = await invoke("write_config_file", { path: null, data: dbConfigData });
+  const dbConfigData = dbConfigEnabled() ? collectDbConfig() : null;
+  const configPath = dbConfigData ? await invoke("write_config_file", { path: null, data: dbConfigData }) : "";
   dbScenarioTempDbConfigPath = configPath;
 
   let authConfigPath = "";

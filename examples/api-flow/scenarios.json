@@ -1,0 +1,53 @@
+{
+  "scenarios": [
+    {
+      "name": "作成して完了待ち、値を確認、削除",
+      "request": {
+        "operationId": "get",
+        "path_params": {
+          "id": "{{steps.create.id}}"
+        }
+      },
+      "response_check": {
+        "expect": {
+          "status": 200,
+          "body": {
+            "value": 42
+          }
+        }
+      },
+      "api_flow": {
+        "before": [
+          {
+            "name": "create",
+            "request": {
+              "operationId": "create",
+              "body": {
+                "value": 42
+              }
+            },
+            "expect_status": 200
+          }
+        ],
+        "cleanup": [
+          {
+            "name": "delete",
+            "request": {
+              "operationId": "delete",
+              "path_params": {
+                "id": "{{steps.create.id}}"
+              }
+            },
+            "expect_status": 200
+          }
+        ]
+      },
+      "poll": {
+        "path": "state",
+        "equals": "done",
+        "timeout": 30,
+        "interval": 1
+      }
+    }
+  ]
+}

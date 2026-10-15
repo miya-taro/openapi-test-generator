@@ -1327,3 +1327,11 @@ label.checkbox input[type="checkbox"] {
 .db-setup-actions { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-light, #e3e7ef); }
 .db-setup-preview-card { padding: 14px; margin: 12px 0; border: 1px solid var(--border-light, #e3e7ef); border-radius: 8px; }
 .db-setup-preview-card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+
+/* API dependency forms remain usable on small screens. */
+.api-flow-editor { margin-top: 12px; }
+.api-flow-editor fieldset { margin: 12px 0; padding: 12px; border: 1px solid #ccd6e4; border-radius: 8px; min-width: 0; }
+.api-flow-editor label { display: block; margin: 8px 0; }
+.api-flow-editor input:not([type="checkbox"]), .api-flow-editor select { width: 100%; box-sizing: border-box; }
+.api-flow-value-row { display: grid; grid-template-columns: 50px minmax(100px, 1fr) minmax(110px, 1fr) 100px minmax(140px, 2fr) auto; gap: 8px; align-items: end; }
+@media (max-width: 1100px) { .api-flow-value-row { grid-template-columns: 1fr 1fr; } }

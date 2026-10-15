@@ -87,7 +87,7 @@ def _parser() -> argparse.ArgumentParser:
     execute_db = sub.add_parser("execute-db-scenarios")
     execute_db.add_argument("--project", required=True)
     execute_db.add_argument("--run-id", required=True)
-    execute_db.add_argument("--runtime-config", required=True)
+    execute_db.add_argument("--runtime-config")
     execute_db.add_argument("--auth-config")
     execute_db.add_argument("--cookie-jar", action="store_true")
     execute_db.add_argument("--dry-run", action="store_true")
@@ -523,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
                 request = RunRequest(
                     workflow="db-scenarios",
                     project_file=Path(args.project),
-                    runtime_config_path=Path(args.runtime_config),
+                    runtime_config_path=Path(args.runtime_config) if args.runtime_config else None,
                     auth_config_path=Path(args.auth_config) if args.auth_config else None,
                     persist_cookies=args.cookie_jar,
                     dry_run=args.dry_run,
