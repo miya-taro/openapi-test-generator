@@ -34,7 +34,7 @@ FLOW = {'name': '作成して完了待ち、値を確認、削除',
         'response_check': {'expect': {'status': 200, 'body': {'value': 42}}},
         'api_flow': {'before': [{'name': 'create', 'request': {'operationId': 'create', 'body': {'value': 42}}, 'expect_status': 200}],
                      'cleanup': [{'name': 'delete', 'request': {'operationId': 'delete', 'path_params': {'id': '{{steps.create.id}}'}}, 'expect_status': 200}]},
-        'poll': {'path': 'state', 'equals': 'done', 'timeout': 0.4, 'interval': 0.05}}
+        'poll': {'path': 'state', 'equals': 'done', 'timeout': 5, 'interval': 0.05}}
 
 
 def fixture_api(server, *, fault=None):
@@ -59,10 +59,13 @@ def fixture_api(server, *, fault=None):
 @pytest.mark.parametrize('fault', [None, 'create', 'value', 'timeout', 'cleanup'])
 def test_real_http_chain_detects_faults_and_always_cleans_up(httpserver, fault):
     calls = fixture_api(httpserver, fault=fault)
-    scenario = parse_scenarios(json.dumps({'scenarios': [FLOW]}))[0]
+    raw = copy.deepcopy(FLOW)
+    if fault == 'timeout':
+        raw['poll']['timeout'] = 0.2
+    scenario = parse_scenarios(json.dumps({'scenarios': [raw]}))[0]
     evidence = {}
     with requests.Session() as session:
-        ok, detail, status, _, cleanup = _run_scenario(scenario, API, httpserver.url_for('/'), {}, {}, session, evidence=evidence)
+        ok, detail, status, _, cleanup = _run_scenario(scenario, API, httpserver.url_for('/').replace('localhost', '127.0.0.1'), {}, {}, session, evidence=evidence)
     assert ok is (fault is None), (detail, status)
     assert calls.count('create') == 1
     assert calls[-1] == 'delete'
@@ -86,7 +89,7 @@ def test_pytest_plan_rerun_excel_and_json_with_no_db_config(tmp_path, httpserver
     assert db_case(master['cases'][0]).case_definition() == parse_scenarios(scenarios.read_text(encoding='utf-8'))[0].case_definition()
     path = tmp_path / 'master.json'; write_case_master(master, path)
     command = [sys.executable, str(ROOT / 'runner/pytest_runner.py'), str(path), '--kind', 'db-scenario',
-               '--base-url', httpserver.url_for('/'), '--skip-health-check', '--output', str(tmp_path / 'result.xlsx'),
+               '--base-url', httpserver.url_for('/').replace('localhost', '127.0.0.1'), '--skip-health-check', '--output', str(tmp_path / 'result.xlsx'),
                '--junit-xml', str(tmp_path / 'junit.xml'), '--case-ids', master['cases'][0]['caseId']]
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=30)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -133,7 +136,7 @@ def test_cleanup_cannot_use_stale_result_when_main_was_not_sent(httpserver):
     scenario = parse_scenarios(json.dumps({'scenarios': [raw]}))[0]
     with requests.Session() as session:
         outcome = run_flow(lambda *args: (False, '準備失敗', 'ERR', {'id': 999}, []), scenario,
-                           API, httpserver.url_for('/'), {}, {'id': 999}, session, False, None, {})
+                           API, httpserver.url_for('/').replace('localhost', '127.0.0.1'), {}, {'id': 999}, session, False, None, {})
     assert outcome[0] is False
     assert outcome[4]
     assert not httpserver.log
@@ -172,7 +175,7 @@ def test_api_flow_checks_postgres_before_cleanup(tmp_path, httpserver):
         for damaged in (False, True):
             fault[0] = damaged
             with requests.Session() as session:
-                result = _run_scenario(scenario, API, httpserver.url_for('/'), {'postgres': config}, {}, session, evidence={})
+                result = _run_scenario(scenario, API, httpserver.url_for('/').replace('localhost', '127.0.0.1'), {'postgres': config}, {}, session, evidence={})
             assert result[0] is not damaged, result
             with psycopg2.connect(**config) as connection:
                 with connection.cursor() as cursor:
@@ -189,3 +192,14 @@ def test_unknown_db_expectation_cannot_silently_pass():
     raw['db_check'] = {'engine': 'postgres', 'table': 'jobs', 'expect': {'value': 42}}
     with pytest.raises(ScenarioError, match='未対応'):
         parse_scenarios(json.dumps({'scenarios': [raw]}))
+
+
+def test_completion_after_deadline_is_still_a_failure(monkeypatch):
+    import api_flow
+    from db_scenario_runner import APIResponse
+    clock = iter([0, 0, 2])
+    monkeypatch.setattr(api_flow.time, 'monotonic', lambda: next(clock))
+    response = APIResponse(200, {'state': 'done'}, None)
+    _, error = api_flow.call_with_poll(lambda *args, **kwargs: response, (), {},
+        {'path': 'state', 'equals': 'done', 'timeout': 1, 'interval': 0.1}, 200, [])
+    assert '期限' in error
