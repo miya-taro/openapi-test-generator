@@ -80,17 +80,17 @@ def test_real_http_chain_detects_faults_and_always_cleans_up(httpserver, fault):
 
 def test_pytest_plan_rerun_excel_and_json_with_no_db_config(tmp_path, httpserver):
     calls = fixture_api(httpserver)
-    api = tmp_path / 'openapi.json'; api.write_text(json.dumps(API))
-    scenarios = tmp_path / 'flows.json'; scenarios.write_text(json.dumps({'scenarios': [FLOW]}))
+    api = tmp_path / 'openapi.json'; api.write_text(json.dumps(API), encoding='utf-8')
+    scenarios = tmp_path / 'flows.json'; scenarios.write_text(json.dumps({'scenarios': [FLOW]}), encoding='utf-8')
     master = build_case_master('flows', None, scenarios, api)
-    assert db_case(master['cases'][0]).case_definition() == parse_scenarios(scenarios.read_text())[0].case_definition()
+    assert db_case(master['cases'][0]).case_definition() == parse_scenarios(scenarios.read_text(encoding='utf-8'))[0].case_definition()
     path = tmp_path / 'master.json'; write_case_master(master, path)
     command = [sys.executable, str(ROOT / 'runner/pytest_runner.py'), str(path), '--kind', 'db-scenario',
                '--base-url', httpserver.url_for('/'), '--skip-health-check', '--output', str(tmp_path / 'result.xlsx'),
                '--junit-xml', str(tmp_path / 'junit.xml'), '--case-ids', master['cases'][0]['caseId']]
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=30)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    payload = json.loads((tmp_path / 'result.json').read_text())
+    payload = json.loads((tmp_path / 'result.json').read_text(encoding='utf-8'))
     assert payload['cases'][0]['status'] == 'passed'
     assert len(payload['cases'][0]['evidence']['poll_attempts']) == 2
     book = openpyxl.load_workbook(tmp_path / 'result.xlsx')

@@ -99,7 +99,7 @@ def test_browser_authored_flow(tmp_path, monkeypatch, httpserver):
                 assert not errors, errors
             finally:
                 page.screenshot(path=str(tmp_path / 'api-flow.png'), full_page=True)
-                (tmp_path / 'browser.txt').write_text(page.locator('body').inner_text())
+                (tmp_path / 'browser.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')
                 browser.close()
     finally:
         host.shutdown(); host.server_close(); thread.join(timeout=5)
