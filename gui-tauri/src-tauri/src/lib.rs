@@ -130,7 +130,7 @@ fn diagnose_runtime(app: AppHandle) -> RuntimeDiagnosis {
         python_bundled,
         workflow_available: root.join("workflow").join("cli.py").is_file(),
         generator_available: root.join("src").join("cli.py").is_file(),
-        runner_available: root.join("runner").join("runner.py").is_file(),
+        runner_available: root.join("runner").join("pytest_runner.py").is_file(),
     }
 }
 
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn workflow_script_is_allowed_but_external_paths_are_rejected() {
         let root = unique_temp_dir("script-path");
-        for relative in ["workflow/cli.py", "src/cli.py", "runner/runner.py"] {
+        for relative in ["workflow/cli.py", "src/cli.py", "runner/pytest_runner.py"] {
             let path = root.join(relative);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, "# test").unwrap();

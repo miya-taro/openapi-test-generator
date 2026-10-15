@@ -143,7 +143,7 @@ class WebState:
                 "pythonBundled": False,
                 "workflowAvailable": (ROOT / "workflow/cli.py").is_file(),
                 "generatorAvailable": (ROOT / "src/cli.py").is_file(),
-                "runnerAvailable": (ROOT / "runner/runner.py").is_file(),
+                "runnerAvailable": (ROOT / "runner/pytest_runner.py").is_file(),
             }
         if command == "load_settings":
             with _SETTINGS_LOCK:

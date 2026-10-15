@@ -49,7 +49,7 @@ def _junit_statuses(paths: list[str | Path]) -> dict[str, str]:
             elif testcase.find("failure") is not None:
                 status = "failed"
             elif testcase.find("skipped") is not None:
-                status = "skipped"
+                status = "not-run" if testcase.get("classname") == "not-run" else "skipped"
             elif testcase.find("system-out") is not None:
                 status = "warning"
             else:
@@ -69,6 +69,8 @@ def write_failed_case_ids(junit_paths: list[str | Path], output_path: str | Path
         except (ET.ParseError, OSError) as exc:
             raise ValueError(f"JUnit XMLを読み込めません: {source}: {exc}") from exc
         for testcase in root.iter("testcase"):
+            if testcase.get("classname") == "execution":
+                continue  # Run-level setup/teardown errors are not runnable case IDs.
             if testcase.find("failure") is None and testcase.find("error") is None:
                 continue
             case_id = testcase.get("name") or testcase.get("caseId")
@@ -93,6 +95,12 @@ def write_html_report(
     master = load_case_master(case_master_path)
     statuses = _junit_statuses(junit_paths)
     cases = master["cases"]
+    case_ids = {case["caseId"] for case in cases}
+    execution_errors = [key for key, status in statuses.items() if key not in case_ids and status == "error"]
+    execution_notice = (
+        '<p class="notice status-error">実行全体のエラーがあります。準備・後片付けなどを完了できていません。'
+        '結果Excelの「実行エラー」またはJUnitを確認してください。</p>'
+    ) if execution_errors else ""
     unapproved = [
         case for case in cases
         if case["caseId"] in statuses and case.get("reviewStatus", "draft") != "approved"
@@ -172,6 +180,7 @@ ul{{padding-left:1.2rem}} small{{display:block;color:#53657a;font-size:12px;over
 <p>生成日時: <time id="generated-at" datetime="{_e(datetime.now(timezone.utc).isoformat(timespec='seconds'))}">{_e(datetime.now(timezone.utc).strftime('%Y/%m/%d %H:%M UTC'))}</time></p>
 <p class="notice">仕様状態: {_e(approval_text)}。HTTP本文・認証情報はこのHTMLに保存していません。</p>
 <p class="summary">{summary}</p>
+{execution_notice}
 <ul>{link_html}</ul>
 {coverage_html}
 <div class="result-toolbar">

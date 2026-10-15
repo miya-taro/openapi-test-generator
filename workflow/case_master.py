@@ -240,11 +240,17 @@ def build_case_master(
         raise CaseMasterError("試験ケースがありません。OpenAPIケースまたはDBシナリオを用意してください")
 
     seen: set[str] = set()
+    execution_openapi = parse_openapi(str(openapi_path))
+    contract_hash = hashlib.sha256(json.dumps(
+        execution_openapi, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
     for case in cases:
         case_id = case["caseId"]
         if case_id in seen:
             raise CaseMasterError(f"試験IDが重複しています: {case_id}")
         seen.add(case_id)
+        # Response contracts affect DB cases too. Changing them invalidates review.
+        case["source"]["contractSha256"] = contract_hash
         case["definitionHash"] = _definition_hash(case)
 
     return {
@@ -253,6 +259,7 @@ def build_case_master(
         "project": {"name": project_name, "sources": source_files},
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cases": cases,
+        "execution": {"version": 1, "openapi": execution_openapi, "contractSha256": contract_hash},
         "coverage": (contract_output or {}).get("coverage", []) + (build_db_coverage(parse_openapi(str(openapi_path)), cases) if db_scenarios_path is not None else []),
     }
 
@@ -330,10 +337,6 @@ def save_case_master_reviews(master_path: str | Path, updates: dict[str, str]) -
             from workflow.spec_writer import write_case_spec_excel
 
             write_case_spec_excel(master, spec_path)
-            execution_artifacts = master.setdefault("executionArtifacts", {})
-            execution_artifacts["caseSpecExcelSha256"] = hashlib.sha256(
-                spec_path.read_bytes()
-            ).hexdigest()
         except (OSError, ValueError) as exc:
             raise CaseMasterError(f"レビュー状態を試験仕様Excelへ反映できません: {exc}") from exc
 

@@ -56,7 +56,9 @@ def test_contract_commands_use_stable_artifact_paths(project_config, run_request
     assert generate[:2] == [sys.executable, str(REPO_ROOT / "src" / "cli.py")]
     assert generate[2] == str(project_config.openapi_path)
     assert generate[generate.index("--operations") + 1] == "getOrder,createOrder"
-    assert execute[:2] == [sys.executable, str(REPO_ROOT / "runner" / "runner.py")]
+    assert execute[:2] == [sys.executable, str(REPO_ROOT / "runner" / "pytest_runner.py")]
+    assert execute[2] == str(paths.case_master_json)
+    assert execute[execute.index("--kind") + 1] == "contract"
     assert execute[execute.index("--output") + 1] == str(paths.result_excel)
     assert execute[execute.index("--junit-xml") + 1] == str(paths.junit_xml)
 
@@ -125,8 +127,10 @@ def test_db_scenario_command_uses_report_and_junit_paths(project_config, tmp_pat
 
     assert command[:2] == [
         sys.executable,
-        str(REPO_ROOT / "runner" / "db_scenario_runner.py"),
+        str(REPO_ROOT / "runner" / "pytest_runner.py"),
     ]
+    assert command[2] == str(paths.case_master_json)
+    assert command[command.index("--kind") + 1] == "db-scenario"
     assert command[command.index("--report-output") + 1] == str(paths.db_report_excel)
     assert command[command.index("--junit-xml") + 1] == str(paths.db_junit_xml)
     assert "--cookie-jar" in command

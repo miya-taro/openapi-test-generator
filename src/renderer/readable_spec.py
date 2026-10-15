@@ -55,7 +55,10 @@ def schema_lines(schema, path='本文', required=False):
     if not isinstance(schema, dict) or not schema:
         return [f'{path}：制約未設定']
     types = {'object': 'オブジェクト', 'array': '配列', 'string': '文字列', 'integer': '整数', 'number': '数値', 'boolean': '真偽値'}
-    lines = [f'{path}：{types.get(schema.get("type"), str(schema.get("type", "型未指定")))}' + ('・必須' if required else '')]
+    declared = schema.get("type", "型未指定")
+    declared_types = declared if isinstance(declared, list) else [declared]
+    type_label = ' / '.join(types.get(value, str(value)) for value in declared_types)
+    lines = [f'{path}：{type_label}' + ('・必須' if required else '')]
     labels = {'format': '形式', 'minLength': '最小文字数', 'maxLength': '最大文字数', 'minimum': '最小値', 'maximum': '最大値', 'enum': '許可値', 'pattern': '正規表現', 'minItems': '最小要素数', 'maxItems': '最大要素数'}
     for key, label in labels.items():
         if key in schema:

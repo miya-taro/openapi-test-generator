@@ -197,7 +197,7 @@ jobs:
           OTG_THREE_AUTH_EVIDENCE_DIR: docs/_ci_measure_evidence/three-api-auth
           OTG_SQL_EVIDENCE_DIR: docs/_ci_measure_evidence/sql-response
           OTG_PLAN_COVERAGE_EVIDENCE_DIR: docs/_ci_measure_evidence/plan-coverage
-        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py runner/tests/test_three_api_auth_e2e.py runner/tests/test_plan_coverage_e2e.py -q
+        run: python -m pytest runner/tests/test_post_array_e2e.py runner/tests/test_sql_response_e2e.py runner/tests/test_pwrco_e2e.py runner/tests/test_three_api_auth_e2e.py runner/tests/test_plan_coverage_e2e.py runner/tests/test_pytest_db_integration.py -q
 
       - name: Upload GET JSON body comparison evidence
         if: always()

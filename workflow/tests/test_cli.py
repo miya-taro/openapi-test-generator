@@ -246,7 +246,7 @@ def test_execute_contract_rejects_changed_openapi_after_review(monkeypatch, tmp_
     assert any("変更されています" in event.get("message", "") for event in events)
 
 
-def test_execute_contract_rejects_edited_runner_workbook(monkeypatch, tmp_path, capsys):
+def test_execute_contract_ignores_edited_output_workbook(monkeypatch, tmp_path, capsys):
     project, master_path, calls = _prepare_one_case(monkeypatch, tmp_path, capsys)
     spec_excel = master_path.parent / "test-spec.xlsx"
     spec_excel.write_bytes(b"edited after review")
@@ -257,9 +257,9 @@ def test_execute_contract_rejects_edited_runner_workbook(monkeypatch, tmp_path, 
     ])
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
 
-    assert code == 3
-    assert calls == ["generate"]
-    assert any("Excel" in event.get("message", "") for event in events)
+    assert code == 0
+    assert calls == ["generate", "execute"]
+    assert not any("Excel" in event.get("message", "") for event in events)
 
 
 def test_prepare_db_scenarios_does_not_connect_to_db_or_call_api(monkeypatch, tmp_path, capsys):
@@ -306,7 +306,7 @@ def test_execute_db_scenarios_requires_approval_or_explicit_preview(monkeypatch,
     assert any(event.get("kind") == "html_report" for event in preview_events)
 
 
-def test_execute_db_scenarios_rejects_edited_review_workbook(monkeypatch, tmp_path, capsys):
+def test_execute_db_scenarios_rebuilds_edited_review_workbook(monkeypatch, tmp_path, capsys):
     project = _write_db_scenario_project(tmp_path)
     calls = []
     monkeypatch.setattr(cli, "run_command", lambda stage, command, emit: calls.append(stage) or StageResult.passed())
@@ -321,9 +321,9 @@ def test_execute_db_scenarios_rejects_edited_review_workbook(monkeypatch, tmp_pa
     ])
     result_events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
 
-    assert code == 3
-    assert calls == []
-    assert any("Excel" in event.get("message", "") for event in result_events)
+    assert code == 0
+    assert calls == ["db-scenarios"]
+    assert not any("Excel" in event.get("message", "") for event in result_events)
 
 
 def test_execute_db_scenarios_uses_same_approved_case_id_in_runner(monkeypatch, tmp_path, capsys):

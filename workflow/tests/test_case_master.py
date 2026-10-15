@@ -342,7 +342,7 @@ def test_case_review_transitions_are_saved_without_changing_definitions(tmp_path
     assert saved_case["definition"] == master["cases"][0]["definition"]
 
 
-def test_review_transition_updates_spec_workbook_and_its_integrity_hash(tmp_path):
+def test_review_transition_updates_output_workbook_without_execution_dependency(tmp_path):
     openapi = tmp_path / "openapi.json"
     _write_openapi(openapi)
     master = build_case_master("sample", _contract_output(), None, openapi)
@@ -360,9 +360,8 @@ def test_review_transition_updates_spec_workbook_and_its_integrity_hash(tmp_path
     saved = load_case_master(path)
     sheet = load_workbook(workbook_path, data_only=True).active
     assert sheet.cell(row=2, column=8).value == "reviewed"
-    assert saved["executionArtifacts"]["caseSpecExcelSha256"] == hashlib.sha256(
-        workbook_path.read_bytes()
-    ).hexdigest()
+    assert saved["cases"][0]["reviewStatus"] == "reviewed"
+    assert saved["cases"][0]["definitionHash"] == master["cases"][0]["definitionHash"]
 
 
 def test_case_review_cannot_skip_reviewed_status_or_update_unknown_ids(tmp_path):

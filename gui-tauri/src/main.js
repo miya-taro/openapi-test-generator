@@ -1332,6 +1332,7 @@ const ARTIFACT_LABELS = {
   case_master_json: "試験ケースマスター（下書き）",
   spec_excel: "試験仕様Excel",
   result_excel: "試験結果Excel",
+  execution_result_json: "試験結果JSON",
   junit_xml: "JUnit XML",
   db_report_excel: "DB試験結果Excel",
   db_junit_xml: "DB JUnit XML",

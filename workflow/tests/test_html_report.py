@@ -86,6 +86,7 @@ def test_failed_case_list_contains_only_failure_and_error_case_ids(tmp_path):
       <testcase name="TC-error"><error message="timeout"/></testcase>
       <testcase name="TC-warn"><system-out>warn</system-out></testcase>
       <testcase name="TC-ok"/>
+      <testcase name="RUN-ERROR-1" classname="execution"><error message="cleanup"/></testcase>
     </testsuite></testsuites>''', encoding="utf-8")
     output = tmp_path / "failed.json"
 
@@ -94,6 +95,23 @@ def test_failed_case_list_contains_only_failure_and_error_case_ids(tmp_path):
     assert output.read_text(encoding="utf-8")
     import json
     assert json.loads(output.read_text(encoding="utf-8")) == ["TC-fail", "TC-error"]
+
+
+def test_html_distinguishes_unstarted_cases_and_run_cleanup_errors(tmp_path):
+    master = tmp_path / "case-master.json"
+    write_case_master({"format": "api-tester.case-master", "schemaVersion": 1,
+                       "cases": [{"caseId": "TC-1", "kind": "contract", "title": "test",
+                                  "source": {}, "definition": {}, "expected": {}}]}, master)
+    junit = tmp_path / "result.xml"
+    junit.write_text('<testsuites><testsuite><testcase name="TC-1" classname="not-run"><skipped/></testcase>'
+                     '<testcase name="RUN-ERROR-1" classname="execution"><error message="secret"/></testcase>'
+                     '</testsuite></testsuites>', encoding="utf-8")
+    output = tmp_path / "result.html"
+    write_html_report(master, [junit], output)
+    report = output.read_text(encoding="utf-8")
+    assert 'data-status="not-run"' in report
+    assert "実行全体のエラーがあります" in report
+    assert "secret" not in report
 
 
 @pytest.mark.skipif(os.environ.get('OTG_BROWSER_TEST') != '1', reason='requires Chromium')

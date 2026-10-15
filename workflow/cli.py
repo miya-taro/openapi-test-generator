@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -99,6 +98,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def _artifact(emit, kind: str, path: Path) -> None:
     emit(WorkflowEvent(type="artifact", kind=kind, path=str(path)))
+    if kind in {"result_excel", "db_report_excel"} and path.with_suffix(".json").is_file():
+        emit(WorkflowEvent(type="artifact", kind="execution_result_json", path=str(path.with_suffix(".json"))))
 
 
 def _write_contract_case_master(config, paths) -> None:
@@ -112,11 +113,6 @@ def _write_contract_case_master(config, paths) -> None:
     apply_case_review_registry(master, config.output_dir / "case-reviews.json")
     write_case_master(master, paths.case_master_json)
     write_case_spec_excel(master, paths.case_spec_excel)
-    master["executionArtifacts"] = {
-        "testSpecExcelSha256": _sha256_file(paths.spec_excel),
-        "caseSpecExcelSha256": _sha256_file(paths.case_spec_excel),
-    }
-    write_case_master(master, paths.case_master_json)
 
 
 def _write_db_case_master(config, paths) -> None:
@@ -125,29 +121,13 @@ def _write_db_case_master(config, paths) -> None:
     )
     apply_case_review_registry(master, config.output_dir / "case-reviews.json")
     write_case_spec_excel(master, paths.case_spec_excel)
-    master["executionArtifacts"] = {
-        "caseSpecExcelSha256": _sha256_file(paths.case_spec_excel),
-    }
     write_case_master(master, paths.case_master_json)
 
 
-def _sha256_file(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError as exc:
-        raise CaseMasterError(f"実行成果物を読み込めません: {path.name}: {exc}") from exc
-
-
-def _verify_execution_artifact_hash(master: dict, artifacts: dict[str, Path]) -> None:
-    recorded = master.get("executionArtifacts")
-    if not isinstance(recorded, dict):
-        raise CaseMasterError("実行成果物の整合性情報がありません。ケースを再準備してください")
-    for key, path in artifacts.items():
-        if recorded.get(key) != _sha256_file(path):
-            raise CaseMasterError(f"承認後に試験用Excelが変更されています: {path.name}。ケースを再準備してください")
-
-
 def _write_html_report(paths, junit_paths: list[Path], artifacts: dict[str, Path]) -> None:
+    for label, path in list(artifacts.items()):
+        if path in (paths.result_excel, paths.db_report_excel) and path.with_suffix(".json").is_file():
+            artifacts[label.replace("Excel", "JSON")] = path.with_suffix(".json")
     write_html_report(paths.case_master_json, junit_paths, paths.html_report, artifacts)
 
 
@@ -178,7 +158,7 @@ def _validate_prepared_cases(config, paths) -> dict:
     """Rebuild from current inputs; never execute a stale or altered reviewed case set."""
     if not paths.run_dir.is_dir():
         raise CaseMasterError("準備済み試験がありません。先に試験ケースを作成してください")
-    for required in (paths.cases_json, paths.spec_excel, paths.case_master_json):
+    for required in (paths.cases_json, paths.case_master_json):
         if not required.is_file():
             raise CaseMasterError(f"準備済み成果物がありません: {required.name}")
     try:
@@ -190,10 +170,6 @@ def _validate_prepared_cases(config, paths) -> dict:
         config.name, contract_output, config.db_scenarios_path, config.openapi_path
     )
     saved = load_case_master(paths.case_master_json)
-    _verify_execution_artifact_hash(saved, {
-        "testSpecExcelSha256": paths.spec_excel,
-        "caseSpecExcelSha256": paths.case_spec_excel,
-    })
     current_cases = {case["caseId"]: case for case in current["cases"]}
     saved_cases = {case["caseId"]: case for case in saved["cases"]}
     if set(current_cases) != set(saved_cases) or any(
@@ -203,17 +179,16 @@ def _validate_prepared_cases(config, paths) -> dict:
         raise CaseMasterError("試験定義または入力ファイルが準備後に変更されています。再度ケースを作成してください")
 
     apply_case_review_registry(current, config.output_dir / "case-reviews.json")
-    current["executionArtifacts"] = saved["executionArtifacts"]
     write_case_master(current, paths.case_master_json)
+    write_case_spec_excel(current, paths.case_spec_excel)
     return current
 
 
 def _validate_prepared_db_cases(config, paths) -> dict:
-    if not paths.run_dir.is_dir() or not paths.case_master_json.is_file() or not paths.case_spec_excel.is_file():
+    if not paths.run_dir.is_dir() or not paths.case_master_json.is_file():
         raise CaseMasterError("準備済みDBシナリオがありません。先にシナリオケースを作成してください")
     current = build_case_master(config.name, None, config.db_scenarios_path, config.openapi_path)
     saved = load_case_master(paths.case_master_json)
-    _verify_execution_artifact_hash(saved, {"caseSpecExcelSha256": paths.case_spec_excel})
     current_cases = {case["caseId"]: case for case in current["cases"]}
     saved_cases = {case["caseId"]: case for case in saved["cases"]}
     if set(current_cases) != set(saved_cases) or any(
@@ -222,8 +197,8 @@ def _validate_prepared_db_cases(config, paths) -> dict:
     ):
         raise CaseMasterError("DBシナリオまたは入力ファイルが準備後に変更されています。再度ケースを作成してください")
     apply_case_review_registry(current, config.output_dir / "case-reviews.json")
-    current["executionArtifacts"] = saved["executionArtifacts"]
     write_case_master(current, paths.case_master_json)
+    write_case_spec_excel(current, paths.case_spec_excel)
     return current
 
 

@@ -60,6 +60,8 @@ run-windows.bat
 | PyYAML | 6.0.3 | MIT |
 | influxdb | 5.3.2 | MIT |
 | tzdata | 2026.5 | Apache-2.0 |
+| pytest | 8.4.2 | MIT |
+| pytest-xdist | 3.8.0 | MIT |
 
 正規表現からの値生成はAGPLのexrexからBSD-3-Clauseのrstrへ移行した。[著作権表示・ライセンス本文](licenses/rstr-3.2.2.txt)を同梱する。Windowsブラウザー版は更新時にアプリ専用venvから旧exrexを削除する。既に配布した旧exeや別のPython環境の依存はこの更新で変更されない。psycopg2-binaryのLGPLと例外、同梱ライブラリも確認対象になる。この表は法的な利用許可の判断や、推移的依存まで含めた配布用通知文の代わりではない。
 

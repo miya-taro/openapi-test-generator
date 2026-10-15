@@ -3,7 +3,15 @@ import shlex
 
 import openpyxl
 
-from src.renderer.readable_spec import simple_request, write_readable_sheets
+from src.renderer.readable_spec import schema_lines, simple_request, write_readable_sheets
+
+
+def test_openapi31_nullable_and_union_types_in_response_conditions():
+    lines = schema_lines({"type": "object", "required": ["value"], "properties": {
+        "value": {"type": ["string", "null"]}, "id": {"type": ["integer", "string"]},
+    }})
+    assert "本文.value：文字列 / null・必須" in lines
+    assert "本文.id：整数 / 文字列" in lines
 
 
 def test_readable_sheet_preserves_json_and_hides_internal_ids():

@@ -80,9 +80,10 @@ def build_contract_run_command(
 
     command = [
         sys.executable,
-        str(REPO_ROOT / "runner" / "runner.py"),
-        str(paths.spec_excel),
-        str(config.openapi_path),
+        str(REPO_ROOT / "runner" / "pytest_runner.py"),
+        str(paths.case_master_json),
+        "--kind", "contract",
+        "--spec-output", str(paths.spec_excel),
         "--base-url",
         config.base_url,
         "--output",
@@ -127,9 +128,9 @@ def build_db_scenario_command(
 
     command = [
         sys.executable,
-        str(REPO_ROOT / "runner" / "db_scenario_runner.py"),
-        str(config.db_scenarios_path),
-        str(config.openapi_path),
+        str(REPO_ROOT / "runner" / "pytest_runner.py"),
+        str(paths.case_master_json),
+        "--kind", "db-scenario",
         "--base-url",
         config.base_url,
         "--config",
