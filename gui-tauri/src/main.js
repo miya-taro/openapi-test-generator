@@ -1,3 +1,4 @@
+import {loginEditor} from "./login-editor.js";
 import { applyComparisonRules, comparisonRulesFromSchema, renderComparisonRules } from "./comparison-rules.js";
 import { invoke, listen, open, save, openPath } from "./runtime.js";
 import { buildProjectData } from "./project-config.js";
@@ -113,8 +114,8 @@ async function loadSettingsIntoForm() {
   await refreshOperationsList({ keepExcluded: true });
   await dbScenarioEditor.restoreSaved();
   // ログイン操作の選択はoperation一覧に依存するため、一覧更新後に復元する。
-  // value を直接書き換えても change イベントは発火しないため、ボディ/token_pathの
-  // 自動入力を明示的に呼び直す（呼ばないと「選択済みなのに毎回空欄」になる）。
+  // value の復元だけでは change が発火しないため、項目フォームも読み直す。
+  // 認証情報は復元せず、人が再入力する。
   if (settings.auth_login_op) {
     $("auth-login-op").value = settings.auth_login_op;
     await applyLoginOperationHints();
@@ -501,6 +502,7 @@ function syncAuthFieldsEnabled() {
   for (const id of AUTH_DEPENDENT_FIELD_IDS) {
     $(id).disabled = !enabled;
   }
+  loginForm.syncEnabled();
 }
 
 $("auth-enabled").addEventListener("change", syncAuthFieldsEnabled);
@@ -535,43 +537,24 @@ function populateAuthLoginOpSelect() {
   }
 }
 
-// ログイン操作を選ぶと、openapi.jsonのスキーマから分かる範囲でボディ/token_pathを自動入力する
-// （example/defaultが無ければプロパティ名を仮の値にするだけ、token_pathはレスポンススキーマに
-// それらしいキーが無ければ空のまま。あくまで下書きなので、埋まらない/違う場合は手入力する）。
+const loginForm = loginEditor({container: $("auth-credentials"), raw: $("auth-body"), token: $("auth-token-path"),
+  header: $("auth-header-name"), format: $("auth-header-format"), templates: $("auth-templates"),
+  tokenChoices: $("auth-token-choice"), status: $("auth-config-status"), enabled: authConfigEnabled});
+let loginSchemaRequest = 0;
 async function applyLoginOperationHints() {
+  const request = ++loginSchemaRequest;
   const operationId = $("auth-login-op").value;
-  const openapiPath = $("openapi-path").value.trim();
-  if (!operationId || !openapiPath) return;
-
-  let hints;
+  const path = $("openapi-path").value.trim();
+  if (!operationId || !path) { loginForm.render(null); return; }
   try {
-    hints = await invoke("bridge_call", { command: "login_operation_hints", args: { path: openapiPath, operation_id: operationId } });
+    const operations = await invoke("bridge_call", {command: "list_db_scenario_operations", args: {path}});
+    if (request !== loginSchemaRequest) return;
+    loginForm.render(Array.isArray(operations) ? operations.find(op => op.operationId === operationId) : null);
   } catch {
-    return; // 自動入力は失敗しても致命的ではないので無視する
-  }
-
-  const filled = [];
-  if (hints.body && !$("auth-body").value.trim()) {
-    $("auth-body").value = JSON.stringify(hints.body, null, 2);
-    filled.push("ボディ");
-  }
-  if (hints.token_path && !$("auth-token-path").value.trim()) {
-    $("auth-token-path").value = hints.token_path;
-    filled.push("token_path");
-  }
-  const notes = [];
-  if (filled.length > 0) {
-    notes.push(`openapi.jsonから${filled.join("・")}を自動入力しました（内容を確認してください）`);
-  }
-  // token_pathはログイン操作の「レスポンス」側のスキーマから推測している。レスポンスに
-  // スキーマが定義されていないopenapi.jsonも多く、その場合は何も起きず無言になってしまうため、
-  // 推測できなかったこと自体を明示する（token_pathが自動で埋まらないのはバグではなく、
-  // 単にopenapi.json側にレスポンスのスキーマが無いだけのことが多い）。
-  if (!hints.token_path) {
-    notes.push("token_pathはログイン操作のレスポンス定義から推測できませんでした。多くのAPIでは既定値（access_token）のままで動くので、まず空欄で試し、動かなければ実際のレスポンス形式に合わせて手入力してください");
-  }
-  if (notes.length > 0) {
-    setAuthConfigStatus(notes.join(" / "), filled.length > 0 ? "ok" : null);
+    if (request === loginSchemaRequest) {
+      loginForm.render(null);
+      setAuthConfigStatus("ログインの項目定義を読み込めませんでした。JSON入力は保持しています。", "error");
+    }
   }
 }
 
@@ -607,6 +590,7 @@ function collectAuthConfig() {
     throw new Error("ログイン操作を選択してください（対象APIの一覧から選べます）");
   }
 
+  if (!$("auth-body").validity.valid) throw new Error($("auth-body").validationMessage);
   const bodyText = $("auth-body").value.trim();
   let body;
   if (bodyText) {
@@ -1040,6 +1024,7 @@ async function refreshOperationsList({ keepExcluded, selectedOperations = null }
   lastOperations = ops || [];
   await dbScenarioEditor.load(path);
   populateAuthLoginOpSelect();
+  await applyLoginOperationHints();
   const selectedContractOperation = populateContractOperationSelect();
   if (lastOperations.length === 0) {
     container.innerHTML = '<div class="op-empty">operationが見つかりませんでした</div>';

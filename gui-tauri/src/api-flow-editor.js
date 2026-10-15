@@ -1,3 +1,4 @@
+import {referenceChoices, responsePaths, validateFlowSettings} from "./flow-guidance.js";
 // A flow is one reviewed test. Named responses are local to that test, including reruns.
 const clone = value => JSON.parse(JSON.stringify(value));
 const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
@@ -17,78 +18,112 @@ function choice(parent, title, entries, value) {
 function literal(text) {
   try { return JSON.parse(text); } catch { return text; }
 }
-function objectRows(parent, title, initial = {}, fields = []) {
+function objectRows(parent, title, initial = {}, fields = [], options = {}) {
   const group = el('fieldset'); group.append(el('legend', title)); parent.append(group);
   const rows = [];
   function add(name = '', value = '', enabled = true) {
     const row = el('div'); row.className = 'api-flow-value-row';
     const use = field(row, '送信', '', 'checkbox'); use.checked = enabled;
     const key = field(row, '項目名', name);
+    const spec = fields.find(f => f.name === name);
+    if (spec?.required) key.parentElement.append(el('small', '必須項目（省略する異常試験も設定できます）'));
     const source = choice(row, '値の指定', [['fixed', '入力した値'], ['step', '前のAPIのレスポンス']], typeof value === 'string' && value.startsWith('{{steps.') ? 'step' : 'fixed');
     const kind = choice(row, '型', [['string','文字列'],['number','数値'],['boolean','真偽値'],['json','配列・オブジェクト・null']], typeof value === 'string' ? 'string' : ['number','boolean'].includes(typeof value) ? typeof value : 'json');
     const input = field(row, '値／手順名.レスポンス項目（例 create.id）', source.value === 'step' ? value.slice(8, -2) : typeof value === 'string' ? value : JSON.stringify(value));
+    const picker = choice(row, '引き継ぐレスポンス項目', [['', '項目を選択（定義がない場合は手入力）']]);
+    const refresh = () => {
+      const selected = input.value;
+      picker.replaceChildren();
+      for (const [value, title] of [['', '項目を選択（定義がない場合は手入力）'], ...(source.value === 'step' ? (options.choices?.() || []) : [])]) {
+        const option = el('option', title); option.value = value; picker.append(option);
+      }
+      picker.value = selected;
+      input.parentElement.firstChild.textContent = source.value === 'step' ? '参照先（手入力で変更可）' : '値';
+      picker.parentElement.hidden = source.value !== 'step';
+      kind.parentElement.hidden = source.value === 'step';
+    };
+    row.insertBefore(picker.parentElement, input.parentElement);
+    picker.onfocus = refresh;
+    picker.addEventListener('refresh-options', refresh);
+    picker.onchange = () => { if (picker.value) { input.value = picker.value; row.dispatchEvent(new window.Event('input', {bubbles:true})); } };
+    picker.oninput = picker.onchange;
+    source.onchange = refresh; refresh();
     button(row, '削除', () => { row.remove(); rows.splice(rows.indexOf(entry), 1); });
     const entry = {row, use, key, source, input, kind}; rows.push(entry); group.append(row);
   }
   const names = new Set([...fields.map(f => f.name), ...Object.keys(initial)]);
   for (const name of names) {
     const schema = fields.find(f => f.name === name)?.schema || {};
-    add(name, Object.hasOwn(initial, name) ? initial[name] : schema.example ?? '', Object.hasOwn(initial, name));
+    add(name, Object.hasOwn(initial, name) ? initial[name] : schema.example ?? schema.default ?? '', Object.hasOwn(initial, name));
   }
   button(group, '項目を追加', () => add());
   return () => {
     const result = {};
     for (const row of rows.filter(r => r.use.checked)) {
       const key = row.key.value.trim();
-      if (!key || ['__proto__', 'prototype', 'constructor'].includes(key) || Object.hasOwn(result, key)) throw new Error('項目名は空欄・重複にできません');
+      if (!key || ['__proto__', 'prototype', 'constructor'].includes(key) || Object.hasOwn(result, key)) throw new Error(`${title}：項目名は空欄・重複にできません`);
       const value = row.input.value;
-      if (row.source.value === 'step' && !/^[A-Za-z][A-Za-z0-9_]*(\.[\w]+)*$/.test(value)) throw new Error('参照は create.id のように指定してください');
+      if (row.source.value === 'step' && !/^[A-Za-z][A-Za-z0-9_]*(\.[\w]+)*$/.test(value)) throw new Error(`${title} / ${key}：引き継ぐ項目を選ぶか、create.id のように指定してください`);
       let parsed = value;
       if (row.source.value !== 'step' && row.kind.value !== 'string') {
-        try { parsed = JSON.parse(value); } catch { throw new Error('指定した型に合う値を入力してください'); }
-        if (row.kind.value !== 'json' && typeof parsed !== row.kind.value) throw new Error('指定した型と値が一致しません');
+        try { parsed = JSON.parse(value); } catch { throw new Error(`${title} / ${key}：指定した型に合う値を入力してください`); }
+        if (row.kind.value !== 'json' && typeof parsed !== row.kind.value) throw new Error(`${title} / ${key}：指定した型と値が一致しません`);
       }
       result[key] = row.source.value === 'step' ? `{{steps.${value}}}` : parsed;
     }
     return result;
   };
 }
-function waitEditor(parent, initial) {
+function waitEditor(parent, initial, getOperation = () => null) {
   const group = el('fieldset'); group.append(el('legend', '非同期処理の完了待ち（GETのみ）')); parent.append(group);
   const enabled = field(group, '完了するまで繰り返し確認する', '', 'checkbox'); enabled.checked = !!initial;
   const path = field(group, 'レスポンス項目（例 status）', initial?.path || '');
+  const picker = choice(group, '完了を確認する項目', [['', 'レスポンス項目を選択']]);
+  picker.onfocus = () => {
+    picker.replaceChildren();
+    for (const name of ['', ...responsePaths(getOperation()?.responseSchema)]) {
+      const option = el('option', name || 'レスポンス項目を選択'); option.value = name; picker.append(option);
+    }
+    picker.value = path.value;
+  };
+  picker.addEventListener('refresh-options', picker.onfocus);
+  picker.onfocus();
+  picker.onchange = () => { if (picker.value) { path.value = picker.value; group.dispatchEvent(new window.Event('input', {bubbles:true})); } };
+  picker.oninput = picker.onchange;
   const equals = field(group, '完了時の値（例 done）', initial ? JSON.stringify(initial.equals) : '');
   const timeout = field(group, '期限（秒、最大300）', initial?.timeout ?? 30, 'number');
   const interval = field(group, '確認間隔（秒）', initial?.interval ?? 1, 'number');
-  const controls = [path, equals, timeout, interval];
+  const controls = [path, picker, equals, timeout, interval];
   const update = () => controls.forEach(input => { input.disabled = !enabled.checked; }); enabled.onchange = update; update();
   return () => enabled.checked ? {path: path.value.trim(), equals: literal(equals.value), timeout: Number(timeout.value), interval: Number(interval.value)} : undefined;
 }
-function requestEditor(parent, operations, initial = {}, fixed = false) {
+function requestEditor(parent, operations, initial = {}, fixed = false, options = {}) {
   const select = choice(parent, '呼び出すAPI', operations.map(op => [op.operationId, `${op.method} ${op.path} (${op.operationId})`]), initial.operationId);
   select.disabled = fixed;
   const values = el('div'); parent.append(values); let body, query, path;
   function render(req = {}) {
     values.replaceChildren();
     const op = operations.find(op => op.operationId === select.value);
-    body = objectRows(values, 'リクエストボディ', req.body, Object.entries(op?.requestSchema?.properties || {}).map(([name, schema]) => ({name, schema})));
-    path = objectRows(values, 'パスの値', req.path_params, (op?.parameters || []).filter(p => p.in === 'path'));
-    query = objectRows(values, 'クエリの値', req.query_params, (op?.parameters || []).filter(p => p.in === 'query'));
+    body = objectRows(values, 'リクエストボディ', req.body, Object.entries(op?.requestSchema?.properties || {}).map(([name, schema]) => ({name, schema, required: op.requestSchema.required?.includes(name)})), options);
+    path = objectRows(values, 'パスの値', req.path_params, (op?.parameters || []).filter(p => p.in === 'path'), options);
+    query = objectRows(values, 'クエリの値', req.query_params, (op?.parameters || []).filter(p => p.in === 'query'), options);
   }
   select.onchange = () => render(); render(initial);
-  return () => {
+  const read = () => {
     const bodyValue = body();
     return {operationId: select.value, ...(Object.keys(bodyValue).length ? {body: bodyValue} : {}), path_params: path(), query_params: query()};
   };
+  read.operationId = () => select.value;
+  return read;
 }
-function stepEditor(parent, operations, initial = {}) {
+function stepEditor(parent, operations, initial = {}, options = {}) {
   const row = el('fieldset'); parent.append(row);
   const name = field(row, '手順名（英数字、例 create）', initial.name || '');
-  const request = requestEditor(row, operations, initial.request);
+  const request = requestEditor(row, operations, initial.request, false, options);
   const status = field(row, '期待HTTPステータス', initial.expect_status ?? 200, 'number');
-  const body = objectRows(row, 'レスポンスの期待値（項目パスと値）', initial.expect_body);
-  const poll = waitEditor(row, initial.poll);
-  return {row, read: () => ({name: name.value.trim(), request: request(), expect_status: Number(status.value), expect_body: body(), ...(poll() ? {poll: poll()} : {})})};
+  const body = objectRows(row, 'レスポンスの期待値（項目パスと値）', initial.expect_body, [], options);
+  const poll = waitEditor(row, initial.poll, () => operations.find(op => op.operationId === request.operationId()));
+  return {row, metadata: () => ({name: name.value.trim(), operationId: request.operationId()}), read: () => ({name: name.value.trim(), request: request(), expect_status: Number(status.value), expect_body: body(), ...(poll() ? {poll: poll()} : {})})};
 }
 export function attachFlow(scenario, before, cleanup, poll) {
   const result = clone(scenario);
@@ -105,26 +140,42 @@ export function attachFlow(scenario, before, cleanup, poll) {
 export function flowControls(scenario, operations, onSave, onError) {
   const panel = el('details'); panel.append(el('summary', 'APIの連続実行・値の受け渡し・完了待ち'));
   panel.append(el('p', '前処理 → 本試験とDB照合 → 後片付けの順です。前処理が失敗したら本試験を止めます。後片付けは失敗時も試みます。作成APIは繰り返しません。'));
-  const lists = {};
+  const lists = {before: [], cleanup: []};
+  const choicesFor = (phase, editor) => () => {
+    const before = lists.before.map(e => e.metadata());
+    if (phase === 'before') return referenceChoices(before.slice(0, (editor() ? lists.before.indexOf(editor()) : lists.before.length)), operations);
+    if (phase === 'cleanup') return referenceChoices([...before, {name:'result', operationId:scenario.request.operationId}, ...lists.cleanup.slice(0, (editor() ? lists.cleanup.indexOf(editor()) : lists.cleanup.length)).map(e => e.metadata())], operations);
+    return referenceChoices(before, operations);
+  };
   for (const [phase, title] of [['before', '前処理API（上から順に実行）'], ['cleanup', '後片付けAPI（上から順に実行）']]) {
     const holder = el('fieldset'); holder.append(el('legend', title)); panel.append(holder); lists[phase] = [];
-    const add = initial => { const editor = stepEditor(holder, operations, initial); lists[phase].push(editor); button(editor.row, 'この手順を削除', () => { editor.row.remove(); lists[phase].splice(lists[phase].indexOf(editor), 1); }); };
+    const add = initial => { let editor; editor = stepEditor(holder, operations, initial, {choices:choicesFor(phase, () => editor)}); lists[phase].push(editor); button(editor.row, 'この手順を削除', () => { editor.row.remove(); lists[phase].splice(lists[phase].indexOf(editor), 1); }); };
     for (const step of scenario.api_flow?.[phase] || []) add(step);
     button(holder, 'API手順を追加', () => add());
   }
   panel.className = 'api-flow-editor';
-  panel.append(el('p', '本試験には create.id、後片付けには result.id のように参照を指定できます。値の型は保持されます。配列要素は items.0.id のように指定します。'));
-  const mainRequest = requestEditor(panel, operations, scenario.request, true);
+  panel.append(el('p', '値の指定を「前のAPIのレスポンス」にすると、引き継ぐ項目を選べます。後片付けでは result（本試験）も選べます。配列の .0 は先頭要素です。定義にない項目や他の配列要素は手入力できます。'));
+  const mainRequest = requestEditor(panel, operations, scenario.request, true, {choices:choicesFor('main')});
   const status = field(panel, '本試験の期待HTTPステータス', scenario.response_check?.expect?.status ?? 200, 'number');
-  const expected = objectRows(panel, '本試験のレスポンス期待値（項目パスと値）', scenario.response_check?.expect?.body);
-  const poll = waitEditor(panel, scenario.poll);
+  const expected = objectRows(panel, '本試験のレスポンス期待値（項目パスと値）', scenario.response_check?.expect?.body, [], {choices:choicesFor('main')});
+  const poll = waitEditor(panel, scenario.poll, () => operations.find(op => op.operationId === scenario.request.operationId));
+  const feedback = el('p'); feedback.className = 'api-flow-feedback'; feedback.setAttribute('role', 'status'); panel.append(feedback);
+  const collect = () => validateFlowSettings(attachFlow({...scenario, request: mainRequest(), response_check: {expect: {...scenario.response_check?.expect, status: Number(status.value), body: expected()}}}, lists.before.map(e => e.read()), lists.cleanup.map(e => e.read()), poll()), operations);
+  const check = () => {
+    try { collect(); feedback.textContent = '設定の形式を確認しました。「設定を反映」後に保存してください。APIの合否は実行後に判定します。'; feedback.classList.remove('error'); return true; }
+    catch (error) { feedback.textContent = error.message; feedback.classList.add('error'); return false; }
+  };
+  const refresh = () => { panel.querySelectorAll('select').forEach(select => select.dispatchEvent(new window.Event('refresh-options'))); check(); };
+  panel.addEventListener('input', refresh); panel.addEventListener('change', refresh);
+  panel.addEventListener('click', () => { window.queueMicrotask(check); });
   button(panel, '連続実行の設定を反映', () => {
-    try { onSave(attachFlow({...scenario, request: mainRequest(), response_check: {expect: {...scenario.response_check?.expect, status: Number(status.value), body: expected()}}}, lists.before.map(e => e.read()), lists.cleanup.map(e => e.read()), poll())); }
-    catch (error) { onError(error.message); }
+    try { const updated = collect(); onSave(updated); }
+    catch (error) { check(); onError(error.message); }
   });
+  check();
   return panel;
 }
 export function newApiScenario(operation, name) {
   if (!operation || !name.trim()) throw new Error('API操作と試験名を指定してください');
-  return {id: `ui-${globalThis.crypto.randomUUID()}`, name: name.trim(), request: {operationId: operation.operationId, body: {}}, response_check: {expect: {status: 200}}};
+  return {id: `ui-${globalThis.crypto.randomUUID()}`, name: name.trim(), request: {operationId: operation.operationId, body: {}}, response_check: {expect: {status: Number(operation.successStatus || 200)}}};
 }

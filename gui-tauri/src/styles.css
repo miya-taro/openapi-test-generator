@@ -1333,5 +1333,19 @@ label.checkbox input[type="checkbox"] {
 .api-flow-editor fieldset { margin: 12px 0; padding: 12px; border: 1px solid #ccd6e4; border-radius: 8px; min-width: 0; }
 .api-flow-editor label { display: block; margin: 8px 0; }
 .api-flow-editor input:not([type="checkbox"]), .api-flow-editor select { width: 100%; box-sizing: border-box; }
-.api-flow-value-row { display: grid; grid-template-columns: 50px minmax(100px, 1fr) minmax(110px, 1fr) 100px minmax(140px, 2fr) auto; gap: 8px; align-items: end; }
-@media (max-width: 1100px) { .api-flow-value-row { grid-template-columns: 1fr 1fr; } }
+
+/* Keep guidance alongside the value it describes, including on narrow screens. */
+.api-flow-value-row { display: grid; gap: 8px; align-items: end; grid-template-columns: 54px minmax(100px, 1fr) minmax(140px, 1fr) minmax(100px, 1fr); padding: 10px; background: #f7f9fc; border-radius: 6px; margin: 8px 0; }
+.api-flow-value-row label:has(input[aria-label^="値／"]), .api-flow-value-row label:has(select[aria-label="引き継ぐレスポンス項目"]) { grid-column: span 2; }
+.api-flow-editor [hidden] { display: none; }
+.api-flow-value-row small { display: block; color: #52647a; }
+.api-flow-feedback { position: sticky; bottom: 0; padding: 12px; border: 1px solid #ccd6e4; background: #f4f8ff; border-radius: 6px; z-index: 1; }
+.api-flow-feedback.error { background: #fff3f3; border-color: #c94747; }
+.login-value-row { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 8px 16px; margin: 12px 0; align-items: end; }
+.login-value-row label { display: block; }
+.login-value-row input:not([type="checkbox"]) { display: block; width: 100%; box-sizing: border-box; }
+.login-value-row small { grid-column: 1 / -1; }
+.login-value-row input[aria-invalid="true"] { border-color: #c94747; }
+@media (max-width: 900px) { .api-flow-value-row { grid-template-columns: 1fr 1fr; } }
+
+.api-flow-value-row button { white-space: nowrap; }

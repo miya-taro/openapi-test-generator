@@ -37,3 +37,36 @@ test('duplicate names cannot be silently overwritten', () => {
   expect(()=>attachFlow(source(),[step,step],[],undefined)).toThrow(/重複/);
   expect(()=>attachFlow(source(),[{...step,name:'result'}],[],undefined)).toThrow(/予約/);
 });
+
+test('response picker offers only earlier steps, keeps typed references and detects removed steps', () => {
+  const ops = operations.map(op => ({...op,responseSchema:{type:'object',properties:{id:{type:'integer'},items:{type:'array',items:{type:'object',properties:{code:{type:'string'}}}}}}}));
+  const initial = source();
+  initial.api_flow={before:[{name:'create',request:{operationId:'create'},expect_status:200}],cleanup:[]};
+  const save=vi.fn(),error=vi.fn();
+  const panel=flowControls(initial,ops,save,error); document.body.append(panel);
+  const main = panel.querySelector(':scope > div');
+  const row=[...main.querySelectorAll('.api-flow-value-row')].find(row => findInput(row,'項目名').value==='id');
+  const sourceSelect=row.querySelector('[aria-label="値の指定"]'); sourceSelect.value='step'; sourceSelect.dispatchEvent(new window.Event('change',{bubbles:true}));
+  const picker=row.querySelector('[aria-label="引き継ぐレスポンス項目"]');
+  expect([...picker.options].map(o=>o.value)).toContain('create.items.0.code');
+  expect([...picker.options].map(o=>o.value)).not.toContain('result.id');
+  picker.value='create.id'; picker.dispatchEvent(new window.Event('change',{bubbles:true}));
+  findButton(panel,'連続実行の設定を反映').click();
+  expect(save.mock.calls[0][0].request.path_params.id).toBe('{{steps.create.id}}');
+  findButton(panel,'この手順を削除').click();
+  findButton(panel,'連続実行の設定を反映').click();
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(panel.querySelector('[role="status"]').textContent).toContain('参照先');
+});
+
+test('invalid status and polling deadlines are explained before saving', () => {
+  const save=vi.fn(),error=vi.fn();
+  const panel=flowControls({...source(),poll:{path:'state',equals:'done',timeout:1,interval:2}},operations,save,error);
+  expect(panel.querySelector('[role="status"]').textContent).toContain('確認間隔');
+  findButton(panel,'連続実行の設定を反映').click();
+  expect(save).not.toHaveBeenCalled();
+  findInput(panel,'完了するまで繰り返し確認する').click();
+  const status=findInput(panel,'本試験の期待HTTPステータス'); status.value='0';status.dispatchEvent(new window.Event('input',{bubbles:true}));
+  expect(panel.querySelector('[role="status"]').textContent).toContain('100〜599');
+  expect(newApiScenario({...operations[0],successStatus:'201'},'作成').response_check.expect.status).toBe(201);
+});

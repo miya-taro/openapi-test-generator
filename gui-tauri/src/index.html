@@ -144,12 +144,15 @@
                   </select>
                   <p class="field-caption">
                     対象APIの中から、ログインを行う操作（例: POST /api/v1/auth/login）を選んでください。URL・HTTPメソッドはここから自動で使われ、
-                    openapi.jsonにスキーマがあればボディ・token_pathも自動入力を試みます（推定なので内容は確認してください）。
+                    API定義の項目に試験用のログイン情報を入力してください。認証方式は仕様に合わせて選びます。
                   </p>
                 </div>
                 <div class="form-field">
-                  <label for="auth-body">ログインリクエストのボディ</label>
-                  <textarea id="auth-body" rows="3" placeholder='{"username": "test", "password": "test1234"}'></textarea>
+                  <div id="auth-credentials"></div>
+                  <details><summary>ログインボディをJSONで編集（入れ子などの詳細設定）</summary>
+                    <label for="auth-body">ログインリクエストのボディ</label>
+                    <textarea id="auth-body" rows="3" placeholder='{"username": "test", "password": "test1234"}'></textarea>
+                  </details>
                   <p class="field-caption">実際にログインできる試験用の値を入力してください。試験準備時に、項目名・必須・型を選択したログインAPIの定義と照合します。</p>
                 </div>
                 <div class="form-field">
@@ -157,10 +160,13 @@
                   <textarea id="auth-profiles" rows="3" placeholder='{"read_only": {"username": "reader", "password": "..."}}'></textarea>
                   <p class="field-caption">DB確認設定で <code>auth_profile: read_only</code> のように指定します。ログイン先・token設定は共通です。通常設定には保存されず、起動ごとに再入力します（「ファイルに保存」を押した場合は選択先に保存されます）。</p>
                 </div>
+                <p>認証方式のテンプレート（仕様に合うものを選択）</p>
+                <div id="auth-templates" class="btn-row"></div>
                 <div class="db-fields-grid">
-                  <input id="auth-token-path" type="text" placeholder="token_path（既定: access_token。任意）" />
-                  <input id="auth-header-name" type="text" placeholder="header_name（既定: Authorization。任意）" />
-                  <input id="auth-header-format" type="text" placeholder="header_format（既定: Bearer {token}。任意）" />
+                  <label>認証に使うレスポンス項目<select id="auth-token-choice" aria-label="認証に使うレスポンス項目"><option value="">ログインAPIを選択してください</option></select></label>
+                  <label>レスポンス項目のパス<input id="auth-token-path" type="text" placeholder="例 id / data.access_token（既定 access_token）" /></label>
+                  <label>送信するヘッダ名<input id="auth-header-name" type="text" placeholder="例 auth-key（既定 Authorization）" /></label>
+                  <label>ヘッダ値の形式<input id="auth-header-format" type="text" placeholder="例 {token}（既定 Bearer {token}）" /></label>
                 </div>
                 <div class="btn-row">
                   <button class="secondary" id="auth-config-save">ファイルに保存(任意・外部共有用)</button>
