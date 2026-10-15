@@ -50,7 +50,7 @@ def contract_raw(case):
 
 def contract_case(case):
     raw = contract_raw(case)
-    return RunCase(*(str(raw[key] or "") for key in (
+    return RunCase(*("" if raw[key] is None else str(raw[key]) for key in (
         "id", "operationId", "path", "method", "in", "paramName", "inputValue", "expectedStatus",
         "expectedResponseBody", "expectedResponseHeader", "expectedResponseTime", "expectedResult",
     )))

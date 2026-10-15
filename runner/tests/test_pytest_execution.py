@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "runner"))
 sys.path.insert(0, str(ROOT))
 
-from execution_plan import db_case
+from execution_plan import contract_case, db_case
 from workflow.case_master import build_case_master, write_case_master
 
 
@@ -126,6 +126,14 @@ def test_dry_run_has_no_side_effects(tmp_path, httpserver):
     assert result.returncode == 0
     assert payload is None
     assert not httpserver.log
+
+
+@pytest.mark.parametrize("value, expected", [(0, "0"), (False, "False"), ("", ""), (None, "")])
+def test_plan_adapter_does_not_drop_zero_or_false(tmp_path, value, expected):
+    _, master = prepare(tmp_path)
+    case = master["cases"][0]
+    case["definition"]["request"]["value"] = value
+    assert contract_case(case).input_value == expected
 
 
 def test_login_setup_error_is_not_a_pass_and_does_not_leak_credentials(tmp_path, httpserver):
