@@ -70,7 +70,23 @@ jobs:
         run: python -m pytest tests/ -v
 
       - name: Run runner tests
-        run: python -m pytest runner/tests/ -v
+        run: python -m pytest runner/tests/ -v --junitxml=runner-test-results.xml
+
+      - name: Annotate runner failures
+        if: failure()
+        shell: python
+        run: |
+          import pathlib
+          import xml.etree.ElementTree as ET
+          path = pathlib.Path('runner-test-results.xml')
+          if path.is_file():
+              for case in ET.parse(path).getroot().iter('testcase'):
+                  for tag in ('failure', 'error'):
+                      failure = case.find(tag)
+                      if failure is not None:
+                          message = f"{case.get('classname')}.{case.get('name')}: {failure.get('message', '')}"
+                          message = message[:3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                          print(f'::error title=Runner test failure::{message}')
 
       - name: Run GUI logic tests
         run: python -m pytest gui/tests/ -v
