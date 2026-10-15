@@ -120,6 +120,9 @@ def _records(cases, directory):
             row = json.loads(path.read_text(encoding="utf-8"))
             if row.get("definitionHash") != case["definitionHash"] or row.get("caseId") != case["caseId"]:
                 raise ValueError("実行結果と試験定義が一致しません")
+            if row.get("status") == "running":
+                row.update(status="error", verdict="NG", actualStatus=0,
+                           detail="実行開始後、結果保存前に中断しました。送信済みの可能性があるためAPI・DB状態を確認してください")
         else:
             row = {"caseId": case["caseId"], "kind": case["kind"], "definitionHash": case["definitionHash"],
                    "status": "not-run", "verdict": "未実施", "actualStatus": 0,
@@ -133,14 +136,19 @@ def _complete_junit(path, cases, records, run_errors):
     path = Path(path)
     root = ET.parse(path).getroot() if path.is_file() else ET.Element("testsuites")
     present = {item.get("name") for item in root.iter("testcase")}
-    missing = [case for case in cases if case["caseId"] not in present]
+    missing = [row for row in records if row["caseId"] not in present]
+    interrupted = sum(row["status"] == "error" for row in missing)
     if missing or run_errors:
         suite = ET.SubElement(root, "testsuite", name="execution-completeness",
-                              tests=str(len(missing) + len(run_errors)), errors=str(len(run_errors)),
-                              skipped=str(len(missing)), failures="0")
-        for case in missing:
-            item = ET.SubElement(suite, "testcase", name=case["caseId"], classname="not-run")
-            ET.SubElement(item, "skipped", message="未実施：試験を開始できませんでした")
+                              tests=str(len(missing) + len(run_errors)), errors=str(len(run_errors) + interrupted),
+                              skipped=str(len(missing) - interrupted), failures="0")
+        for row in missing:
+            item = ET.SubElement(suite, "testcase", name=row["caseId"],
+                                 classname="interrupted" if row["status"] == "error" else "not-run")
+            if row["status"] == "error":
+                ET.SubElement(item, "error", message=row["detail"])
+            else:
+                ET.SubElement(item, "skipped", message="未実施：試験を開始できませんでした")
         for index, message in enumerate(run_errors):
             item = ET.SubElement(suite, "testcase", name=f"RUN-ERROR-{index + 1}", classname="execution")
             ET.SubElement(item, "error", message=message)

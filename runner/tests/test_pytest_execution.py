@@ -136,6 +136,26 @@ def test_plan_adapter_does_not_drop_zero_or_false(tmp_path, value, expected):
     assert contract_case(case).input_value == expected
 
 
+def test_interrupted_started_request_is_not_reported_as_unstarted(tmp_path):
+    import hashlib
+    from pytest_runner import _complete_junit, _records
+    _, master = prepare(tmp_path)
+    case = master["cases"][0]
+    records = tmp_path / "records"
+    records.mkdir()
+    path = records / (hashlib.sha256(case["caseId"].encode("utf-8")).hexdigest() + ".json")
+    path.write_text(json.dumps({"caseId": case["caseId"], "definitionHash": case["definitionHash"],
+                                "kind": case["kind"], "status": "running"}), encoding="utf-8")
+    rows = _records([case], records)
+    assert rows[0]["status"] == "error"
+    assert "送信済みの可能性" in rows[0]["detail"]
+    junit = tmp_path / "result.xml"
+    _complete_junit(junit, [case], rows, [])
+    root = ET.parse(junit).getroot()
+    assert len(list(root.iter("error"))) == 1
+    assert not list(root.iter("skipped"))
+
+
 def test_login_setup_error_is_not_a_pass_and_does_not_leak_credentials(tmp_path, httpserver):
     prepare(tmp_path)
     auth = tmp_path / "auth.json"
