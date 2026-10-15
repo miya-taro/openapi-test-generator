@@ -54,6 +54,8 @@ $installedRuntimeHash = if (Test-Path -LiteralPath $requirementsStamp) {
 } else { "" }
 if ($runtimeHash -ne $installedRuntimeHash) {
     Invoke-Checked $pythonExecutable @("-m", "pip", "install", "--disable-pip-version-check", "-r", $requirementsFile)
+    # This venv belongs to the app; remove the superseded AGPL regex dependency on upgrade.
+    Invoke-Checked $pythonExecutable @("-m", "pip", "uninstall", "--yes", "exrex")
     [System.IO.File]::WriteAllText($requirementsStamp, $runtimeHash)
 }
 

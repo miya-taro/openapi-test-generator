@@ -879,7 +879,7 @@ describe("統一ワークフローによる契約試験", () => {
     document.getElementById("auth-enabled").checked = false;
   });
 
-  test("試験ケース準備後に内容を確認でき、未承認実行を明示的に選べる", async () => {
+  test.each(["unchanged", "changed", "no-event", "during-prepare"])("契約ケース準備後の設定変更を検査する: %s", async (mode) => {
     document.getElementById("openapi-path").value = "C:\\work\\openapi.json";
     document.getElementById("base-url").value = "http://vm.local/api";
     document.getElementById("output-dir").value = "C:\\work\\results";
@@ -925,8 +925,15 @@ describe("統一ワークフローによる契約試験", () => {
         path: "C:\\work\\results\\20260923-120000-deadbeef\\case-master.json",
       }),
     });
+    if (mode === "during-prepare") document.getElementById("base-url").value = "http://changed-during-prepare.local";
     emitTauriEvent("proc-done", { runId: prepareRunId, code: 0 });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    if (mode === "during-prepare") {
+      expect(document.getElementById("execute-draft-button").hidden).toBe(true);
+      expect(document.getElementById("case-review-message").textContent).toContain("作り直して");
+      expect(mockInvoke.mock.calls.filter(([command]) => command === "run_script")).toHaveLength(1);
+      return;
+    }
 
     expect(document.getElementById("case-review-panel").hidden).toBe(false);
     expect(document.getElementById("execute-draft-button").hidden).toBe(false);
@@ -938,6 +945,16 @@ describe("統一ワークフローによる契約試験", () => {
     document.querySelector('[data-case-id="TC-1"] button').click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.getElementById("execute-approved-button").hidden).toBe(false);
+    if (mode !== "unchanged") {
+      document.getElementById("base-url").value = "http://different.local/api";
+      if (mode === "changed") document.getElementById("base-url").dispatchEvent(new window.Event("input"));
+      document.getElementById("execute-approved-button").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.getElementById("execute-approved-button").hidden).toBe(true);
+      expect(document.getElementById("case-review-message").textContent).toContain("作り直して");
+      expect(mockInvoke.mock.calls.filter(([command]) => command === "run_script")).toHaveLength(1);
+      return;
+    }
     document.getElementById("execute-approved-button").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1020,7 +1037,8 @@ describe("統一ワークフローによる契約試験", () => {
 });
 
 describe("統一ワークフローによるDBシナリオ試験", () => {
-  test("DBシナリオを先にレビューし、承認後に一時設定を渡して実行する", async () => {
+  test.each([false, true])("DBシナリオの準備後の設定変更=%s", async (changed) => {
+    document.getElementById("dbscenario-error").scrollIntoView = vi.fn();
     document.getElementById("openapi-path").value = "C:\\work\\openapi.json";
     document.getElementById("base-url").value = "http://vm.local/api";
     document.getElementById("output-dir").value = "C:\\work\\results";
@@ -1088,6 +1106,15 @@ describe("統一ワークフローによるDBシナリオ試験", () => {
     document.querySelector('[data-case-id="DB-readUser"] button').click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.getElementById("dbscenario-execute-approved-button").hidden).toBe(false);
+    if (changed) {
+      document.getElementById("pg-dbname").value = "different_database";
+      document.getElementById("dbscenario-execute-approved-button").click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(document.getElementById("dbscenario-execute-approved-button").hidden).toBe(true);
+      expect(document.getElementById("dbscenario-case-review-message").textContent).toContain("作り直して");
+      expect(mockInvoke.mock.calls.filter(([command]) => command === "run_script")).toHaveLength(1);
+      return;
+    }
     document.getElementById("dbscenario-execute-approved-button").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 

@@ -1,16 +1,12 @@
 """string 型のルール（enum / maxLength / minLength / pattern / format）。"""
 from __future__ import annotations
-from itertools import islice
 import re
 
 from .choices import generate_choice_cases
 from ...samples.format_samples import FORMAT_VALID_SAMPLES, FORMAT_INVALID_SAMPLES
 from ... import logger as log
 
-try:
-    import exrex  # type: ignore
-except ImportError:  # pragma: no cover - exrex 未導入環境向けフォールバック
-    exrex = None
+from ...pattern_samples import pattern_samples
 
 
 def generate_string_cases(schema: dict, ctx: dict) -> list[dict]:
@@ -435,10 +431,8 @@ def _pattern_sample_at_length(pattern: str, length: int) -> str | None:
     simple = _try_simple_pattern_generation(pattern)
     if simple is not None and len(simple) == length:
         return simple
-    if exrex is None:
-        return None
     try:
-        for candidate in islice(exrex.generate(pattern), 1000):
+        for candidate in pattern_samples(pattern, 1000):
             if len(candidate) == length and re.search(pattern, candidate):
                 return candidate
             if len(candidate) < length:
@@ -457,12 +451,8 @@ def _reverse_generate_pattern(pattern: str) -> str | None:
     if simple is not None:
         return simple
 
-    if exrex is None:
-        log.info({"pattern": pattern}, "pattern 逆生成失敗（exrex未導入）")
-        return None
-
     try:
-        result = next(exrex.generate(pattern), None)
+        result = next(pattern_samples(pattern), None)
         if result is not None and re.search(pattern, result):
             return result
         return None

@@ -143,7 +143,7 @@ Invoke-Check "python" @(
 $stagedPython = Join-Path $runtimeStaging "python.exe"
 & $stagedPython --version
 if ($LASTEXITCODE -ne 0) { throw "Bundled Python failed to start (exit code $LASTEXITCODE)" }
-& $stagedPython -c "import requests, openpyxl, jsonschema, yaml, psycopg2, influxdb, exrex, schemathesis; print('Portable runtime imports passed')"
+& $stagedPython -c "import requests, openpyxl, jsonschema, yaml, psycopg2, influxdb, rstr, schemathesis; print('Portable runtime imports passed')"
 if ($LASTEXITCODE -ne 0) { throw "A bundled runtime dependency failed to import (exit code $LASTEXITCODE)" }
 
 # Replace only generated contents inside the exact runtime resource directory.

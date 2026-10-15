@@ -87,7 +87,12 @@ jobs:
         run: |
           call run-windows.bat -SmokeTest
           if errorlevel 1 exit /b 1
+          runner\.venv\Scripts\python.exe -m pip install exrex==0.12.0
+          if errorlevel 1 exit /b 1
+          echo previous-runtime>runner\.venv\.runtime-requirements.sha256
           call run-windows.bat -SmokeTest
+          if errorlevel 1 exit /b 1
+          runner\.venv\Scripts\python.exe -c "import importlib.util, rstr; assert importlib.util.find_spec('exrex') is None"
           if errorlevel 1 exit /b 1
 
       - uses: dtolnay/rust-toolchain@stable

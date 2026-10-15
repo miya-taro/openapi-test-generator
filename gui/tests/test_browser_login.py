@@ -72,6 +72,18 @@ def test_browser_login_auth_key(tmp_path,monkeypatch):
                 page.locator('#auth-body').fill(json.dumps({'username':USERNAME,'password':PASSWORD}))
                 page.locator('#run-button').click()
                 expect(page.locator('#run-status')).to_contain_text('ケース準備完了',timeout=120000)
+                # Changing destination invalidates the prepared request; no API is sent.
+                page.locator('[data-step="target"]').click()
+                page.locator('#base-url').fill(api.url + '/changed')
+                page.locator('[data-step="run"]').click()
+                expect(page.locator('#execute-draft-button')).to_be_hidden()
+                expect(page.locator('#case-review-message')).to_contain_text('作り直して')
+                assert not api.calls
+                page.locator('[data-step="target"]').click()
+                page.locator('#base-url').fill(api.url)
+                page.locator('[data-step="run"]').click()
+                page.locator('#run-button').click()
+                expect(page.locator('#run-status')).to_contain_text('ケース準備完了',timeout=120000)
                 cards=page.locator('#case-review-list article')
                 expect(cards).to_have_count(3)
                 for index in range(3):

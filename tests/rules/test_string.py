@@ -171,10 +171,10 @@ def test_pattern_simple_alnum_range_form():
     assert normal["inputValue"] == "aaa"
 
 
-# --- pattern: exrex 経由の逆生成 ---
+# --- pattern: rstr 経由の逆生成 ---
 
 
-def test_pattern_complex_form_uses_exrex():
+def test_pattern_complex_form_uses_rstr():
     cases = generate_string_cases(
         {"type": "string", "pattern": "^[A-Z]{2}-[0-9]{4}$"}, {"paramName": "code", "opts": ALL_OPTS}
     )
@@ -184,8 +184,8 @@ def test_pattern_complex_form_uses_exrex():
     assert normal["notes"] == ""
 
 
-def test_pattern_exrex_unavailable_skips_automated_normal_case(monkeypatch):
-    monkeypatch.setattr(string_rule, "exrex", None)
+def test_pattern_rstr_unavailable_skips_automated_normal_case(monkeypatch):
+    monkeypatch.setattr("src.pattern_samples.Rstr", None)
     cases = generate_string_cases(
         {"type": "string", "pattern": "^[A-Z]{2}-[0-9]{4}$"}, {"paramName": "code", "opts": ALL_OPTS}
     )
@@ -193,11 +193,11 @@ def test_pattern_exrex_unavailable_skips_automated_normal_case(monkeypatch):
     assert any(c["keyword"] == "pattern" and c["perspective"].startswith("異常系") for c in cases)
 
 
-def test_pattern_exrex_raises_skips_automated_normal_case(monkeypatch):
+def test_pattern_rstr_raises_skips_automated_normal_case(monkeypatch):
     def _boom(_pattern):
         raise ValueError("boom")
 
-    monkeypatch.setattr(string_rule.exrex, "generate", _boom)
+    monkeypatch.setattr(string_rule, "pattern_samples", _boom)
     cases = generate_string_cases(
         {"type": "string", "pattern": "^[A-Z]{2}-[0-9]{4}$"}, {"paramName": "code", "opts": ALL_OPTS}
     )

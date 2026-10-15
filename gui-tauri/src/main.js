@@ -1490,6 +1490,7 @@ function finishDbScenarioPrepareUi(code) {
   $("dbscenario-cancel-button").disabled = true;
   if (code === 0) {
     dbScenarioPreparationCompleted = true;
+    invalidateChangedPreparation();
     if (currentDbScenarioCaseMaster) {
       renderDbScenarioCaseMaster(currentDbScenarioCaseMaster, currentDbScenarioCaseMasterPath);
     }
@@ -1541,6 +1542,7 @@ async function writeDbScenarioRuntimeConfigs() {
 }
 
 async function executePreparedDbScenarios(allowDraft) {
+  invalidateChangedPreparation();
   const cases = currentDbScenarioCaseMaster?.cases || [];
   if (!dbScenarioPreparationCompleted || !dbScenarioPreparedRunId || !dbScenarioPreparedProjectData || !cases.length) {
     showDbScenarioError("実行前の確認内容がありません。先に準備してください");
@@ -1557,6 +1559,8 @@ async function executePreparedDbScenarios(allowDraft) {
     dbScenarioTempProjectPath = await invoke("write_config_file", {
       path: null, data: dbScenarioPreparedProjectData,
     });
+    invalidateChangedPreparation();
+    if (!dbScenarioPreparationCompleted) throw new Error("設定が変更されたため実行を中止しました。再準備してください。");
     const caseRunId = dbScenarioPreparedRunId;
     dbScenarioResultPath = null;
     dbScenarioFailedCaseIds = [];
@@ -1599,6 +1603,7 @@ $("dbscenario-execute-approved-button").addEventListener("click", () => executeP
 $("dbscenario-execute-draft-button").addEventListener("click", () => executePreparedDbScenarios(true));
 
 $("dbscenario-run-button").addEventListener("click", async () => {
+  const preparationSnapshot = preparationSettings();
   hideDbScenarioError();
 
   if (workflowClient.isRunning()) {
@@ -1644,6 +1649,7 @@ $("dbscenario-run-button").addEventListener("click", async () => {
       currentDbScenarioCaseMasterPath = null;
       dbScenarioFailedCaseIds = [];
       dbScenarioPreparedProjectData = projectData;
+      dbPreparationSettings = preparationSnapshot;
       dbScenarioPreparedRunId = null;
       dbScenarioPreparationCompleted = false;
       dbScenarioPreparingCases = true;
@@ -1828,6 +1834,7 @@ function finishPrepareUi(code) {
   $("open-result-button").disabled = true;
   if (code === 0) {
     preparationCompleted = true;
+    invalidateChangedPreparation();
     if (currentCaseMaster) renderCaseMaster(currentCaseMaster, currentCaseMasterPath);
     syncPreparedExecutionButtons();
   } else {
@@ -1996,6 +2003,7 @@ async function writeContractRuntimeConfigs() {
 }
 
 async function executePreparedContract(allowDraft) {
+  invalidateChangedPreparation();
   const contractCases = currentCaseMaster?.cases?.filter((item) => item.kind === "contract") || [];
   if (!preparationCompleted || !preparedCaseRunId || !preparedProjectData || !contractCases.length) {
     showGenError("試験ケースが準備されていません。先にケースを作成してください");
@@ -2020,6 +2028,8 @@ async function executePreparedContract(allowDraft) {
   try {
     const { configPath, authConfigPath } = await writeContractRuntimeConfigs();
     tempProjectPath = await invoke("write_config_file", { path: null, data: preparedProjectData });
+    invalidateChangedPreparation();
+    if (!preparationCompleted) throw new Error("設定が変更されたため実行を中止しました。再準備してください。");
     const caseRunId = preparedCaseRunId;
     startRunUi();
     const { code } = await workflowClient.execute({
@@ -2061,6 +2071,7 @@ $("rerun-failed-button").addEventListener("click", () => {
 });
 
 $("run-button").addEventListener("click", async () => {
+  const preparationSnapshot = preparationSettings();
   hideGenError();
 
   if (workflowClient.isRunning()) {
@@ -2148,6 +2159,7 @@ $("run-button").addEventListener("click", async () => {
       currentCaseMasterPath = null;
       currentFailedCaseIds = [];
       preparedProjectData = projectData;
+      contractPreparationSettings = preparationSnapshot;
       preparedCaseRunId = null;
       preparationCompleted = false;
       preparingCases = true;
@@ -2242,6 +2254,43 @@ listen("proc-done", async (event) => {
   }
 
 });
+
+// Prepared cases must not silently use a destination/options snapshot that the UI no longer shows.
+const PREPARATION_FIELDS = ["openapi-path", "base-url", "output-dir", "setup-sql-path", "teardown-sql-path",
+  "dbscenario-path", "no-normal", "no-abnormal", "pg-enabled", "pg-host", "pg-port", "pg-dbname", "pg-schema", "pg-user",
+  "influx-enabled", "influx-host", "influx-port", "influx-database", "influx-username"];
+let contractPreparationSettings = null;
+let dbPreparationSettings = null;
+function preparationSettings() {
+  return JSON.stringify({ fields: PREPARATION_FIELDS.map((id) => {
+    const input = $(id);
+    return [id, input.type === "checkbox" ? input.checked : input.value.trim()];
+  }), excluded: getUncheckedOperationIds().sort() });
+}
+
+function invalidateChangedPreparation() {
+  const current = preparationSettings();
+  const message = "設定が準備時から変更されています。最新の設定で試験ケースを作り直してください。";
+  if (preparationCompleted && contractPreparationSettings !== current) {
+    preparationCompleted = false;
+    preparedCaseRunId = null;
+    $("case-review-message").textContent = message;
+    setStatus(message, "warn");
+    syncPreparedExecutionButtons();
+  }
+  if (dbScenarioPreparationCompleted && dbPreparationSettings !== current) {
+    dbScenarioPreparationCompleted = false;
+    dbScenarioPreparedRunId = null;
+    $("dbscenario-case-review-message").textContent = message;
+    setDbScenarioStatus(message, "warn");
+    syncDbPreparedExecutionButtons();
+  }
+}
+for (const id of PREPARATION_FIELDS) {
+  $(id).addEventListener("input", invalidateChangedPreparation);
+  $(id).addEventListener("change", invalidateChangedPreparation);
+}
+$("operations-list").addEventListener("change", invalidateChangedPreparation);
 
 // ---------- 初期化 ----------
 

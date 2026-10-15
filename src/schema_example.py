@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from .numeric_samples import numeric_candidates
-from itertools import islice
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
@@ -10,10 +9,7 @@ from jsonschema.exceptions import SchemaError
 from .samples.format_samples import FORMAT_VALID_SAMPLES
 from .schema_contract import validation_schema, map_children
 
-try:
-    import exrex  # type: ignore
-except ImportError:  # pragma: no cover - fallback when the optional regex helper is absent
-    exrex = None
+from .pattern_samples import pattern_samples
 
 
 class NoSchemaExample(ValueError):
@@ -138,9 +134,9 @@ def _string_candidates(schema: dict) -> list[str]:
         candidates.extend(("a@b.co", "a@b.com", "ab@b.co", "test@example.com"))
 
     pattern = schema.get("pattern")
-    if isinstance(pattern, str) and exrex is not None:
+    if isinstance(pattern, str):
         try:
-            candidates.extend(islice(exrex.generate(pattern), 100))
+            candidates.extend(pattern_samples(pattern))
         except Exception:  # a malformed/unsupported regex is caught by final schema validation
             pass
 
