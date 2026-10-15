@@ -845,7 +845,7 @@ def _one_given_scenario():
                 },
                 "db_check": {
                     "engine": "postgres", "table": "products",
-                    "where": {"id": "{{given.product_a.id}}"}, "expect": {"stock": 9},
+                    "where": {"id": "{{given.product_a.id}}"}, "expect": {"columns": {"stock": 9}},
                 },
             }
         ]
