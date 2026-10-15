@@ -43,7 +43,7 @@ def test_browser_settings_recovery(tmp_path, monkeypatch, with_backup):
                 page.locator("#base-url").fill("http://confirmed.test")
                 page.locator("#settings-save").click()
                 expect(page.locator("#settings-status")).to_contain_text("保存しました")
-                saved = json.loads(web_server.SETTINGS.read_text())
+                saved = json.loads(web_server.SETTINGS.read_text(encoding="utf-8"))
                 assert saved["gen_base_url"] == "http://confirmed.test"
                 assert "_settings_warning" not in saved
                 assert [p.read_bytes() for p in tmp_path.glob("*.corrupt-*")] == [b'{"broken":']

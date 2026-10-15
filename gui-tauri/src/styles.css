@@ -734,6 +734,11 @@ label.checkbox input[type="checkbox"] {
   min-width: 0;
 }
 
+#contract-load-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 #contract-unsaved {
   display: flex;
   flex-wrap: wrap;

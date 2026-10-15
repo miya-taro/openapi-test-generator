@@ -27,7 +27,7 @@ def test_settings_recover_backup_without_silently_overwriting_original(store):
     assert path.read_bytes() == b'{"broken":'
     store.invoke("save_settings", {"data": recovered})
     assert store.invoke("load_settings", {}) == first
-    assert json.loads(path.with_name(path.name + ".bak").read_text()) == first
+    assert json.loads(path.with_name(path.name + ".bak").read_text(encoding="utf-8")) == first
     assert [p.read_bytes() for p in path.parent.glob("*.corrupt-*")] == [b'{"broken":']
     assert not list(path.parent.glob("*.tmp"))
 
@@ -61,7 +61,7 @@ def test_concurrent_saves_keep_valid_settings_and_backup(store):
         list(executor.map(lambda number: store.invoke("save_settings", {"data": {"number": number}}), range(20)))
     assert store.invoke("load_settings", {})["number"] in range(20)
     path = web_server.SETTINGS
-    assert json.loads(path.with_name(path.name + ".bak").read_text())["number"] in range(20)
+    assert json.loads(path.with_name(path.name + ".bak").read_text(encoding="utf-8"))["number"] in range(20)
 
 
 def test_missing_main_file_recovers_backup(store):
