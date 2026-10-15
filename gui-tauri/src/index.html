@@ -59,6 +59,12 @@
                     リクエスト各項目の「正常系で使う値を指定」で、有効なusername・passwordなどを入力できます。指定値はOpenAPIに平文保存されます。試験専用の認証情報を使い、ファイルの共有先に注意してください。
                     保存すると元のopenapi.jsonを残したまま、補正した別ファイルを作って試験対象に切り替えます。
                   </p>
+                  <div id="contract-unsaved" class="banner info" role="status" hidden>
+                    <span>未保存の変更があります。保存してから試験ケースを作成してください。</span>
+                    <button class="secondary" id="contract-save-draft" type="button">変更を保存</button>
+                    <button class="secondary" id="contract-discard-draft" type="button">変更を破棄して読み直す</button>
+                  </div>
+                  <fieldset id="contract-fields" aria-label="API仕様の編集">
                   <div class="form-field">
                     <label for="contract-operation">対象API操作</label>
                     <div class="row">
@@ -111,6 +117,7 @@
                     <div id="contract-error-db-scopes"></div>
                     <button class="secondary" id="contract-add-error-db-scope" type="button">＋ 比較範囲を追加</button>
                   </details>
+                  </fieldset>
                 </div>
                 <div id="case-review-panel" class="case-review-panel" hidden>
                   <div class="case-review-heading">

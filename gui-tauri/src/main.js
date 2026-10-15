@@ -52,7 +52,15 @@ export async function loadAppVersion() {
 }
 
 async function loadSettingsIntoForm() {
-  settings = await invoke("load_settings");
+  let settingsWarning;
+  try {
+    settings = await invoke("load_settings");
+    settingsWarning = settings._settings_warning || "";
+    delete settings._settings_warning;
+  } catch (error) {
+    settings = {};
+    settingsWarning = `設定を復元できませんでした: ${error.message || error}`;
+  }
   $("openapi-path").value = settings.shared_openapi_path || "";
   $("output-dir").value = settings.gen_output_dir || "";
   $("base-url").value = settings.gen_base_url || "";
@@ -101,6 +109,7 @@ async function loadSettingsIntoForm() {
   if (Object.keys(settings).length) {
     settingsNotice("前回の設定を復元しました。DBパスワードと認証用の入力値は再確認してください。API定義・DB対応は保存済みファイルから読み込みます。");
   }
+  if (settingsWarning) settingsNotice(settingsWarning);
   await refreshOperationsList({ keepExcluded: true });
   await dbScenarioEditor.restoreSaved();
   // ログイン操作の選択はoperation一覧に依存するため、一覧更新後に復元する。
@@ -679,6 +688,62 @@ function setContractEditorStatus(message, state = "") {
   if (state) status.classList.add(state);
 }
 
+const UNSAVED_CONTRACT = "API仕様に未保存の変更があります。「2. 仕様を確認」で変更を保存してから、試験ケースを作り直してください。";
+let contractBaseline = null;
+let loadedContractPath = "";
+let loadedContractOperation = "";
+let contractBusy = false;
+
+function contractFormSnapshot() {
+  // Raw form values include incomplete/invalid drafts and dynamically added rows.
+  return JSON.stringify([...$("contract-fields").querySelectorAll("input, select, textarea")]
+    .filter((input) => input.id !== "contract-operation")
+    .map((input) => [input.type, input.type === "checkbox" ? input.checked : input.value]));
+}
+
+function hasUnsavedContract() {
+  return contractBaseline !== null && contractBaseline !== contractFormSnapshot();
+}
+
+function updateContractDraftNotice() {
+  $("contract-unsaved").hidden = !hasUnsavedContract();
+}
+
+function acceptContractBaseline() {
+  contractBaseline = contractFormSnapshot();
+  loadedContractPath = $("openapi-path").value.trim();
+  loadedContractOperation = $("contract-operation").value;
+  updateContractDraftNotice();
+}
+
+function blockUnsavedContract() {
+  if (!contractBusy && !hasUnsavedContract()) return false;
+  setContractEditorStatus(contractBusy ? "API仕様を保存・読込中です。完了してから操作してください。" : UNSAVED_CONTRACT, "error");
+  return true;
+}
+
+function setContractBusy(busy) {
+  contractBusy = busy;
+  $("contract-fields").disabled = busy;
+  $("openapi-path").disabled = busy;
+  $("browse-openapi").disabled = busy;
+  $("contract-save-draft").disabled = busy;
+  $("contract-discard-draft").disabled = busy;
+}
+
+for (const eventName of ["input", "change", "click"]) {
+  $("contract-fields").addEventListener(eventName, () => {
+    updateContractDraftNotice();
+    // Invalidate prepared cases even if the user later restores the old value.
+    if (hasUnsavedContract()) invalidateChangedPreparation();
+  });
+}
+window.addEventListener("beforeunload", (event) => {
+  if (!hasUnsavedContract() && !contractBusy) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 function contractOption(label, value) {
   const option = document.createElement("option");
   option.textContent = label;
@@ -734,6 +799,10 @@ function setContractSchemaBuilder(kind, schema) {
 }
 
 function resetContractEditor() {
+  contractBaseline = null;
+  loadedContractPath = "";
+  loadedContractOperation = "";
+  updateContractDraftNotice();
   $("contract-operation").replaceChildren(contractOption("OpenAPIを選択してください", ""));
   $("contract-error-db-scopes").replaceChildren();
   $("contract-operation").disabled = true;
@@ -753,17 +822,7 @@ function populateContractOperationSelect() {
   const previous = select.value;
   select.replaceChildren();
   if (lastOperations.length === 0) {
-    select.appendChild(contractOption("OpenAPIを選択してください", ""));
-    select.disabled = true;
-    $("contract-load-button").disabled = true;
-    $("contract-save-button").disabled = true;
-    $("contract-request-required").checked = false;
-    setContractSchemaBuilder("request", null);
-    $("contract-response-status").value = "200";
-    setContractSchemaBuilder("response", null);
-    $("contract-response-empty").checked = false;
-    $("contract-response-schema-builder").hidden = false;
-    setContractEditorStatus("");
+    resetContractEditor();
     return "";
   }
 
@@ -789,6 +848,7 @@ export function contractEditorDefaultPath(sourcePath) {
 $("new-api-create").addEventListener("click", async () => {
   const button = $("new-api-create");
   const message = $("new-api-message");
+  if (blockUnsavedContract()) { message.textContent = UNSAVED_CONTRACT; return; }
   button.disabled = true;
   try {
     const sourcePath = $("new-api-append").checked ? $("openapi-path").value.trim() : "";
@@ -826,12 +886,17 @@ $("new-api-create").addEventListener("click", async () => {
 });
 
 async function loadOperationBodyContract() {
+  if (blockUnsavedContract()) {
+    $("contract-operation").value = loadedContractOperation;
+    return;
+  }
   const path = $("openapi-path").value.trim();
   const operationId = $("contract-operation").value;
   if (!path || !operationId) {
     setContractEditorStatus("openapi.jsonと対象operationを選択してください", "error");
     return;
   }
+  setContractBusy(true);
   try {
     const contract = await invoke("bridge_call", {
       command: "load_operation_body_contract",
@@ -845,13 +910,19 @@ async function loadOperationBodyContract() {
     setContractSchemaBuilder("response", contract.responseBodySchema);
     $("contract-response-empty").checked = !!contract.responseBodyEmpty;
     $("contract-response-schema-builder").hidden = !!contract.responseBodyEmpty;
+    acceptContractBaseline();
     setContractEditorStatus("選択したoperationのbody項目を読み込みました", "ok");
   } catch (error) {
+    if (path !== loadedContractPath) resetContractEditor();
+    else $("contract-operation").value = loadedContractOperation;
     setContractEditorStatus(`OpenAPIを読み込めませんでした: ${error.message || error}`, "error");
+  } finally {
+    setContractBusy(false);
   }
 }
 
 async function saveOperationBodyContract() {
+  if (contractBusy) return;
   const sourcePath = $("openapi-path").value.trim();
   const operationId = $("contract-operation").value;
   if (!sourcePath || !operationId) {
@@ -876,13 +947,15 @@ async function saveOperationBodyContract() {
     setContractEditorStatus("成功response statusは200〜299または2XXで指定してください", "error");
     return;
   }
-  const destinationPath = await save({
-    filters: [{ name: "OpenAPI JSON", extensions: ["json"] }],
-    defaultPath: contractEditorDefaultPath(sourcePath),
-  });
-  if (!destinationPath) return;
-
+  let savedPath = "";
+  setContractBusy(true);
   try {
+    const destinationPath = await save({
+      filters: [{ name: "OpenAPI JSON", extensions: ["json"] }],
+      defaultPath: contractEditorDefaultPath(sourcePath),
+    });
+    if (!destinationPath) return;
+
     const result = await invoke("bridge_call", {
       command: "save_operation_body_contract",
       args: {
@@ -897,7 +970,10 @@ async function saveOperationBodyContract() {
         error_db_unchanged: collectErrorDbScopes($("contract-error-db-scopes")),
       },
     });
-    $("openapi-path").value = result.path;
+    savedPath = result.path;
+    $("openapi-path").value = savedPath;
+    acceptContractBaseline();
+    setContractBusy(false);
     updateActiveOpenapiText();
     await refreshOperationsList({ keepExcluded: true });
     await persistSettings();
@@ -906,15 +982,35 @@ async function saveOperationBodyContract() {
       "ok",
     );
   } catch (error) {
-    setContractEditorStatus(`保存できませんでした: ${error.message || error}`, "error");
+    setContractEditorStatus(savedPath
+      ? `API仕様は ${savedPath} に保存済みですが、画面の更新または接続設定の保存に失敗しました: ${error.message || error}`
+      : `保存できませんでした: ${error.message || error}`, "error");
+  } finally {
+    setContractBusy(false);
+    updateContractDraftNotice();
   }
 }
 
 $("contract-operation").addEventListener("change", loadOperationBodyContract);
 $("contract-load-button").addEventListener("click", loadOperationBodyContract);
 $("contract-save-button").addEventListener("click", saveOperationBodyContract);
+$("contract-save-draft").addEventListener("click", saveOperationBodyContract);
+$("contract-discard-draft").addEventListener("click", async () => {
+  if (contractBusy) return;
+  const previousBaseline = contractBaseline;
+  contractBaseline = null;
+  await loadOperationBodyContract();
+  // A failed reload must leave the draft protected and available to save.
+  if (contractBaseline === null) contractBaseline = previousBaseline;
+  updateContractDraftNotice();
+});
 
 async function refreshOperationsList({ keepExcluded, selectedOperations = null }) {
+  if (blockUnsavedContract()) {
+    $("openapi-path").value = loadedContractPath;
+    updateActiveOpenapiText();
+    return;
+  }
   const path = $("openapi-path").value.trim();
   const container = $("operations-list");
   if (!path) {
@@ -1542,6 +1638,7 @@ async function writeDbScenarioRuntimeConfigs() {
 }
 
 async function executePreparedDbScenarios(allowDraft) {
+  if (blockUnsavedContract()) { showDbScenarioError(UNSAVED_CONTRACT); return; }
   invalidateChangedPreparation();
   const cases = currentDbScenarioCaseMaster?.cases || [];
   if (!dbScenarioPreparationCompleted || !dbScenarioPreparedRunId || !dbScenarioPreparedProjectData || !cases.length) {
@@ -1605,6 +1702,7 @@ $("dbscenario-execute-draft-button").addEventListener("click", () => executePrep
 $("dbscenario-run-button").addEventListener("click", async () => {
   const preparationSnapshot = preparationSettings();
   hideDbScenarioError();
+  if (blockUnsavedContract()) { showDbScenarioError(UNSAVED_CONTRACT); return; }
 
   if (workflowClient.isRunning()) {
     showDbScenarioError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
@@ -1924,6 +2022,8 @@ function handleContractWorkflowEvent(event) {
 
 async function runSchemathesisExploration() {
   hideGenError();
+  if (blockUnsavedContract()) { showGenError(UNSAVED_CONTRACT); return; }
+  const preparationSnapshot = preparationSettings();
   if (workflowClient.isRunning()) {
     showGenError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
     return;
@@ -1964,6 +2064,9 @@ async function runSchemathesisExploration() {
       tempAuthConfigPath = authConfigPath;
     }
     tempProjectPath = await invoke("write_config_file", { path: null, data: projectData });
+    if (blockUnsavedContract() || preparationSnapshot !== preparationSettings()) {
+      throw new Error("設定が変更されたため探索的試験を中止しました。設定を確認して再実行してください。");
+    }
     currentResultPath = null;
     startRunUi();
     const { code } = await workflowClient.runSchemathesis({
@@ -2003,6 +2106,7 @@ async function writeContractRuntimeConfigs() {
 }
 
 async function executePreparedContract(allowDraft) {
+  if (blockUnsavedContract()) { showGenError(UNSAVED_CONTRACT); return; }
   invalidateChangedPreparation();
   const contractCases = currentCaseMaster?.cases?.filter((item) => item.kind === "contract") || [];
   if (!preparationCompleted || !preparedCaseRunId || !preparedProjectData || !contractCases.length) {
@@ -2073,6 +2177,7 @@ $("rerun-failed-button").addEventListener("click", () => {
 $("run-button").addEventListener("click", async () => {
   const preparationSnapshot = preparationSettings();
   hideGenError();
+  if (blockUnsavedContract()) { showGenError(UNSAVED_CONTRACT); return; }
 
   if (workflowClient.isRunning()) {
     showGenError("別の試験を実行中です。完了またはキャンセルしてから開始してください");
@@ -2271,14 +2376,14 @@ function preparationSettings() {
 function invalidateChangedPreparation() {
   const current = preparationSettings();
   const message = "設定が準備時から変更されています。最新の設定で試験ケースを作り直してください。";
-  if (preparationCompleted && contractPreparationSettings !== current) {
+  if (preparationCompleted && (contractPreparationSettings !== current || hasUnsavedContract())) {
     preparationCompleted = false;
     preparedCaseRunId = null;
     $("case-review-message").textContent = message;
     setStatus(message, "warn");
     syncPreparedExecutionButtons();
   }
-  if (dbScenarioPreparationCompleted && dbPreparationSettings !== current) {
+  if (dbScenarioPreparationCompleted && (dbPreparationSettings !== current || hasUnsavedContract())) {
     dbScenarioPreparationCompleted = false;
     dbScenarioPreparedRunId = null;
     $("dbscenario-case-review-message").textContent = message;

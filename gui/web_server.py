@@ -35,6 +35,69 @@ SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 SAFE_SCRIPT = re.compile(r"^(workflow/cli\.py|src/cli\.py|runner/[^/]+\.py)$")
 
 
+
+_SETTINGS_LOCK = threading.Lock()
+
+
+def _atomic_write(path: Path, contents: bytes) -> None:
+    """Replace only after a complete, flushed write on the same filesystem."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(contents)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _read_settings(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("設定ファイルはJSONオブジェクトである必要があります")
+    data.pop("_settings_warning", None)
+    return data
+
+
+def _load_settings() -> dict:
+    backup = SETTINGS.with_name(SETTINGS.name + ".bak")
+    try:
+        return _read_settings(SETTINGS)
+    except FileNotFoundError:
+        if not backup.exists():
+            return {}
+    except (OSError, ValueError):
+        pass
+    try:
+        data = _read_settings(backup)
+    except (OSError, ValueError):
+        raise ValueError("保存した設定を読み込めず、復旧できるバックアップもありません。元ファイルは保持しています。接続先・API定義を再設定してください。") from None
+    data["_settings_warning"] = "設定ファイルを読み込めなかったため、前回保存前のバックアップを表示しています。接続先・API定義を確認してから設定を保存してください。"
+    return data
+
+
+def _save_settings(data: dict) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("設定はJSONオブジェクトで指定してください")
+    data = {key: value for key, value in data.items() if key != "_settings_warning"}
+    encoded = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    if SETTINGS.exists():
+        previous = SETTINGS.read_bytes()
+        try:
+            _read_settings(SETTINGS)
+        except (ValueError, UnicodeError):
+            # Preserve a broken original for recovery without replacing a good backup.
+            descriptor, name = tempfile.mkstemp(prefix=SETTINGS.name + ".corrupt-", dir=SETTINGS.parent)
+            os.close(descriptor)
+            _atomic_write(Path(name), previous)
+        else:
+            _atomic_write(SETTINGS.with_name(SETTINGS.name + ".bak"), previous)
+    _atomic_write(SETTINGS, encoded)
+
+
 def _inside(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -83,12 +146,11 @@ class WebState:
                 "runnerAvailable": (ROOT / "runner/runner.py").is_file(),
             }
         if command == "load_settings":
-            try:
-                return json.loads(SETTINGS.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return {}
+            with _SETTINGS_LOCK:
+                return _load_settings()
         if command == "save_settings":
-            SETTINGS.write_text(json.dumps(args.get("data", {}), ensure_ascii=False, indent=2), encoding="utf-8")
+            with _SETTINGS_LOCK:
+                _save_settings(args.get("data", {}))
             return None
         if command == "write_config_file":
             if args.get("path"):
@@ -100,7 +162,7 @@ class WebState:
             if args.get("path") and not _inside(path, DATA):
                 raise ValueError("ブラウザー版では設定ファイルをアプリの保存フォルダー内に保存します")
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(args.get("data"), ensure_ascii=False, indent=2), encoding="utf-8")
+            _atomic_write(path, json.dumps(args.get("data"), ensure_ascii=False, indent=2).encode("utf-8"))
             return str(path)
         if command == "delete_file":
             path = Path(args["path"]).expanduser()

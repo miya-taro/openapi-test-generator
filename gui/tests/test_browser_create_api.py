@@ -50,8 +50,18 @@ def test_create_login_in_browser(tmp_path, monkeypatch):
                             prop.locator('[data-role="example-value"]').fill(USERNAME if name == 'username' else PASSWORD)
                         if name == 'created_datetime':
                             prop.get_by_label('形式', exact=True).select_option('date-time')
-                page.locator('#contract-save-button').click()
+                expect(page.locator('#contract-unsaved')).to_be_visible()
+                # Preparing must never ignore the unsaved username/password definition.
+                page.locator('[data-step="run"]').click()
+                page.locator('#run-button').click()
+                expect(page.locator('#gen-error')).to_contain_text('未保存')
+                page.locator('[data-step="spec"]').click()
+                page.locator('#contract-load-button').click()
+                expect(page.locator('#contract-editor-status')).to_contain_text('未保存')
+                expect(page.locator('#contract-request-schema-builder .schema-node-property')).to_have_count(2)
+                page.locator('#contract-save-draft').click()
                 expect(page.locator('#contract-editor-status')).to_contain_text('試験対象に設定しました')
+                expect(page.locator('#contract-unsaved')).to_be_hidden()
                 saved = Path(page.locator('#openapi-path').input_value())
                 doc = json.loads(saved.read_text(encoding='utf-8'))
                 op = doc['paths']['/v1/auth/login']['post']

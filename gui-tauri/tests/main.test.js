@@ -1202,3 +1202,101 @@ test("実行成功は全仕様の合格を意味せずキャンセルもロー�
   expect(runOutcomeAdvice(130)).toContain("ロールバックを保証しません");
   expect(runOutcomeAdvice(3)).toContain("接続先");
 });
+
+describe("API仕様の未保存編集を保護する", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const contract = {
+    requestBodyRequired: true,
+    requestBodySchema: { type: "object", required: ["user"], properties: { user: { type: "string", example: "test" } } },
+    responseStatus: "200", responseBodySchema: { type: "object" },
+  };
+  const nameInput = () => document.querySelector('#contract-request-schema-builder [data-role="property-name"]');
+  function bridge(command, payload) {
+    if (command === "bridge_call" && payload.command === "list_operations") {
+      return ["login", "other"].map((operationId) => ({ operationId, method: "POST", path: `/${operationId}` }));
+    }
+    if (command === "bridge_call" && payload.command === "load_operation_body_contract") return contract;
+    return {};
+  }
+  beforeEach(async () => {
+    mockInvoke.mockImplementation(bridge);
+    document.getElementById("openapi-path").value = "/test/draft.openapi.json";
+    document.getElementById("openapi-path").dispatchEvent(new window.Event("change"));
+    await tick();
+  });
+
+  test("未保存の項目変更で準備・実行を止め、切替・読み直しでも入力を失わない", async () => {
+    nameInput().value = "username";
+    nameInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    expect(document.getElementById("contract-unsaved").hidden).toBe(false);
+    for (const id of ["run-button", "dbscenario-run-button", "execute-draft-button", "dbscenario-execute-draft-button", "run-schemathesis-button"]) {
+      document.getElementById(id).click();
+    }
+    await tick();
+    expect(mockInvoke.mock.calls.some(([command]) => command === "run_script")).toBe(false);
+    document.getElementById("contract-operation").value = "other";
+    document.getElementById("contract-operation").dispatchEvent(new window.Event("change", { bubbles: true }));
+    document.getElementById("contract-load-button").click();
+    document.getElementById("openapi-path").value = "/other.json";
+    document.getElementById("openapi-path").dispatchEvent(new window.Event("change"));
+    await tick();
+    expect(document.getElementById("openapi-path").value).toBe("/test/draft.openapi.json");
+    expect(document.getElementById("contract-operation").value).toBe("login");
+    expect(nameInput().value).toBe("username");
+    const closing = new window.Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(closing);
+    expect(closing.defaultPrevented).toBe(true);
+    document.getElementById("contract-discard-draft").click();
+    await tick();
+    expect(nameInput().value).toBe("user");
+    expect(document.getElementById("contract-unsaved").hidden).toBe(true);
+  });
+
+  test.each(["cancel", "write-failure", "reload-failure"])("保存キャンセル・失敗後も入力を保つ: %s", async (mode) => {
+    nameInput().value = "changed";
+    nameInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    mockSave.mockResolvedValue(mode === "cancel" ? null : "/saved.json");
+    mockInvoke.mockImplementation((command, payload) => {
+      if (command === "bridge_call" && ["save_operation_body_contract", "load_operation_body_contract"].includes(payload.command)) {
+        throw new Error("disk failure");
+      }
+      return bridge(command, payload);
+    });
+    document.getElementById(mode === "reload-failure" ? "contract-discard-draft" : "contract-save-draft").click();
+    await tick();
+    expect(nameInput().value).toBe("changed");
+    expect(document.getElementById("contract-unsaved").hidden).toBe(false);
+    expect(document.getElementById("contract-fields").disabled).toBe(false);
+    mockInvoke.mockImplementation(bridge);
+    document.getElementById("contract-discard-draft").click();
+    await tick();
+  });
+
+  test("項目追加・条件追加も未保存になり、手で元に戻すと解除する", async () => {
+    nameInput().value = "changed";
+    nameInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    nameInput().value = "user";
+    nameInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    expect(document.getElementById("contract-unsaved").hidden).toBe(true);
+    for (const selector of ['#contract-request-schema-builder [data-role="add-property"]', '#contract-add-presence-rule', '#contract-add-error-db-scope']) {
+      document.querySelector(selector).click();
+      expect(document.getElementById("contract-unsaved").hidden).toBe(false);
+      document.getElementById("contract-discard-draft").click();
+      await tick();
+    }
+  });
+  test("仕様保存後の接続設定保存失敗を、仕様自体の保存失敗と区別する", async () => {
+    mockSave.mockResolvedValue("/saved.openapi.json");
+    mockInvoke.mockImplementation((command, payload) => {
+      if (command === "bridge_call" && payload.command === "save_operation_body_contract") return { path: "/saved.openapi.json" };
+      if (command === "save_settings") throw new Error("settings disk failure");
+      return bridge(command, payload);
+    });
+    document.getElementById("contract-save-button").click();
+    await tick();
+    expect(document.getElementById("contract-editor-status").textContent).toContain("保存済みですが");
+    expect(document.getElementById("openapi-path").value).toBe("/saved.openapi.json");
+    expect(document.getElementById("contract-fields").disabled).toBe(false);
+  });
+
+});
