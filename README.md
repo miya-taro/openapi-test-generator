@@ -44,6 +44,9 @@ api test generator/
 
 ---
 
+
+APIと実PostgreSQL／InfluxDBを接続する[模擬サービスと回帰試験](examples/db-lab/README.md)も用意しています。正常APIと故障APIの両方で、このツールのDB照合を再検証できます。
+
 ## WindowsでGUIアプリを起動する
 
 GUIは `gui-tauri/` に一本化している。Tauriデスクトップ版に加え、Windowsではローカルブラウザー版を起動できる。

@@ -1,0 +1,4 @@
+{
+  "postgres": {"host":"127.0.0.1", "port":15432, "dbname":"otg_lab", "user":"otg_lab", "password":"lab-only-password"},
+  "influxdb": {"host":"127.0.0.1", "port":18086}
+}

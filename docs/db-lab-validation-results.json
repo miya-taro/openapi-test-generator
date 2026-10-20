@@ -1,0 +1,1586 @@
+{
+  "startedAt": "2026-10-20T23:20:38.874224+00:00",
+  "engine": "native-pytest",
+  "runs": [
+    {
+      "label": "normal",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-4A1A52B80920",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "GET all unordered rows with JSONB and NULL"
+        },
+        {
+          "caseId": "DB-90B45288615D",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "GET one row"
+        },
+        {
+          "caseId": "DB-AA9AE0831AE6",
+          "status": "passed",
+          "actualStatus": "201",
+          "detail": "",
+          "title": "POST decimal boolean JSONB NULL"
+        },
+        {
+          "caseId": "DB-053C785E4DDD",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "PUT replace all fields"
+        },
+        {
+          "caseId": "DB-7BAE527A996A",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "PATCH preserve omitted fields and false"
+        },
+        {
+          "caseId": "DB-C37E35E48592",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "DELETE selected row only"
+        },
+        {
+          "caseId": "DB-0CC3FD302367",
+          "status": "passed",
+          "actualStatus": "404",
+          "detail": "",
+          "title": "GET missing row 404"
+        },
+        {
+          "caseId": "DB-DB05491EA236",
+          "status": "passed",
+          "actualStatus": "409",
+          "detail": "",
+          "title": "POST duplicate returns 409 without writes"
+        },
+        {
+          "caseId": "DB-53F2A3DA9C08",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "missing-name"
+        },
+        {
+          "caseId": "DB-74A2ADEA3AA6",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "empty-name"
+        },
+        {
+          "caseId": "DB-695BE1A94ACF",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "wrong-type-name"
+        },
+        {
+          "caseId": "DB-C10BB18E90F5",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "boolean is not numeric"
+        },
+        {
+          "caseId": "DB-84FCA54544C3",
+          "status": "passed",
+          "actualStatus": "201",
+          "detail": "",
+          "title": "nullable JSONB and note"
+        },
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB A"
+        },
+        {
+          "caseId": "DB-0161A1887AFE",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB MULTI"
+        },
+        {
+          "caseId": "DB-A7E518B676B5",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB MISSING"
+        },
+        {
+          "caseId": "DB-A5B293B63C1E",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Post"
+        },
+        {
+          "caseId": "DB-D9506D001539",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Put"
+        },
+        {
+          "caseId": "DB-CB3AF926466F",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Patch"
+        },
+        {
+          "caseId": "DB-D07287579DC1",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Delete"
+        },
+        {
+          "caseId": "DB-AAD41D3A1F2E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "create read delete lifecycle"
+        }
+      ],
+      "evidence": "normal/result.json"
+    },
+    {
+      "label": "repeat",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-4A1A52B80920",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "GET all unordered rows with JSONB and NULL"
+        },
+        {
+          "caseId": "DB-90B45288615D",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "GET one row"
+        },
+        {
+          "caseId": "DB-AA9AE0831AE6",
+          "status": "passed",
+          "actualStatus": "201",
+          "detail": "",
+          "title": "POST decimal boolean JSONB NULL"
+        },
+        {
+          "caseId": "DB-053C785E4DDD",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "PUT replace all fields"
+        },
+        {
+          "caseId": "DB-7BAE527A996A",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "PATCH preserve omitted fields and false"
+        },
+        {
+          "caseId": "DB-C37E35E48592",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "DELETE selected row only"
+        },
+        {
+          "caseId": "DB-0CC3FD302367",
+          "status": "passed",
+          "actualStatus": "404",
+          "detail": "",
+          "title": "GET missing row 404"
+        },
+        {
+          "caseId": "DB-DB05491EA236",
+          "status": "passed",
+          "actualStatus": "409",
+          "detail": "",
+          "title": "POST duplicate returns 409 without writes"
+        },
+        {
+          "caseId": "DB-53F2A3DA9C08",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "missing-name"
+        },
+        {
+          "caseId": "DB-74A2ADEA3AA6",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "empty-name"
+        },
+        {
+          "caseId": "DB-695BE1A94ACF",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "wrong-type-name"
+        },
+        {
+          "caseId": "DB-C10BB18E90F5",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "boolean is not numeric"
+        },
+        {
+          "caseId": "DB-84FCA54544C3",
+          "status": "passed",
+          "actualStatus": "201",
+          "detail": "",
+          "title": "nullable JSONB and note"
+        },
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB A"
+        },
+        {
+          "caseId": "DB-0161A1887AFE",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB MULTI"
+        },
+        {
+          "caseId": "DB-A7E518B676B5",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "cross DB MISSING"
+        },
+        {
+          "caseId": "DB-A5B293B63C1E",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Post"
+        },
+        {
+          "caseId": "DB-D9506D001539",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Put"
+        },
+        {
+          "caseId": "DB-CB3AF926466F",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Patch"
+        },
+        {
+          "caseId": "DB-D07287579DC1",
+          "status": "passed",
+          "actualStatus": "204",
+          "detail": "",
+          "title": "Influx Delete"
+        },
+        {
+          "caseId": "DB-AAD41D3A1F2E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "create read delete lifecycle"
+        }
+      ],
+      "evidence": "repeat/result.json"
+    },
+    {
+      "label": "missing-auth",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-EB67FACA98AC",
+          "status": "passed",
+          "actualStatus": "401",
+          "detail": "",
+          "title": "authentication rejected without DB change"
+        }
+      ],
+      "evidence": "missing-auth/result.json"
+    },
+    {
+      "label": "invalid-auth",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-EB67FACA98AC",
+          "status": "passed",
+          "actualStatus": "401",
+          "detail": "",
+          "title": "authentication rejected without DB change"
+        }
+      ],
+      "evidence": "invalid-auth/result.json"
+    },
+    {
+      "label": "invalid-login",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-4378E70CF552",
+          "status": "passed",
+          "actualStatus": "401",
+          "detail": "",
+          "title": "invalid password"
+        }
+      ],
+      "evidence": "invalid-login/result.json"
+    },
+    {
+      "label": "fault-auth-write",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-EB67FACA98AC",
+          "status": "failed",
+          "actualStatus": "401",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました",
+          "title": "authentication rejected without DB change"
+        }
+      ],
+      "evidence": "fault-auth-write/result.json"
+    },
+    {
+      "label": "fault-01-read-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-4A1A52B80920",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DBにあるのにレスポンスにない行=1件（例: {'id': 99, 'name': 'sentinel', 'amount': Decimal('99.000'), 'enabled': True, 'meta': {}, 'note': 'untouched'}）; DB条件にないレスポンス行=1件",
+          "title": "GET all unordered rows with JSONB and NULL"
+        }
+      ],
+      "evidence": "fault-01-read-value/result.json"
+    },
+    {
+      "label": "fault-02-read-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DBにあるのにレスポンスにない行=1件（例: {'time': '2026-01-03T00:00:00Z', 'item': 'humidity', 'value': 14.0}）; DB条件にないレスポンス行=1件",
+          "title": "cross DB A"
+        }
+      ],
+      "evidence": "fault-02-read-value/result.json"
+    },
+    {
+      "label": "fault-03-read-missing",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-4A1A52B80920",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DBにあるのにレスポンスにない行=1件（例: {'id': 1, 'name': '日本語', 'amount': Decimal('1.125'), 'enabled': True, 'meta': {'tags': ['a', 'b']}, 'note': None}）",
+          "title": "GET all unordered rows with JSONB and NULL"
+        }
+      ],
+      "evidence": "fault-03-read-missing/result.json"
+    },
+    {
+      "label": "fault-04-read-missing",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DBにあるのにレスポンスにない行=1件（例: {'time': '2026-01-04T00:00:00Z', 'item': 'temp', 'value': 15.0}）",
+          "title": "cross DB A"
+        }
+      ],
+      "evidence": "fault-04-read-missing/result.json"
+    },
+    {
+      "label": "fault-05-read-duplicate",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-4A1A52B80920",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DB条件にないレスポンス行=1件",
+          "title": "GET all unordered rows with JSONB and NULL"
+        }
+      ],
+      "evidence": "fault-05-read-duplicate/result.json"
+    },
+    {
+      "label": "fault-06-read-duplicate",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DB条件にないレスポンス行=1件",
+          "title": "cross DB A"
+        }
+      ],
+      "evidence": "fault-06-read-duplicate/result.json"
+    },
+    {
+      "label": "fault-07-write-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-AA9AE0831AE6",
+          "status": "failed",
+          "actualStatus": "201",
+          "detail": "amount: 期待=12.345 実測=Decimal('13.345')",
+          "title": "POST decimal boolean JSONB NULL"
+        }
+      ],
+      "evidence": "fault-07-write-value/result.json"
+    },
+    {
+      "label": "fault-08-write-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-053C785E4DDD",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "amount: 期待=-1.25 実測=Decimal('-0.250')",
+          "title": "PUT replace all fields"
+        }
+      ],
+      "evidence": "fault-08-write-value/result.json"
+    },
+    {
+      "label": "fault-09-write-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-A5B293B63C1E",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 期待フィールド「value」が一致しません",
+          "title": "Influx Post"
+        }
+      ],
+      "evidence": "fault-09-write-value/result.json"
+    },
+    {
+      "label": "fault-10-write-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-D9506D001539",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 期待フィールド「value」が一致しません",
+          "title": "Influx Put"
+        }
+      ],
+      "evidence": "fault-10-write-value/result.json"
+    },
+    {
+      "label": "fault-11-write-value",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-CB3AF926466F",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 期待フィールド「value」が一致しません",
+          "title": "Influx Patch"
+        }
+      ],
+      "evidence": "fault-11-write-value/result.json"
+    },
+    {
+      "label": "fault-12-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-AA9AE0831AE6",
+          "status": "failed",
+          "actualStatus": "201",
+          "detail": "該当する行が見つかりません; POST後に対象行が増えていません",
+          "title": "POST decimal boolean JSONB NULL"
+        }
+      ],
+      "evidence": "fault-12-no-op/result.json"
+    },
+    {
+      "label": "fault-13-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-053C785E4DDD",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "name: 期待='replaced' 実測='日本語'; amount: 期待=-1.25 実測=Decimal('1.125'); meta: 期待={'nested': {'tags': ['a', 'b'], 'count': 0}} 実測={'tags': ['a', 'b']}",
+          "title": "PUT replace all fields"
+        }
+      ],
+      "evidence": "fault-13-no-op/result.json"
+    },
+    {
+      "label": "fault-14-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-C37E35E48592",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "存在しないはずの行が 1 件見つかりました: RealDictRow({'id': 2, 'name': 'second', 'amount': Decimal('-2.500'), 'enabled': True, 'meta': {'nested': {'n': 0}}, 'note': 'keep'})",
+          "title": "DELETE selected row only"
+        }
+      ],
+      "evidence": "fault-14-no-op/result.json"
+    },
+    {
+      "label": "fault-15-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-A5B293B63C1E",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 保存・更新後の対象ポイントがありません",
+          "title": "Influx Post"
+        }
+      ],
+      "evidence": "fault-15-no-op/result.json"
+    },
+    {
+      "label": "fault-16-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-D9506D001539",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 期待フィールド「value」が一致しません",
+          "title": "Influx Put"
+        }
+      ],
+      "evidence": "fault-16-no-op/result.json"
+    },
+    {
+      "label": "fault-17-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-CB3AF926466F",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 期待フィールド「value」が一致しません",
+          "title": "Influx Patch"
+        }
+      ],
+      "evidence": "fault-17-no-op/result.json"
+    },
+    {
+      "label": "fault-18-no-op",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-D07287579DC1",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "InfluxDB変更確認: 削除後も対象ポイントが存在します",
+          "title": "Influx Delete"
+        }
+      ],
+      "evidence": "fault-18-no-op/result.json"
+    },
+    {
+      "label": "fault-19-wrong-target",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-053C785E4DDD",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました; name: 期待='replaced' 実測='日本語'; amount: 期待=-1.25 実測=Decimal('1.125'); meta: 期待={'nested': {'tags': ['a', 'b'], 'count': 0}} 実測={'tags': ['a', 'b']}",
+          "title": "PUT replace all fields"
+        }
+      ],
+      "evidence": "fault-19-wrong-target/result.json"
+    },
+    {
+      "label": "fault-20-wrong-target",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-C37E35E48592",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました; 存在しないはずの行が 1 件見つかりました: RealDictRow({'id': 2, 'name': 'second', 'amount': Decimal('-2.500'), 'enabled': True, 'meta': {'nested': {'n': 0}}, 'note': 'keep'})",
+          "title": "DELETE selected row only"
+        }
+      ],
+      "evidence": "fault-20-wrong-target/result.json"
+    },
+    {
+      "label": "fault-21-clobber",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-7BAE527A996A",
+          "status": "failed",
+          "actualStatus": "204",
+          "detail": "note: 期待='keep' 実測='broken'",
+          "title": "PATCH preserve omitted fields and false"
+        }
+      ],
+      "evidence": "fault-21-clobber/result.json"
+    },
+    {
+      "label": "fault-22-extra-write",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-AA9AE0831AE6",
+          "status": "failed",
+          "actualStatus": "201",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました",
+          "title": "POST decimal boolean JSONB NULL"
+        }
+      ],
+      "evidence": "fault-22-extra-write/result.json"
+    },
+    {
+      "label": "fault-23-invalid-write",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-53F2A3DA9C08",
+          "status": "failed",
+          "actualStatus": "400",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました",
+          "title": "missing-name"
+        }
+      ],
+      "evidence": "fault-23-invalid-write/result.json"
+    },
+    {
+      "label": "fault-24-invalid-write",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-C10BB18E90F5",
+          "status": "failed",
+          "actualStatus": "400",
+          "detail": "DB変更なし確認: otg_lab_records_9879f0267f9c の対象行または列の値が変化しました",
+          "title": "boolean is not numeric"
+        }
+      ],
+      "evidence": "fault-24-invalid-write/result.json"
+    },
+    {
+      "label": "fault-25-first-site",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-0161A1887AFE",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DBにあるのにレスポンスにない行=4件（例: {'time': '2026-01-03T00:00:00Z', 'item': 'humidity', 'value': 25.0}）",
+          "title": "cross DB MULTI"
+        }
+      ],
+      "evidence": "fault-25-first-site/result.json"
+    },
+    {
+      "label": "fault-26-ignore-site",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-94A7639419E8",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "DB照合: DB条件にないレスポンス行=8件",
+          "title": "cross DB A"
+        }
+      ],
+      "evidence": "fault-26-ignore-site/result.json"
+    },
+    {
+      "label": "plan-post",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-50EEA584DF2F",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=1-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-6F2E784E5935",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=1-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-77D2893D36FC",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=1-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-90E0B48D3499",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=1-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-900F4644FF6D",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=2-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-8DBDF2178CAF",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=2-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-0A16FE4D6169",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=2-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-D1740B67130E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST site / type=2-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-F933867C661E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=1-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-A3EAE3915BBF",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=1-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-2D31DA4D84E1",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=1-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-C9EDA82D7BD4",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=1-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-629B760BFECC",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=2-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-998E69B61899",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=2-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-62C2D8759FE6",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=2-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-7F1FD804A8C4",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST location / type=2-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-5B3777D798E1",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=1-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-5CE34B2CA108",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=1-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-9C103DE1659F",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=1-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-E66981530B75",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=1-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-ACC2C3E3AA24",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=2-1 / correct=False / force=False"
+        },
+        {
+          "caseId": "DB-5E3EDBABE678",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=2-1 / correct=False / force=True"
+        },
+        {
+          "caseId": "DB-A7C70D730A03",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=2-1 / correct=True / force=False"
+        },
+        {
+          "caseId": "DB-9031A45B4FA2",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST both-site-wins / type=2-1 / correct=True / force=True"
+        },
+        {
+          "caseId": "DB-D6901D626001",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画POST 1日・control 1件"
+        },
+        {
+          "caseId": "DB-B7E1DAA66136",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "計画POST 400・部分保存なし / 2件目controlのtime欠落"
+        },
+        {
+          "caseId": "DB-D81A7C97BB42",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "計画POST 400・部分保存なし / 2件目planのprofit欠落"
+        },
+        {
+          "caseId": "DB-AEC1D28D2F27",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "計画POST 400・部分保存なし / 2件目planのcontrols空配列"
+        }
+      ],
+      "evidence": "plan-post/result.json"
+    },
+    {
+      "label": "plan-post-fault",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-50EEA584DF2F",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "複数行保存: 期待4行 / 追加4行、未一致1行、余分・値違い1行、既存変更・削除0行",
+          "title": "計画POST site / type=1-1 / correct=False / force=False"
+        }
+      ],
+      "evidence": "plan-post-fault/result.json"
+    },
+    {
+      "label": "plan-get",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-B5A0DB3AE0D5",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=省略 / type=省略"
+        },
+        {
+          "caseId": "DB-70A9E6E246A0",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=省略 / type=1-1"
+        },
+        {
+          "caseId": "DB-594DD2B211AE",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=省略 / type=2-1"
+        },
+        {
+          "caseId": "DB-CCE40A07935D",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=False / type=省略"
+        },
+        {
+          "caseId": "DB-E06C8E685AD6",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=False / type=1-1"
+        },
+        {
+          "caseId": "DB-5DEA897DAC37",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=False / type=2-1"
+        },
+        {
+          "caseId": "DB-2E7C80E3FA65",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=True / type=省略"
+        },
+        {
+          "caseId": "DB-B155EA5A12FF",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=True / type=1-1"
+        },
+        {
+          "caseId": "DB-3A3CFA0A7D48",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET site / correct=True / type=2-1"
+        },
+        {
+          "caseId": "DB-3BB3796F5652",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=省略 / type=省略"
+        },
+        {
+          "caseId": "DB-611334CC7DF4",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=省略 / type=1-1"
+        },
+        {
+          "caseId": "DB-641783FF77BF",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=省略 / type=2-1"
+        },
+        {
+          "caseId": "DB-02609936A9DC",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=False / type=省略"
+        },
+        {
+          "caseId": "DB-F22110176649",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=False / type=1-1"
+        },
+        {
+          "caseId": "DB-6E69ACEB55BA",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=False / type=2-1"
+        },
+        {
+          "caseId": "DB-449487A03697",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=True / type=省略"
+        },
+        {
+          "caseId": "DB-EFC849D5544A",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=True / type=1-1"
+        },
+        {
+          "caseId": "DB-94B7B499CE7B",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET location / correct=True / type=2-1"
+        },
+        {
+          "caseId": "DB-13696E05FD21",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=省略 / type=省略"
+        },
+        {
+          "caseId": "DB-C47FAE61D51E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=省略 / type=1-1"
+        },
+        {
+          "caseId": "DB-63846199BDCA",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=省略 / type=2-1"
+        },
+        {
+          "caseId": "DB-58FE51508F03",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=False / type=省略"
+        },
+        {
+          "caseId": "DB-16F1746BF1F3",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=False / type=1-1"
+        },
+        {
+          "caseId": "DB-DEFAB20F9BFA",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=False / type=2-1"
+        },
+        {
+          "caseId": "DB-D0FCEEA4DDD7",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=True / type=省略"
+        },
+        {
+          "caseId": "DB-DCD337E18963",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=True / type=1-1"
+        },
+        {
+          "caseId": "DB-050C9B48C58D",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET both-site-wins / correct=True / type=2-1"
+        },
+        {
+          "caseId": "DB-862D8E66653B",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET 境界 / 開始を含む・終了を含まない"
+        },
+        {
+          "caseId": "DB-61F3742EB2F6",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET 境界 / 開始の直前を除外"
+        },
+        {
+          "caseId": "DB-D51C16E652B9",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET 境界 / 終了の直前を含む"
+        },
+        {
+          "caseId": "DB-BF7BABD3E1CE",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET 境界 / 日付をまたぐ"
+        },
+        {
+          "caseId": "DB-883ABBF7C6AA",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "計画GET 境界 / 同じ期間をUTCで指定"
+        }
+      ],
+      "evidence": "plan-get/result.json"
+    },
+    {
+      "label": "plan-get-fault",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-B5A0DB3AE0D5",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "SQL取得結果とレスポンスが不一致（値・所属グループ・件数・欠落・重複・順序を確認）",
+          "title": "計画GET site / correct=省略 / type=省略"
+        }
+      ],
+      "evidence": "plan-get-fault/result.json"
+    },
+    {
+      "label": "pwrco",
+      "expected": "passed",
+      "matched": true,
+      "exitCode": 0,
+      "cases": [
+        {
+          "caseId": "DB-9BD24BA90DD3",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=1 / 1行"
+        },
+        {
+          "caseId": "DB-52F31471196E",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=1 / 2行"
+        },
+        {
+          "caseId": "DB-AEA4C130F397",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=2 / 1行"
+        },
+        {
+          "caseId": "DB-575122DC93DD",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=2 / 2行"
+        },
+        {
+          "caseId": "DB-4D31412C49A9",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=省略→NULL / 1行"
+        },
+        {
+          "caseId": "DB-8FA2B2DC70D6",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco site / type=省略→NULL / 2行"
+        },
+        {
+          "caseId": "DB-7567F5E00BBA",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=1 / 1行"
+        },
+        {
+          "caseId": "DB-CD10BD27E61B",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=1 / 2行"
+        },
+        {
+          "caseId": "DB-6E629AB1D8F4",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=2 / 1行"
+        },
+        {
+          "caseId": "DB-3E0136A40727",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=2 / 2行"
+        },
+        {
+          "caseId": "DB-A2E3D3455294",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=省略→NULL / 1行"
+        },
+        {
+          "caseId": "DB-19A9A9246E7F",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco location / type=省略→NULL / 2行"
+        },
+        {
+          "caseId": "DB-761EA0A7846F",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=1 / 1行"
+        },
+        {
+          "caseId": "DB-716F6DE25045",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=1 / 2行"
+        },
+        {
+          "caseId": "DB-62BDCBEF56FF",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=2 / 1行"
+        },
+        {
+          "caseId": "DB-0A6D454247B3",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=2 / 2行"
+        },
+        {
+          "caseId": "DB-9639869A93C3",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=省略→NULL / 1行"
+        },
+        {
+          "caseId": "DB-646788A12C89",
+          "status": "passed",
+          "actualStatus": "200",
+          "detail": "",
+          "title": "pwrco both-site-wins / type=省略→NULL / 2行"
+        },
+        {
+          "caseId": "DB-AF50FA86A2C4",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 必須欠落:start_datetime"
+        },
+        {
+          "caseId": "DB-F8B6F3C2FDCC",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 必須欠落:end_time"
+        },
+        {
+          "caseId": "DB-5380879C3829",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 必須欠落:schedule"
+        },
+        {
+          "caseId": "DB-A82DC3675D24",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 必須欠落:schedule.0.time"
+        },
+        {
+          "caseId": "DB-16F021BE5BFC",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 必須欠落:schedule.0.value"
+        },
+        {
+          "caseId": "DB-8CB25504ABA5",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 拠点両方なし"
+        },
+        {
+          "caseId": "DB-CE4B134D3747",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:site_id='101'"
+        },
+        {
+          "caseId": "DB-749D226595C1",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:location_id=123"
+        },
+        {
+          "caseId": "DB-C7341450033A",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:type=3"
+        },
+        {
+          "caseId": "DB-041C15E81299",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:type='1'"
+        },
+        {
+          "caseId": "DB-C8A0D0FFEDDA",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:type=None"
+        },
+        {
+          "caseId": "DB-E85AAE7C69AC",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:start_datetime='not-a-date'"
+        },
+        {
+          "caseId": "DB-81135A0EDA3E",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:end_time='not-a-date'"
+        },
+        {
+          "caseId": "DB-C3D16ECA0762",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 型・形式・enum:schedule={}"
+        },
+        {
+          "caseId": "DB-7C1D1D4A0AC4",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / schedule項目:time='not-a-date'"
+        },
+        {
+          "caseId": "DB-9B617BFBFF97",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / schedule項目:value='12.5'"
+        },
+        {
+          "caseId": "DB-74E0C8DC8768",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / schedule項目:value=None"
+        },
+        {
+          "caseId": "DB-B38043844CB1",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 2件目不正・部分保存なし:time欠落"
+        },
+        {
+          "caseId": "DB-F1C65DE76A07",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 2件目不正・部分保存なし:value型違い"
+        },
+        {
+          "caseId": "DB-BC7B1205DC47",
+          "status": "passed",
+          "actualStatus": "400",
+          "detail": "",
+          "title": "pwrco 400 / 空schedule"
+        }
+      ],
+      "evidence": "pwrco/result.json"
+    },
+    {
+      "label": "pwrco-fault",
+      "expected": "failed",
+      "matched": true,
+      "exitCode": 1,
+      "cases": [
+        {
+          "caseId": "DB-D47FB8A3FD6C",
+          "status": "failed",
+          "actualStatus": "200",
+          "detail": "複数行保存: 期待1行 / 追加1行、未一致1行、余分・値違い1行、既存変更・削除0行",
+          "title": "pwrco site / type=1 / 1行"
+        }
+      ],
+      "evidence": "pwrco-fault/result.json"
+    }
+  ],
+  "sourceCommit": "0ebb97f8a4eec89f11c7757d5f8c432c56d30ff3",
+  "flowCleanupConfirmed": true,
+  "fixtureErrors": [],
+  "httpRequests": 104,
+  "authenticatedRequests": 72,
+  "cleanupComplete": true,
+  "finishedAt": "2026-10-20T23:21:30.973128+00:00",
+  "counts": {
+    "passed": 143,
+    "failed": 30
+  },
+  "sourceFiles": {
+    "docs/db_lab_service.py": "9b3e3312d28309f4842b81d5432d326d03b6a5884df9335084f53432f7767f9b",
+    "docs/db_lab_cases.py": "b15866aa5c6c68c2e6aa9d4f80be27f15ed4c3a159a733287cc874dce769e7b3",
+    "docs/run_db_lab.py": "73473f54059eb3a5c08e394f63828b31c98b3a5da4378429cfac87135ae72058"
+  },
+  "databaseVersions": {
+    "postgres": "16.15",
+    "influxdb": "1.8.10"
+  },
+  "interpretation": {
+    "normalDistinctCases": 122,
+    "normalRepeatCases": 21,
+    "detectedFaultCases": 30,
+    "unmatchedRuns": 0,
+    "scope": "Real HTTP and real databases; explicit configured expectations, not arbitrary API coverage or browser UI verification"
+  }
+}
