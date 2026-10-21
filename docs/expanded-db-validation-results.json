@@ -1,0 +1,569 @@
+{
+  "date": "2026-10-21",
+  "environment": "localhost HTTP service + PostgreSQL + InfluxDB 1.x; native pytest runner",
+  "suites": [
+    {
+      "suite": "existing-and-three-apis",
+      "counts": {
+        "passed": 143,
+        "failed": 30
+      },
+      "fixtureErrors": [],
+      "cleanupComplete": true,
+      "runs": [
+        {
+          "label": "normal",
+          "expected": "passed",
+          "caseCount": 21,
+          "matched": true
+        },
+        {
+          "label": "repeat",
+          "expected": "passed",
+          "caseCount": 21,
+          "matched": true
+        },
+        {
+          "label": "missing-auth",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "invalid-auth",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "invalid-login",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-auth-write",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-01-read-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-02-read-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-03-read-missing",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-04-read-missing",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-05-read-duplicate",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-06-read-duplicate",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-07-write-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-08-write-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-09-write-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-10-write-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-11-write-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-12-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-13-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-14-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-15-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-16-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-17-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-18-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-19-wrong-target",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-20-wrong-target",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-21-clobber",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-22-extra-write",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-23-invalid-write",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-24-invalid-write",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-25-first-site",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "fault-26-ignore-site",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "plan-post",
+          "expected": "passed",
+          "caseCount": 28,
+          "matched": true
+        },
+        {
+          "label": "plan-post-fault",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "plan-get",
+          "expected": "passed",
+          "caseCount": 32,
+          "matched": true
+        },
+        {
+          "label": "plan-get-fault",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "pwrco",
+          "expected": "passed",
+          "caseCount": 38,
+          "matched": true
+        },
+        {
+          "label": "pwrco-fault",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true
+        }
+      ]
+    },
+    {
+      "suite": "expanded-boundaries-and-atomicity",
+      "counts": {
+        "passed": 17,
+        "failed": 28
+      },
+      "fixtureErrors": [],
+      "cleanupComplete": true,
+      "runs": [
+        {
+          "label": "scale-zero-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "scale-zero-wrong-scale",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-zero-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-negative-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "scale-negative-wrong-scale",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-negative-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-round-up-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "scale-round-up-wrong-scale",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-round-up-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-round-negative-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "scale-round-negative-wrong-scale",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "scale-round-negative-no-op",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-boundaries-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-boundaries-start-inclusive",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-boundaries-end-exclusive",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-timezone-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-timezone-start-inclusive",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-timezone-end-exclusive",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-one-item-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-one-item-ignore-items",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-one-item-numeric-string",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-no-matching-item-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-no-matching-item-invent-empty",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-empty-period-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-empty-period-invent-empty",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "summary-site-zero-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "summary-site-zero-wrong-priority",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "batch-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "batch-batch-missing",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "batch-batch-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "batch-batch-null",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "batch-batch-extra",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "expectation_rules"
+        },
+        {
+          "label": "batch-batch-guard",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "db_unchanged"
+        },
+        {
+          "label": "batch-rollback-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "batch-rollback-partial-commit",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "db_unchanged"
+        },
+        {
+          "label": "batch-invalid-last-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "batch-empty-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "bulk-zero-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "bulk-zero-wrong-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "influx_mutation"
+        },
+        {
+          "label": "bulk-zero-guard",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "influx_mutation"
+        },
+        {
+          "label": "bulk-negative-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "bulk-negative-wrong-value",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "influx_mutation"
+        },
+        {
+          "label": "bulk-negative-guard",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "influx_mutation"
+        },
+        {
+          "label": "bulk-preserve-fields-normal",
+          "expected": "passed",
+          "caseCount": 1,
+          "matched": true
+        },
+        {
+          "label": "bulk-preserve-fields-clobber-field",
+          "expected": "failed",
+          "caseCount": 1,
+          "matched": true,
+          "faultDetectedBy": "influx_mutation"
+        }
+      ]
+    }
+  ],
+  "unverifiableSetup": {
+    "passed": 4,
+    "conditions": [
+      "division-zero",
+      "missing-column",
+      "empty-target",
+      "indistinguishable-update"
+    ],
+    "assertions": [
+      "UNVERIFIED",
+      "no HTTP request",
+      "PostgreSQL unchanged",
+      "InfluxDB unchanged"
+    ]
+  }
+}
