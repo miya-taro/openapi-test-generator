@@ -1,3 +1,5 @@
+import { buildAdvancedScenario, initAdvancedEditor, initBulkEditor } from "./advanced-db-editor.js";
+import { initDdlCatalog } from "./ddl-catalog.js";
 import { flowControls, newApiScenario } from "./api-flow-editor.js";
 import { templateControls } from "./scenario-templates.js";
 import { ruleControls } from "./rule-controls.js";
@@ -737,6 +739,7 @@ export function buildDbScenario(form) {
   const name = String(form.name || "").trim();
   const table = String(form.table || "").trim();
   if (!name) throw new Error("試験名を入力してください");
+  if (["expectation_rules", "influx_bulk"].includes(form.mode)) return buildAdvancedScenario(form);
   if (form.mode === "sql_response") return buildSqlResponseScenario({ ...form, name });
   if (!table) throw new Error("対象テーブルを入力してください");
   requireDbIdentifier(table, "対象テーブル");
@@ -1013,6 +1016,7 @@ function buildLookup(raw, operator) {
 }
 
 export function buildDbScenarios(form) {
+  if (["expectation_rules", "influx_bulk"].includes(form.mode)) return [buildDbScenario(form)];
   const base = buildDbScenario(form);
   if (form.mode === "unchanged" || form.operation.method.toUpperCase() !== "GET" || !form.expandCombinations) return [base];
   const schema = form.operation.requestSchema || {};
@@ -1119,6 +1123,9 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   };
 
   const selectedOperation = () => operations.find((item) => item.operationId === byId("dbscenario-editor-operation").value);
+  initDdlCatalog(invoke);
+  let rulesEditor = initAdvancedEditor(byId("dbscenario-rules-panel"));
+  let bulkEditor = initBulkEditor(byId("dbscenario-bulk-panel"));
   const sqlEditor = initSqlResponseEditor(() => selectedOperation());
   const insertEditor = initInsertEditor(() => selectedOperation());
 
@@ -1224,6 +1231,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     if (operationChanged) {
       insertEditor.render();
       sqlEditor.render();
+      rulesEditor = initAdvancedEditor(byId("dbscenario-rules-panel"));
+      bulkEditor = initBulkEditor(byId("dbscenario-bulk-panel"));
       byId("dbscenario-editor-mode").value = "mapping";
       byId("dbscenario-editor-unchanged-body").value = "{}";
       byId("dbscenario-editor-unchanged-status").value = "";
@@ -1327,23 +1336,29 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   function updateMode() {
+    const mode = byId("dbscenario-editor-mode").value;
+    const advanced = ["expectation_rules", "influx_bulk"].includes(mode);
+    byId("dbscenario-rules-panel").hidden = mode !== "expectation_rules";
+    byId("dbscenario-bulk-panel").hidden = mode !== "influx_bulk";
+    if (mode === "influx_bulk") byId("dbscenario-editor-engine").value = "influxdb";
+    byId("dbscenario-editor-engine").closest(".form-field").hidden = advanced;
     const sql = byId("dbscenario-editor-mode").value === "sql_response";
     byId("dbscenario-sql-panel").hidden = !sql;
-    byId("dbscenario-editor-table").hidden = sql;
-    document.querySelector('label[for="dbscenario-editor-table"]').hidden = sql;
+    byId("dbscenario-editor-table").hidden = sql || advanced;
+    document.querySelector('label[for="dbscenario-editor-table"]').hidden = sql || advanced;
     const insert = byId("dbscenario-editor-mode").value === "insert_rows";
     byId("dbscenario-insert-panel").hidden = !insert;
     if (sql || insert) byId("dbscenario-editor-engine").value = "postgres";
     const unchanged = byId("dbscenario-editor-mode").value === "unchanged";
     const influx = byId("dbscenario-editor-engine").value === "influxdb";
-    byId("dbscenario-editor-influx-help").hidden = !influx;
+    byId("dbscenario-editor-influx-help").hidden = advanced || !influx;
     byId("dbscenario-editor-influx-period").hidden = !influx || !unchanged;
     const method = selectedOperation()?.method;
     byId("dbscenario-editor-unchanged-panel").hidden = !unchanged;
-    byId("dbscenario-editor-write-panel").hidden = sql || insert || unchanged || !["POST", "PUT", "PATCH"].includes(method);
-    byId("dbscenario-editor-seed-panel").hidden = sql || insert || influx || unchanged || !SEEDED_METHODS.has(method);
-    byId("dbscenario-editor-get-panel").hidden = sql || insert || unchanged || method !== "GET";
-    const mutation = influx && !sql && !insert && !unchanged && MUTATING_METHODS.has(method);
+    byId("dbscenario-editor-write-panel").hidden = advanced || sql || insert || unchanged || !["POST", "PUT", "PATCH"].includes(method);
+    byId("dbscenario-editor-seed-panel").hidden = advanced || sql || insert || influx || unchanged || !SEEDED_METHODS.has(method);
+    byId("dbscenario-editor-get-panel").hidden = advanced || sql || insert || unchanged || method !== "GET";
+    const mutation = !advanced && influx && !sql && !insert && !unchanged && MUTATING_METHODS.has(method);
     byId("dbscenario-editor-influx-mutation").hidden = !mutation;
     byId("dbscenario-editor-influx-fixture-panel").hidden = !byId("dbscenario-editor-influx-fixture").checked;
     byId("dbscenario-editor-influx-seeds-panel").hidden = byId("dbscenario-editor-influx-action").value === "insert";
@@ -1361,7 +1376,7 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
       if ((sql || unchanged || influx) && checkbox.checked) { checkbox.checked = false; checkbox.dispatchEvent(new window.Event("change")); }
       checkbox.disabled = sql || unchanged || influx;
     }
-    if (unchanged || sql) {
+    if (advanced || unchanged || sql) {
       for (const input of byId("dbscenario-editor-query-param-rows").querySelectorAll("input")) input.disabled = false;
       byId("dbscenario-editor-guidance").textContent = "実行前後のDBを比較します。送る値と期待statusを仕様に従って入力してください。DB列やエラー条件は推測しません。";
     } else {
@@ -1370,11 +1385,13 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     }
     if (sql) byId("dbscenario-editor-guidance").textContent = "SQLで期待値を取得し、設定した項目・配列を照合します。検索ルールは人が指定してください。";
     if (mutation) byId("dbscenario-editor-guidance").textContent = "InfluxDBの対象時刻・全タグ・期待する変更を指定してください。保存は事前なし、更新・削除は既存ポイントが必要です。";
+    if (advanced) byId("dbscenario-editor-guidance").textContent = "送信値・期待値ルール・照合先を設定してください。保存時に定義を検証します。";
     wizard?.refresh();
   }
 
   function requestBodyValue() {
     const mode = byId("dbscenario-editor-mode").value;
+    if (["expectation_rules", "influx_bulk"].includes(mode)) return (mode === "expectation_rules" ? rulesEditor : bulkEditor).body();
     if (mode === "sql_response" || mode === "insert_rows") {
       const kind = mode === "sql_response" ? "sql" : "insert";
       return parseJson(byId(`dbscenario-${kind}-panel`).querySelector(`[data-${kind}-field="body"]`).value || "{}", "リクエストbody");
@@ -1409,6 +1426,12 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
   }
 
   function currentForm() {
+    const advancedMode = byId("dbscenario-editor-mode").value;
+    if (["expectation_rules", "influx_bulk"].includes(advancedMode)) return {
+      operation: selectedOperation(), name: byId("dbscenario-editor-name").value,
+      pathParams: collectPathParams(), queryParams: collectQueryParams(),
+      ...(advancedMode === "expectation_rules" ? rulesEditor : bulkEditor).collect(),
+    };
     if (byId("dbscenario-editor-mode").value === "sql_response") return {
       mode: "sql_response", engine: byId("dbscenario-editor-engine").value,
       operation: selectedOperation(), name: byId("dbscenario-editor-name").value,

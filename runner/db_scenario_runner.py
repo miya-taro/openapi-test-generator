@@ -41,7 +41,7 @@ from auth_login import (
 from config_loader import load_config, get_postgres_config, get_influxdb_config
 import db_factory
 from db_scenario import load_scenarios, resolve_db_check, resolve_placeholders, ScenarioError, DBScenario, ResponseCheck
-from db_backends import postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert, sql_response
+from db_backends import expectation_rules, postgres_backend, influx_backend, influx_response, influx_mutation, lookup_response, postgres_insert, sql_response
 import response_check as response_check_module
 import db_scenario_report
 from request_evidence import capture_request
@@ -575,6 +575,17 @@ def _run_scenario_once(
             source = "DBからAPI検索値を生成し" if any(item.auto for item in scenario.db_response_check.filters) else "DBを読み"
             print(f"  [INFO] {source}、レスポンス {len(expected_db_rows)} 件を照合します")
 
+        rules_prepared = None
+        rules_evidence = {}
+        if scenario.expectation_rules is not None:
+            if evidence is not None:
+                evidence['expectation_rules'] = rules_evidence
+            try:
+                rules_prepared = expectation_rules.prepare(scenario.expectation_rules,
+                    {'body': resolved_body, 'query': resolved_query_params, 'path': resolved_path_params}, db_config, rules_evidence)
+            except Exception as exc:
+                return False, f'[UNVERIFIED] 期待値ルールを準備できません: {exc}', '未実行', previous_response
+
         mutation_evidence = None
         if scenario.influx_mutation is not None:
             if method not in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -584,7 +595,7 @@ def _run_scenario_once(
                     if evidence is not None:
                         evidence['influx_fixture'] = influx_fixture
                     influx_mutation.begin_fixture(scenario.influx_mutation, get_influxdb_config(db_config), influx_fixture)
-                mutation_evidence = influx_mutation.prepare(scenario.influx_mutation, get_influxdb_config(db_config))
+                mutation_evidence = influx_mutation.prepare(scenario.influx_mutation, get_influxdb_config(db_config), {'body': resolved_body, 'query': resolved_query_params, 'path': resolved_path_params})
             except postgres_backend.DBResponseCheckUnverified as exc:
                 return False, f"[UNVERIFIED] {exc}", "未実行", previous_response
             except Exception:
@@ -677,6 +688,10 @@ def _run_scenario_once(
                 evidence["expected_status"] = scenario.response_check.expect_status
 
         failures: list[str] = []
+        if rules_prepared is not None:
+            ok, detail = expectation_rules.verify(scenario.expectation_rules, rules_prepared, response_json, db_config, rules_evidence)
+            if not ok:
+                failures.append(detail)
         if sql_evidence is not None:
             ok, detail = sql_response.compare(scenario.db_sql_response_check, sql_expected, response_json, sql_evidence)
             if not ok:

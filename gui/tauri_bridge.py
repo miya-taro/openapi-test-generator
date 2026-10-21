@@ -146,6 +146,9 @@ def _save_db_scenario_yaml(path: str, scenarios: list[dict]) -> str:
 
 
 def _dispatch(command: str, args: dict) -> object:
+    if command == "parse_ddl_catalog":
+        from src.ddl_catalog import parse_ddl
+        return parse_ddl(args.get("text", ""))
     if command == "servers_url":
         return _servers_url(args["path"])
     if command == "load_project":

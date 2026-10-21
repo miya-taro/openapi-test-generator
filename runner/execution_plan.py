@@ -72,7 +72,7 @@ def db_case(case):
         ("apiFlow", "api_flow"), ("poll", "poll"),
         ("authProfile", "auth_profile"), ("testFixture", "test_fixture"), ("ruleTest", "rule_test"),
         ("dbInsertCheck", "db_insert_check"), ("influxMutation", "influx_mutation"),
-        ("dbSqlResponseCheck", "db_sql_response_check"), ("dbUnchanged", "db_unchanged"),
+        ("dbSqlResponseCheck", "db_sql_response_check"), ("expectationRules", "expectation_rules"), ("dbUnchanged", "db_unchanged"),
     ):
         if key in definition:
             raw[target] = definition[key]

@@ -10,3 +10,6 @@ influxdb>=5.3.0
 tzdata>=2024.1
 pytest>=8,<9
 pytest-xdist>=3.6,<4
+
+# PostgreSQL DDL metadata parser (MIT); no SQL execution.
+sqlglot==30.24.0

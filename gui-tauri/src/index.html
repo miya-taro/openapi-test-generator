@@ -294,6 +294,15 @@
               <div class="form-section">
                 <h3 class="form-section-title">1. APIとDBの対応を登録</h3>
                 <p class="form-section-desc">APIを選び、送信する値とDBの対応を順番に設定します。最後に試験内容を確認して追加します。設定中にAPIの送信やDBの更新は行いません。</p>
+                <details id="db-ddl-catalog">
+                  <summary>DDLからテーブル・カラム一覧を読み込む（PostgreSQL）</summary>
+                  <p>APIの対応は推測しません。取り込んだ構造はこのブラウザーに保存し、入力候補に使います。</p>
+                  <input type="file" data-ddl-file accept=".sql,.txt" aria-label="DDLファイル" />
+                  <textarea rows="5" aria-label="PostgreSQL DDL" placeholder="CREATE TABLE ..."></textarea>
+                  <button type="button" class="secondary" data-ddl-import>DDLを読み込む</button>
+                  <button type="button" class="secondary" data-ddl-clear>一覧を削除</button>
+                  <p data-ddl-status role="status"></p><div data-ddl-result></div>
+                </details>
                 <div class="db-scenario-editor">
                   <div id="dbscenario-setup" class="db-setup" data-stage="1">
                     <div class="db-setup-top">
@@ -330,10 +339,14 @@
                     <select id="dbscenario-editor-mode">
                       <option value="mapping">APIとDBの値を照合する</option>
                       <option value="unchanged">API実行前後でDBに変更がないこと</option>
+                      <option value="expectation_rules">参照・計算・集計から期待値を作って照合する</option>
+                      <option value="influx_bulk">InfluxDB：期間・タグで指定した一括変更を照合する</option>
                       <option value="sql_response">GET：SQL取得結果と入れ子レスポンスを照合する</option>
                       <option value="insert_rows">POST：配列から複数行への保存を照合する</option>
                     </select>
                   </div>
+                  <div data-db-step="2 3" id="dbscenario-rules-panel" hidden></div>
+                  <div data-db-step="2 3" id="dbscenario-bulk-panel" hidden></div>
                   <div data-db-step="2 3" id="dbscenario-sql-panel" hidden></div>
                   <div data-db-step="2 3" id="dbscenario-insert-panel" hidden></div>
                   <p data-db-step="3" id="dbscenario-editor-influx-help" class="field-caption" hidden>InfluxDB：GETの全ポイント照合、保存・更新・削除の1ポイント確認、各メソッドの変更なし確認ができます。time・タグ・フィールドをDB項目として入力してください。</p>

@@ -1349,3 +1349,16 @@ label.checkbox input[type="checkbox"] {
 @media (max-width: 900px) { .api-flow-value-row { grid-template-columns: 1fr 1fr; } }
 
 .api-flow-value-row button { white-space: nowrap; }
+
+/* Explicit expected-value and bounded bulk forms. */
+#dbscenario-rules-panel, #dbscenario-bulk-panel { margin: 16px 0; }
+#dbscenario-rules-panel fieldset, #dbscenario-bulk-panel fieldset {
+  margin: 12px 0; padding: 14px; border: 1px solid var(--border, #d8dfea); border-radius: 8px;
+}
+#dbscenario-rules-panel input, #dbscenario-rules-panel select, #dbscenario-rules-panel textarea,
+#dbscenario-bulk-panel input, #dbscenario-bulk-panel select, #dbscenario-bulk-panel textarea {
+  display: block; width: 100%; box-sizing: border-box; margin-top: 5px;
+}
+#db-ddl-catalog { margin: 16px 0; padding: 14px; border: 1px solid #d8dfea; border-radius: 8px; }
+#db-ddl-catalog textarea { display: block; width: 100%; margin: 12px 0; }
+#db-ddl-catalog pre { white-space: pre-wrap; overflow-wrap: anywhere; }

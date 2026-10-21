@@ -117,6 +117,7 @@ def build_db_coverage(api, cases):
                         missing="要手動確認"
                         if any(
                             case["definition"].get("dbCheck")
+                            or case["definition"].get("expectationRules")
                             or case["definition"].get("influxMutation")
                             for case in positives
                         )
@@ -139,7 +140,8 @@ def build_db_coverage(api, cases):
                         field,
                         f"{status}の返却値→DB",
                         found,
-                        "SQL結果またはDB取得の対応設定。SQLの抽出条件の正しさや全DB列の照合を保証しない",
+                        "SQL結果またはDB取得の対応設定。期待値ルールによる照合はルール詳細を別途確認。SQLの抽出条件の正しさや全DB列の照合を保証しない",
+                        missing="要手動確認" if any(case["definition"].get("expectationRules") for case in positives) else "未照合",
                     )
             for rule in body_schema.get("x-otg-presence-rules", []):
                 names = rule.get("fields", [])

@@ -57,7 +57,10 @@ def cleanup_fixture(check, config, state):
     state['cleanup_status'] = 'OK'
 
 
-def prepare(check, config):
+def prepare(check, config, context=None):
+    if 'scope' in check:
+        from db_backends import influx_bulk
+        return influx_bulk.prepare(check, config, context or {})
     before = _points(config, check)
     if check['action'] == 'insert' and before:
         raise DBResponseCheckUnverified('保存確認の対象ポイントは既に存在します。新しい時刻・タグを指定してください')
@@ -69,6 +72,9 @@ def prepare(check, config):
 
 
 def verify(check, config, evidence):
+    if 'scope' in check:
+        from db_backends import influx_bulk
+        return influx_bulk.verify(check, config, evidence)
     after = _points(config, check)
     evidence.update(after_points=after, after_count=len(after))
     failures = []

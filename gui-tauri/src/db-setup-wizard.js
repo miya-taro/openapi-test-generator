@@ -30,6 +30,9 @@ export function initDbSetupWizard({getOperation, validateRequest, buildCases}) {
       const panel = byId(`dbscenario-${name}-panel`);
       for (const child of panel.children) mark(child, child.querySelector(`[data-${name}-field="body"]`) ? '2' : '3');
     }
+    for (const name of ['rules', 'bulk']) {
+      for (const child of byId(`dbscenario-${name}-panel`).children) mark(child, child.querySelector('[data-advanced="body"]') ? '2' : '3');
+    }
     for (const panelId of ['dbscenario-editor-write-panel', 'dbscenario-editor-get-panel', 'dbscenario-editor-unchanged-panel', 'dbscenario-editor-influx-mutation']) {
       for (const child of byId(panelId).children) mark(child, '3');
     }
@@ -41,7 +44,7 @@ export function initDbSetupWizard({getOperation, validateRequest, buildCases}) {
     const operation = getOperation();
     const mode = byId('dbscenario-editor-mode').value;
     for (const option of byId('dbscenario-editor-mode').options) {
-      const unavailable = (option.value === 'sql_response' && operation?.method !== 'GET') || (option.value === 'insert_rows' && operation?.method !== 'POST');
+      const unavailable = (option.value === 'sql_response' && operation?.method !== 'GET') || (option.value === 'insert_rows' && operation?.method !== 'POST') || (option.value === 'influx_bulk' && !['POST', 'PUT', 'PATCH', 'DELETE'].includes(operation?.method));
       option.disabled = unavailable; option.hidden = unavailable;
     }
     byId('dbscenario-editor-engine').querySelector('option[value="influxdb"]').disabled = ['sql_response', 'insert_rows'].includes(mode);
@@ -96,6 +99,8 @@ export function initDbSetupWizard({getOperation, validateRequest, buildCases}) {
       const table = scenario.db_insert_check?.table || scenario.db_response_check?.table || scenario.db_check?.table;
       const checks = [];
       if (table) checks.push(`照合先：${table}`);
+      if (scenario.expectation_rules) checks.push(`期待値ルール：${scenario.expectation_rules.steps.length}処理・${scenario.expectation_rules.assertions.length}照合`);
+      if (scenario.influx_mutation?.scope) checks.push('InfluxDBの確認範囲全体と期待する一括変更を比較');
       if (scenario.db_sql_response_check) checks.push('SQLの取得結果とレスポンスを照合');
       if (scenario.db_unchanged) checks.push('指定したDB範囲が実行前後で変わらないこと');
       if (scenario.influx_mutation) checks.push(`InfluxDB：${scenario.influx_mutation.measurement}`);

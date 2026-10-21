@@ -124,5 +124,32 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
                         json.dumps(data.get(expected, '記録なし'), ensure_ascii=False, indent=2, default=str),
                         json.dumps(data.get(actual, '記録なし'), ensure_ascii=False, indent=2, default=str)]])
         style_table(comparison, [22, 35, 25, 65, 65], 2)
+        rules = wb.create_sheet('期待値ルール照合')
+        rules.append(['試験ID', '照合先', '期待値', '実際の値', '判定', '詳細'])
+        steps = wb.create_sheet('期待値の作成過程')
+        steps.append(['試験ID', '処理名', '実行前の参照・計算結果'])
+        bulk = wb.create_sheet('InfluxDB一括照合')
+        bulk.append(['試験ID', '比較対象', '期待値', '実際の値', '判定'])
+        dump = lambda value: json.dumps(value, ensure_ascii=False, indent=2, default=str)
+        for entry in evidence:
+            check = entry.get('expectation_rules', {})
+            for step in check.get('steps', []):
+                steps.append([safe_cell(v) for v in [entry.get('case_id'), step['name'], dump(step['value'])]])
+            for item in check.get('assertions', []):
+                definition = item.get('definition', {})
+                target = definition.get('path') if 'path' in definition else dump(definition.get('query'))
+                rules.append([safe_cell(v) for v in [entry.get('case_id'), target, dump(item.get('expected')),
+                    dump(item.get('actual', '記録なし')), item.get('verdict'), item.get('detail', '')]])
+            data = entry.get('influx_mutation', {})
+            if 'scope' in data.get('definition', {}):
+                for label, expected, actual in [
+                    ('確認範囲', data['definition']['scope'], '範囲外は未照合'),
+                    ('変更対象', data['definition']['target'], {'対象数': data.get('target_count'), '対象外数': data.get('guard_count')}),
+                    ('変更前', data.get('before_points'), '期待値を作る基準'),
+                    ('変更後の全ポイント', data.get('expected_points'), data.get('after_points', '記録なし'))]:
+                    bulk.append([safe_cell(v) for v in [entry.get('case_id'), label, dump(expected), dump(actual), data.get('verdict')]])
+        style_table(rules, [22, 35, 55, 55, 12, 45], 1, 5)
+        style_table(steps, [22, 25, 80], 1)
+        style_table(bulk, [22, 25, 60, 60, 12], 1, 5)
     write_overview(wb, overview)
     wb.save(str(output_path))

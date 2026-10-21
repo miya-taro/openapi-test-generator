@@ -409,3 +409,21 @@ test("Queryの別DB参照でも送信値を保持し、自動生成値で置換�
   expect(buildDbScenario(form).request.query_params).toEqual({ location_id: "A" });
   expect(() => buildDbScenario({ ...form, queryParams: {} })).toThrow("送信値");
 });
+
+test('期待値ルールは送信値を入力した後に設定でき、API切替で古いルールを引き継がない', async () => {
+  const second = {...createUserOperation, operationId: 'other'};
+  const invoke = vi.fn(async (_command, payload) => payload?.command === 'list_db_scenario_operations' ? [createUserOperation, second] : 'db-checks.yaml');
+  const editor = initDbScenarioEditor({invoke, saveDialog: vi.fn(), onSaved: vi.fn()});
+  await editor.load('openapi.json'); selectOperation('createUser');
+  const mode = document.getElementById('dbscenario-editor-mode'); mode.value = 'expectation_rules'; mode.dispatchEvent(new window.Event('change'));
+  document.getElementById('dbsetup-next').click();
+  document.querySelector('#dbscenario-rules-panel [data-advanced="body"]').value = '{"email":"test@example.com"}';
+  document.getElementById('dbsetup-next').click();
+  expect(document.getElementById('dbscenario-setup').dataset.stage).toBe('3');
+  expect(document.getElementById('dbsetup-error').hidden).toBe(true);
+  document.querySelector('#dbscenario-rules-panel button').click();
+  expect(document.querySelectorAll('#dbscenario-rules-panel [data-advanced="name"]')).toHaveLength(1);
+  selectOperation('other');
+  expect(document.querySelectorAll('#dbscenario-rules-panel [data-advanced="name"]')).toHaveLength(0);
+  expect(document.querySelector('#dbscenario-rules-panel [data-advanced="body"]').value).toBe('{}');
+});

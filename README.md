@@ -89,6 +89,8 @@ run-windows.bat
 
 OpenAPIに `anyOf: [{"required":["site_id"]},{"required":["location_id"]}]` と書いた場合も「どちらか必須」のケースを生成する。OpenAPI 3.1の `dependentRequired: {"start":["end"],"end":["start"]}` からは「両方指定または両方省略」のケースを生成する。
 
+DDLからのテーブル一覧読み込み、人が設定する多段参照・計算・集計、一括更新／削除の照合は[期待値ルールとDDLの設定](docs/advanced-db-rules.md)を参照してください。
+
 対応DBはPostgreSQLとInfluxDB 1.x（InfluxQL）です。InfluxDBのGET全ポイント照合・単一ポイントの保存／更新／削除・異常系のDB変更なし確認はUIで設定できます。[InfluxDBの設定・検証結果・制限](docs/influxdb-testing.md)
 
 InfluxDBの変更確認では「検証用ポイントを毎回準備し、試験後に削除する」を選び、初期フィールドの名前・型・値を入力すると、同じ設定で繰り返し試験できます。指定時刻・全タグに既存ポイントがある場合は上書きせず停止します。後片付け失敗は結果と証跡に残ります。

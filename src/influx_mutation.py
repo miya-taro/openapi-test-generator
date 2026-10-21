@@ -23,6 +23,9 @@ def fixture_timestamp(value):
 
 
 def validate_mutation(value):
+    if isinstance(value, dict) and 'scope' in value:
+        from src.influx_bulk import validate_bulk
+        return validate_bulk(value)
     if not isinstance(value, dict) or set(value) - {'measurement', 'time', 'tags', 'fields', 'action', 'preserve_unmapped', 'fixture'}:
         raise ValueError('InfluxDB変更確認の設定形式が不正です')
     if value.get('action') not in ('insert', 'update', 'delete'):

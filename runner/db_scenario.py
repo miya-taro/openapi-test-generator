@@ -1,5 +1,6 @@
 """DBシナリオ（API呼び出し → DB検証）のYAML定義を読み込む。"""
 from __future__ import annotations
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -142,6 +143,7 @@ class DBScenario:
     influx_mutation: dict | None = None
     db_insert_check: dict | None = None
     db_sql_response_check: dict | None = None
+    expectation_rules: dict | None = None
     test_fixture: dict | None = None
     rule_test: dict | None = None
     api_flow: dict | None = None
@@ -216,6 +218,8 @@ class DBScenario:
             definition["apiFlow"] = self.api_flow
         if self.poll is not None:
             definition["poll"] = self.poll
+        if self.expectation_rules is not None:
+            definition["expectationRules"] = self.expectation_rules
         if self.db_sql_response_check is not None:
             definition["dbSqlResponseCheck"] = self.db_sql_response_check
         if self.test_fixture is not None:
@@ -350,9 +354,16 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         query_params=req_raw.get("query_params") or {},
     )
 
-    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation", "db_insert_check", "db_sql_response_check")):
-        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation、db_insert_check、db_sql_response_check のいずれかは必須です")
+    if not any(key in raw for key in ("db_check", "response_check", "db_response_check", "db_unchanged", "influx_mutation", "db_insert_check", "db_sql_response_check", "expectation_rules")):
+        raise ScenarioError("db_check、response_check、db_response_check、db_unchanged、influx_mutation、db_insert_check、db_sql_response_check、expectation_rules のいずれかは必須です")
 
+    expectation_rules = deepcopy(raw.get("expectation_rules"))
+    if "expectation_rules" in raw:
+        from src.expectation_rules import validate_rules
+        try:
+            validate_rules(expectation_rules)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ScenarioError(str(exc)) from exc
     db_sql_response_check = raw.get("db_sql_response_check")
     if "db_sql_response_check" in raw:
         from src.sql_response_mapping import validate_sql_response
@@ -630,6 +641,7 @@ def _parse_scenario(raw: dict, defaults: dict) -> DBScenario:
         influx_mutation=influx_mutation,
         db_insert_check=db_insert_check,
         db_sql_response_check=db_sql_response_check,
+        expectation_rules=expectation_rules,
         given=given,
         auth_profile=auth_profile,
         scenario_id=raw.get("id"),

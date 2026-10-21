@@ -77,7 +77,7 @@ def _preflight(args, cases, api):
     needs_db = args.kind == "db-scenario" and any(
         any(case['definition'].get(key) for key in (
             'given', 'dbCheck', 'dbResponseCheck', 'dbInsertCheck', 'dbSqlResponseCheck',
-            'dbUnchanged', 'influxMutation', 'testFixture', 'cleanup')) for case in cases)
+            'expectationRules', 'dbUnchanged', 'influxMutation', 'testFixture', 'cleanup')) for case in cases)
     if (guarded or needs_db or args.setup or args.teardown) and not args.config:
         raise ValueError("DB接続設定が必要です")
     if args.case_ids and args.kind == "db-scenario" and any(

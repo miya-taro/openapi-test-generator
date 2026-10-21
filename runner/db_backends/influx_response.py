@@ -4,6 +4,7 @@ InfluxQL evaluates filters. Only explicitly mapped fields are compared; no schem
 business-rule inference. Bounded queries never silently truncate expected results.
 """
 from contextlib import contextmanager
+from decimal import Decimal
 from collections import defaultdict
 from dataclasses import asdict
 import math
@@ -45,6 +46,8 @@ def _literal(value, column):
         return "'" + _escape_value(value) + "'"
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, Decimal) and value.is_finite():
+        return str(value)
     if isinstance(value, (int, float)) and math.isfinite(value):
         return str(value)
     raise DBResponseCheckError("InfluxDBの条件値は文字列・有限数値・booleanにしてください（null不可）")
