@@ -1231,8 +1231,8 @@ export function initDbScenarioEditor({ invoke, saveDialog, onSaved }) {
     if (operationChanged) {
       insertEditor.render();
       sqlEditor.render();
-      rulesEditor = initAdvancedEditor(byId("dbscenario-rules-panel"));
-      bulkEditor = initBulkEditor(byId("dbscenario-bulk-panel"));
+      rulesEditor = initAdvancedEditor(byId("dbscenario-rules-panel"), operation);
+      bulkEditor = initBulkEditor(byId("dbscenario-bulk-panel"), operation);
       byId("dbscenario-editor-mode").value = "mapping";
       byId("dbscenario-editor-unchanged-body").value = "{}";
       byId("dbscenario-editor-unchanged-status").value = "";

@@ -89,3 +89,31 @@ def test_db_comparison_overview_keeps_values_and_unverified_separate(tmp_path):
     assert '10' in values['D4'].value and '99' in values['E4'].value
     assert values.freeze_panes == 'C3'
     assert wb['DBシナリオ結果']['C4'].data_type == 's'
+
+
+def test_unused_tabs_removed_and_summary_links_to_actual_mismatch(tmp_path):
+    target = tmp_path / 'rules.xlsx'
+    evidence = [{'case_id': 'rule', 'name': '入力の10倍', 'expected_status': 200, 'expectation_rules': {
+        'steps': [{'name': 'scaled', 'value': 20}], 'assertions': [
+            {'definition': {'path': 'value'}, 'expected': 20, 'actual': 20, 'verdict': 'OK'},
+            {'definition': {'query': {'table': 'measurements'}, 'value_path': '0.amount'},
+             'expected': 20, 'actual': 2, 'verdict': 'NG'}]}}]
+    write_report([('rule', '入力の10倍', 'NG', 200, 'DB保存値が不一致')], target, evidence)
+    workbook = openpyxl.load_workbook(target)
+    assert 'InfluxDB一括照合' not in workbook.sheetnames
+    assert 'API手順と完了待ち' not in workbook.sheetnames
+    assert 'DB比較詳細' not in workbook.sheetnames
+    assert workbook.active['H5'].hyperlink.location == "'期待値ルール照合'!A3"
+    assert workbook['期待値ルール照合']['B3'].value == 'DB：measurements / 0.amount'
+    assert workbook['期待値ルール照合']['C3'].value == '20'
+    assert workbook['期待値ルール照合']['D3'].value == '2'
+    assert 'measurements' in workbook['期待値ルール照合']['F3'].value
+
+
+def test_status_failure_keeps_link_to_status_reason(tmp_path):
+    output = tmp_path / 'status.xlsx'
+    write_report([('rule', 'status mismatch', 'NG', 500, 'HTTP statusが不一致')], output, [
+        {'case_id': 'rule', 'expectation_rules': {'assertions': [
+            {'definition': {'path': 'value'}, 'expected': 1, 'actual': 1, 'verdict': 'OK'}]}}])
+    workbook = openpyxl.load_workbook(output)
+    assert workbook.active['H5'].hyperlink.location == "'DBシナリオ結果'!A3"

@@ -130,6 +130,7 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
         steps.append(['試験ID', '処理名', '実行前の参照・計算結果'])
         bulk = wb.create_sheet('InfluxDB一括照合')
         bulk.append(['試験ID', '比較対象', '期待値', '実際の値', '判定'])
+        comparison_targets = {}
         dump = lambda value: json.dumps(value, ensure_ascii=False, indent=2, default=str)
         for entry in evidence:
             check = entry.get('expectation_rules', {})
@@ -137,9 +138,15 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
                 steps.append([safe_cell(v) for v in [entry.get('case_id'), step['name'], dump(step['value'])]])
             for item in check.get('assertions', []):
                 definition = item.get('definition', {})
-                target = definition.get('path') if 'path' in definition else dump(definition.get('query'))
+                target = ('レスポンス：' + definition['path']) if 'path' in definition else 'DB：' + str(definition.get('query', {}).get('table', '')) + (' / ' + definition['value_path'] if definition.get('value_path') else ' / 全行')
+                detail = item.get('detail', '')
+                if 'query' in definition:
+                    detail += '\nDB検索条件:\n' + dump(definition['query'])
                 rules.append([safe_cell(v) for v in [entry.get('case_id'), target, dump(item.get('expected')),
-                    dump(item.get('actual', '記録なし')), item.get('verdict'), item.get('detail', '')]])
+                    dump(item.get('actual', '記録なし')), item.get('verdict'), detail]])
+                previous = comparison_targets.get(entry.get('case_id'))
+                if previous is None or (item.get('verdict') == 'NG' and previous[2] != 'NG'):
+                    comparison_targets[entry.get('case_id')] = (rules.title, rules.max_row, item.get('verdict'))
             data = entry.get('influx_mutation', {})
             if 'scope' in data.get('definition', {}):
                 for label, expected, actual in [
@@ -147,9 +154,22 @@ def write_report(rows: list[tuple], output_path: str | Path, evidence: list[dict
                     ('変更対象', data['definition']['target'], {'対象数': data.get('target_count'), '対象外数': data.get('guard_count')}),
                     ('変更前', data.get('before_points'), '期待値を作る基準'),
                     ('変更後の全ポイント', data.get('expected_points'), data.get('after_points', '記録なし'))]:
-                    bulk.append([safe_cell(v) for v in [entry.get('case_id'), label, dump(expected), dump(actual), data.get('verdict')]])
+                    bulk.append([safe_cell(v) for v in [entry.get('case_id'), label, dump(expected), dump(actual), data.get('verdict') if label == '変更後の全ポイント' else '参考']])
+                    if label == '変更後の全ポイント':
+                        previous = comparison_targets.get(entry.get('case_id'))
+                        if previous is None or previous[2] != 'NG':
+                            comparison_targets[entry.get('case_id')] = (bulk.title, bulk.max_row, data.get('verdict'))
         style_table(rules, [22, 35, 55, 55, 12, 45], 1, 5)
         style_table(steps, [22, 25, 80], 1)
         style_table(bulk, [22, 25, 60, 60, 12], 1, 5)
+        for item, row_data in zip(overview, rows, strict=True):
+            case_id = row_data[0] if len(row_data) == 5 else ''
+            target = comparison_targets.get(case_id)
+            # Keep status/schema failures pointing at the main failure reason.
+            if target and (item['verdict'] == 'OK' or target[2] == 'NG'):
+                item.update(sheet=target[0], row=target[1])
+        for sheet, header in [(flow_sheet, 1), (comparison, 2), (rules, 1), (steps, 1), (bulk, 1)]:
+            if sheet.max_row <= header:
+                wb.remove(sheet)
     write_overview(wb, overview)
     wb.save(str(output_path))
